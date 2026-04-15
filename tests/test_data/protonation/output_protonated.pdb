@@ -5,88 +5,128 @@ REMARK 666 MATCH TEMPLATE X YYE    0 MATCH MOTIF C LYS  3  3  1
 REMARK 666 MATCH TEMPLATE X YYE    0 MATCH MOTIF D HIS  4  4  1
 REMARK 666 MATCH TEMPLATE X YYE    0 MATCH MOTIF E HIS  5  5  1
 REMARK 666 MATCH TEMPLATE X YYE    0 MATCH MOTIF F GLU  6  6  1
-USER  MOD reduce.3.23.130521 H: found=10, std=4, add=4, rem=0, adj=0
-USER  MOD -----------------------------------------------------------------
-USER  MOD scores for adjustable sidechains, with "set" totals for H,N and Q
-USER  MOD "o" means original, "f" means flipped, "180deg" is methyl default
-USER  MOD "!" flags a clash with an overlap of 0.40A or greater
-USER  MOD flip categories: "K"=keep, "C"=clashes, "X"=uncertain, "F"=flip
-USER  MOD NoAdj-H: A   1 HIS HE2 : A   1 HIS NE2 : Z   9 YYE ZN1 :(H bumps)
-USER  MOD NoAdj-H: B   2 HIS HE2 : B   2 HIS NE2 : Z   9 YYE ZN1 :(H bumps)
-USER  MOD NoAdj-H: D   4 HIS HE2 : D   4 HIS NE2 : Z   9 YYE ZN2 :(H bumps)
-USER  MOD NoAdj-H: E   5 HIS HE2 : E   5 HIS NE2 : Z   9 YYE ZN2 :(H bumps)
-USER  MOD -----------------------------------------------------------------
 REMARK QCB TOTAL_CHARGE +3
 REMARK QCB PROTEIN_CHARGE +0
 REMARK QCB LIGAND_CHARGE +3
 REMARK QCB CHARGED_RES C:3:LYS +1
 REMARK QCB CHARGED_RES F:6:GLU -1
-ATOM     40   CG HIS A   1      -6.067   1.969   0.640  1.00  0.00           C
-ATOM     41  CD2 HIS A   1      -5.340   0.811   0.601  1.00  0.00           C
-ATOM     42  CE1 HIS A   1      -4.081   2.350  -0.269  1.00  0.00           C
-ATOM     43  NE2 HIS A   1      -4.106   1.060   0.030  1.00  0.00           N
-ATOM     44  ND1 HIS A   1      -5.251   2.936   0.085  1.00  0.00           N
-ATOM     45    N HIS A   1      -8.672   0.976   2.825  1.00  0.00           N
-ATOM     46   CA HIS A   1      -7.619   1.967   2.629  1.00  0.00           C
-ATOM     47    C HIS A   1      -7.930   3.257   3.375  1.00  0.00           C
-ATOM     48    O HIS A   1      -9.095   3.611   3.564  1.00  0.00           O
-ATOM     49   CB HIS A   1      -7.427   2.265   1.138  1.00  0.00           C
-ATOM     50  HD1 HIS A   1      -5.451   3.766  -0.018  1.00  0.00           H   std
-ATOM      0  HE1 HIS A   1      -3.364   2.790  -0.665  1.00  0.00           H   new
-ATOM     51   CG HIS B   2      -4.422  -3.991  -2.106  1.00  0.00           C
-ATOM     52  CD2 HIS B   2      -4.054  -3.217  -1.039  1.00  0.00           C
-ATOM     53  CE1 HIS B   2      -3.355  -2.182  -2.817  1.00  0.00           C
-ATOM     54  NE2 HIS B   2      -3.388  -2.095  -1.496  1.00  0.00           N
-ATOM     55  ND1 HIS B   2      -3.968  -3.318  -3.226  1.00  0.00           N
-ATOM     56    N HIS B   2      -6.684  -6.194  -0.504  1.00  0.00           N
-ATOM     57   CA HIS B   2      -6.555  -5.237  -1.595  1.00  0.00           C
-ATOM     58    C HIS B   2      -7.580  -5.507  -2.689  1.00  0.00           C
-ATOM     59    O HIS B   2      -7.988  -6.649  -2.904  1.00  0.00           O
-ATOM     60   CB HIS B   2      -5.143  -5.279  -2.188  1.00  0.00           C
-ATOM     61  HD1 HIS B   2      -4.057  -3.573  -4.042  1.00  0.00           H   std
-ATOM      0  HE1 HIS B   2      -2.967  -1.554  -3.382  1.00  0.00           H   new
-ATOM     62   NZ LYS C   3      -1.568   2.063  -3.596  1.00  0.00           N
-ATOM     63   CE LYS C   3      -1.104   3.392  -3.949  1.00  0.00           C
-ATOM     64    N LYS C   3      -2.244   7.682  -8.435  1.00  0.00           N
-ATOM     65   CA LYS C   3      -1.533   7.261  -7.234  1.00  0.00           C
-ATOM     66    C LYS C   3      -0.025   7.287  -7.448  1.00  0.00           C
-ATOM     67    O LYS C   3       0.456   7.086  -8.564  1.00  0.00           O
-ATOM     68   CB LYS C   3      -1.980   5.861  -6.810  1.00  0.00           C
-ATOM     69   CG LYS C   3      -1.291   5.332  -5.559  1.00  0.00           C
-ATOM     70   CD LYS C   3      -1.787   3.939  -5.202  1.00  0.00           C
-ATOM     71  CD2 HIS D   4       1.820   4.189  -1.048  1.00  0.00           C
-ATOM     72  NE2 HIS D   4       1.833   2.876  -0.617  1.00  0.00           N
-ATOM     73   CG HIS D   4       3.083   4.561  -1.424  1.00  0.00           C
-ATOM     74  CE1 HIS D   4       3.083   2.454  -0.737  1.00  0.00           C
-ATOM     75  ND1 HIS D   4       3.870   3.446  -1.219  1.00  0.00           N
-ATOM     76    N HIS D   4       2.649   8.068  -1.634  1.00  0.00           N
-ATOM     77   CA HIS D   4       3.442   7.021  -1.003  1.00  0.00           C
-ATOM     78    C HIS D   4       4.806   7.546  -0.573  1.00  0.00           C
-ATOM     79    O HIS D   4       5.353   8.458  -1.192  1.00  0.00           O
-ATOM     80   CB HIS D   4       3.621   5.832  -1.952  1.00  0.00           C
-ATOM     81  HD1 HIS D   4       4.715   3.394  -1.372  1.00  0.00           H   std
-ATOM      0  HE1 HIS D   4       3.378   1.599  -0.521  1.00  0.00           H   new
-ATOM     82   CG HIS E   5       0.251   4.035   3.671  1.00  0.00           C
-ATOM     83  CD2 HIS E   5       0.571   3.793   2.365  1.00  0.00           C
-ATOM     84  CE1 HIS E   5      -0.656   2.119   3.013  1.00  0.00           C
-ATOM     85  NE2 HIS E   5       0.001   2.598   1.961  1.00  0.00           N
-ATOM     86  ND1 HIS E   5      -0.527   2.964   4.061  1.00  0.00           N
-ATOM     87    N HIS E   5       1.222   7.432   3.915  1.00  0.00           N
-ATOM     88   CA HIS E   5       0.101   6.516   4.096  1.00  0.00           C
-ATOM     89    C HIS E   5      -0.914   7.077   5.085  1.00  0.00           C
-ATOM     90    O HIS E   5      -0.558   7.820   6.000  1.00  0.00           O
-ATOM     91   CB HIS E   5       0.592   5.148   4.581  1.00  0.00           C
-ATOM     92  HD1 HIS E   5      -0.871   2.855   4.842  1.00  0.00           H   std
-ATOM      0  HE1 HIS E   5      -1.134   1.321   3.026  1.00  0.00           H   new
-ATOM     93   CD GLU F   6      -3.012  -1.361   2.585  1.00  0.00           C
-ATOM     94  OE2 GLU F   6      -1.970  -0.749   2.944  1.00  0.00           O
-ATOM     95  OE1 GLU F   6      -3.413  -1.489   1.379  1.00  0.00           O
-ATOM     96   CG GLU F   6      -3.873  -2.020   3.654  1.00  0.00           C
-ATOM     97    N GLU F   6      -5.126  -1.505   6.652  1.00  0.00           N
-ATOM     98   CA GLU F   6      -4.126  -2.444   6.160  1.00  0.00           C
-ATOM     99    C GLU F   6      -3.210  -2.913   7.282  1.00  0.00           C
-ATOM    100    O GLU F   6      -2.962  -2.181   8.242  1.00  0.00           O
-ATOM    101   CB GLU F   6      -3.296  -1.803   5.045  1.00  0.00           C
+ATOM      1  CG  HIS A   1      -6.067   1.969   0.640  1.00  0.00           C  
+ATOM      2  CD2 HIS A   1      -5.340   0.811   0.601  1.00  0.00           C  
+ATOM      3  HD2 HIS A   1      -5.871  -0.247   0.615  1.00  0.00           H  
+ATOM      4  CE1 HIS A   1      -4.081   2.350  -0.269  1.00  0.00           C  
+ATOM      5  HE1 HIS A   1      -3.214   3.161  -0.269  1.00  0.00           H  
+ATOM      6  NE2 HIS A   1      -4.106   1.060   0.030  1.00  0.00           N  
+ATOM      7  ND1 HIS A   1      -5.251   2.936   0.085  1.00  0.00           N  
+ATOM      8  N   HIS A   1      -8.672   0.976   2.825  1.00  0.00           N  
+ATOM      9  H   HIS A   1      -9.286   1.140   3.843  1.00  0.00           H  
+ATOM     10  H2  HIS A   1      -9.561   0.868   2.028  1.00  0.00           H  
+ATOM     11  H3  HIS A   1      -8.248  -0.137   2.952  1.00  0.00           H  
+ATOM     12  CA  HIS A   1      -7.619   1.967   2.629  1.00  0.00           C  
+ATOM     13  HA  HIS A   1      -6.636   1.763   3.271  1.00  0.00           H  
+ATOM     14  C   HIS A   1      -7.930   3.257   3.375  1.00  0.00           C  
+ATOM     15  O   HIS A   1      -9.095   3.611   3.564  1.00  0.00           O  
+ATOM     16  CB  HIS A   1      -7.427   2.265   1.138  1.00  0.00           C  
+ATOM     17  HB2 HIS A   1      -8.066   1.716   0.289  1.00  0.00           H  
+ATOM     18  HB3 HIS A   1      -7.757   3.403   0.976  1.00  0.00           H  
+ATOM     19  HD1 HIS A   1      -5.483   3.901  -0.035  1.00  0.00           H  
+ATOM     21  CG  HIS B   2      -4.422  -3.991  -2.106  1.00  0.00           C  
+ATOM     22  CD2 HIS B   2      -4.054  -3.217  -1.039  1.00  0.00           C  
+ATOM     23  HD2 HIS B   2      -4.352  -3.487   0.076  1.00  0.00           H  
+ATOM     24  CE1 HIS B   2      -3.355  -2.182  -2.817  1.00  0.00           C  
+ATOM     25  HE1 HIS B   2      -3.018  -1.480  -3.714  1.00  0.00           H  
+ATOM     26  NE2 HIS B   2      -3.388  -2.095  -1.496  1.00  0.00           N  
+ATOM     27  ND1 HIS B   2      -3.968  -3.318  -3.226  1.00  0.00           N  
+ATOM     28  N   HIS B   2      -6.684  -6.194  -0.504  1.00  0.00           N  
+ATOM     29  H   HIS B   2      -5.970  -6.067   0.450  1.00  0.00           H  
+ATOM     30  H2  HIS B   2      -7.780  -6.113  -0.023  1.00  0.00           H  
+ATOM     31  H3  HIS B   2      -6.584  -7.353  -0.795  1.00  0.00           H  
+ATOM     32  CA  HIS B   2      -6.555  -5.237  -1.595  1.00  0.00           C  
+ATOM     33  HA  HIS B   2      -6.990  -4.159  -1.320  1.00  0.00           H  
+ATOM     34  C   HIS B   2      -7.580  -5.507  -2.689  1.00  0.00           C  
+ATOM     35  O   HIS B   2      -7.988  -6.649  -2.904  1.00  0.00           O  
+ATOM     36  CB  HIS B   2      -5.143  -5.279  -2.188  1.00  0.00           C  
+ATOM     37  HB2 HIS B   2      -5.256  -5.656  -3.317  1.00  0.00           H  
+ATOM     38  HB3 HIS B   2      -4.353  -6.065  -1.754  1.00  0.00           H  
+ATOM     39  HD1 HIS B   2      -4.072  -3.615  -4.175  1.00  0.00           H  
+ATOM     41  NZ  LYS C   3      -1.568   2.063  -3.596  1.00  0.00           N  
+ATOM     42  HZ1 LYS C   3      -2.692   2.448  -3.350  1.00  0.00           H  
+ATOM     43  HZ2 LYS C   3      -2.027   1.362  -4.471  1.00  0.00           H  
+ATOM     44  HZ3 LYS C   3      -0.486   1.553  -3.790  1.00  0.00           H  
+ATOM     45  CE  LYS C   3      -1.104   3.392  -3.949  1.00  0.00           C  
+ATOM     46  HE2 LYS C   3       0.073   3.452  -4.167  1.00  0.00           H  
+ATOM     47  HE3 LYS C   3      -1.320   4.220  -3.110  1.00  0.00           H  
+ATOM     48  N   LYS C   3      -2.244   7.682  -8.435  1.00  0.00           N  
+ATOM     49  H   LYS C   3      -1.993   7.172  -9.490  1.00  0.00           H  
+ATOM     50  H2  LYS C   3      -3.441   7.643  -8.392  1.00  0.00           H  
+ATOM     51  H3  LYS C   3      -2.043   8.846  -8.645  1.00  0.00           H  
+ATOM     52  CA  LYS C   3      -1.533   7.261  -7.234  1.00  0.00           C  
+ATOM     53  HA  LYS C   3      -1.624   8.115  -6.405  1.00  0.00           H  
+ATOM     54  C   LYS C   3      -0.025   7.287  -7.448  1.00  0.00           C  
+ATOM     55  O   LYS C   3       0.456   7.086  -8.564  1.00  0.00           O  
+ATOM     56  CB  LYS C   3      -1.980   5.861  -6.810  1.00  0.00           C  
+ATOM     57  HB2 LYS C   3      -3.149   5.916  -6.574  1.00  0.00           H  
+ATOM     58  HB3 LYS C   3      -1.779   5.154  -7.751  1.00  0.00           H  
+ATOM     59  CG  LYS C   3      -1.291   5.332  -5.559  1.00  0.00           C  
+ATOM     60  HG2 LYS C   3      -1.519   6.138  -4.706  1.00  0.00           H  
+ATOM     61  HG3 LYS C   3      -0.110   5.315  -5.750  1.00  0.00           H  
+ATOM     62  CD  LYS C   3      -1.787   3.939  -5.202  1.00  0.00           C  
+ATOM     63  HD2 LYS C   3      -2.978   3.965  -5.090  1.00  0.00           H  
+ATOM     64  HD3 LYS C   3      -1.543   3.256  -6.154  1.00  0.00           H  
+ATOM     66  CD2 HIS D   4       1.820   4.189  -1.048  1.00  0.00           C  
+ATOM     67  HD2 HIS D   4       0.849   4.870  -1.050  1.00  0.00           H  
+ATOM     68  NE2 HIS D   4       1.833   2.876  -0.617  1.00  0.00           N  
+ATOM     69  CG  HIS D   4       3.083   4.561  -1.424  1.00  0.00           C  
+ATOM     70  CE1 HIS D   4       3.083   2.454  -0.737  1.00  0.00           C  
+ATOM     71  HE1 HIS D   4       3.606   1.743   0.057  1.00  0.00           H  
+ATOM     72  ND1 HIS D   4       3.870   3.446  -1.219  1.00  0.00           N  
+ATOM     73  N   HIS D   4       2.649   8.068  -1.634  1.00  0.00           N  
+ATOM     74  H   HIS D   4       1.876   7.848  -2.524  1.00  0.00           H  
+ATOM     75  H2  HIS D   4       3.243   9.011  -2.077  1.00  0.00           H  
+ATOM     76  H3  HIS D   4       1.943   8.559  -0.798  1.00  0.00           H  
+ATOM     77  CA  HIS D   4       3.442   7.021  -1.003  1.00  0.00           C  
+ATOM     78  HA  HIS D   4       3.126   6.759   0.116  1.00  0.00           H  
+ATOM     79  C   HIS D   4       4.806   7.546  -0.573  1.00  0.00           C  
+ATOM     80  O   HIS D   4       5.353   8.458  -1.192  1.00  0.00           O  
+ATOM     81  CB  HIS D   4       3.621   5.832  -1.952  1.00  0.00           C  
+ATOM     82  HB2 HIS D   4       4.800   5.748  -2.140  1.00  0.00           H  
+ATOM     83  HB3 HIS D   4       3.178   5.863  -3.063  1.00  0.00           H  
+ATOM     84  HD1 HIS D   4       4.852   3.385  -1.397  1.00  0.00           H  
+ATOM     86  CG  HIS E   5       0.251   4.035   3.671  1.00  0.00           C  
+ATOM     87  CD2 HIS E   5       0.571   3.793   2.365  1.00  0.00           C  
+ATOM     88  HD2 HIS E   5       1.431   4.414   1.840  1.00  0.00           H  
+ATOM     89  CE1 HIS E   5      -0.656   2.119   3.013  1.00  0.00           C  
+ATOM     90  HE1 HIS E   5      -1.710   1.606   3.171  1.00  0.00           H  
+ATOM     91  NE2 HIS E   5       0.001   2.598   1.961  1.00  0.00           N  
+ATOM     92  ND1 HIS E   5      -0.527   2.964   4.061  1.00  0.00           N  
+ATOM     93  N   HIS E   5       1.222   7.432   3.915  1.00  0.00           N  
+ATOM     94  H   HIS E   5       2.140   7.423   4.685  1.00  0.00           H  
+ATOM     95  H2  HIS E   5       0.865   8.577   3.952  1.00  0.00           H  
+ATOM     96  H3  HIS E   5       1.707   7.354   2.824  1.00  0.00           H  
+ATOM     97  CA  HIS E   5       0.101   6.516   4.096  1.00  0.00           C  
+ATOM     98  HA  HIS E   5      -0.662   6.545   3.177  1.00  0.00           H  
+ATOM     99  C   HIS E   5      -0.914   7.077   5.085  1.00  0.00           C  
+ATOM    100  O   HIS E   5      -0.558   7.820   6.000  1.00  0.00           O  
+ATOM    101  CB  HIS E   5       0.592   5.148   4.581  1.00  0.00           C  
+ATOM    102  HB2 HIS E   5       1.767   5.009   4.736  1.00  0.00           H  
+ATOM    103  HB3 HIS E   5       0.124   4.945   5.661  1.00  0.00           H  
+ATOM    104  HD1 HIS E   5      -0.927   2.837   4.969  1.00  0.00           H  
+ATOM    106  CD  GLU F   6      -3.012  -1.361   2.585  1.00  0.00           C  
+ATOM    107  OE2 GLU F   6      -1.970  -0.749   2.944  1.00  0.00           O  
+ATOM    108  OE1 GLU F   6      -3.413  -1.489   1.379  1.00  0.00           O  
+ATOM    109  CG  GLU F   6      -3.873  -2.020   3.654  1.00  0.00           C  
+ATOM    110  HG2 GLU F   6      -3.860  -3.197   3.454  1.00  0.00           H  
+ATOM    111  HG3 GLU F   6      -4.963  -1.591   3.436  1.00  0.00           H  
+ATOM    112  N   GLU F   6      -5.126  -1.505   6.652  1.00  0.00           N  
+ATOM    113  H   GLU F   6      -4.765  -0.639   7.398  1.00  0.00           H  
+ATOM    114  H2  GLU F   6      -5.854  -0.922   5.901  1.00  0.00           H  
+ATOM    115  H3  GLU F   6      -5.909  -2.142   7.304  1.00  0.00           H  
+ATOM    116  CA  GLU F   6      -4.126  -2.444   6.160  1.00  0.00           C  
+ATOM    117  HA  GLU F   6      -4.574  -3.529   5.941  1.00  0.00           H  
+ATOM    118  C   GLU F   6      -3.210  -2.913   7.282  1.00  0.00           C  
+ATOM    119  O   GLU F   6      -2.962  -2.181   8.242  1.00  0.00           O  
+ATOM    120  CB  GLU F   6      -3.296  -1.803   5.045  1.00  0.00           C  
+ATOM    121  HB2 GLU F   6      -3.063  -0.664   5.320  1.00  0.00           H  
+ATOM    122  HB3 GLU F   6      -2.265  -2.401   5.146  1.00  0.00           H  
 TER
 HETATM    1  ZN1 YYE Z   9      -2.598  -0.490  -0.306  1.00  0.00          ZN 
 HETATM    2  ZN2 YYE Z   9       0.175   1.606   0.054  1.00  0.00          ZN 

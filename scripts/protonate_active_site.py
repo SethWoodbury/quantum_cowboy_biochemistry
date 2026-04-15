@@ -59,81 +59,79 @@ STANDARD_CHARGES = {
 # ══════════════════════════════════════════════════════════════
 
 
-def run_reduce(input_pdb: Path, output_pdb: Path, flip: bool = True) -> str:
-    """Run reduce to add hydrogens. Only modifies ATOM records.
+def run_reduce_for_diagnostics(input_pdb: Path) -> tuple[str, Path]:
+    """Run reduce on the input PDB to get metal-coordination diagnostics.
 
-    Args:
-        input_pdb: Input PDB path
-        output_pdb: Output PDB path (with H added)
-        flip: Whether to optimize HIS/ASN/GLN orientations (-FLIP)
+    reduce is NOT used for the actual hydrogen addition (pdbfixer does that),
+    but it's the best tool for detecting which atoms coordinate metals
+    (via its "NoAdj-H" clash detection).
 
     Returns:
-        reduce stdout (contains diagnostic info about H placement)
+        (reduce_output_pdb_path, diagnostics_string)
     """
     if not os.path.isfile(REDUCE_BIN):
-        raise FileNotFoundError(f"reduce not found at {REDUCE_BIN}")
+        log.warning(f"reduce not found at {REDUCE_BIN} — skipping metal coordination detection")
+        # Write a copy so parse_reduce_metal_coordination has something to read
+        tmp = Path(str(input_pdb) + ".reduce_tmp.pdb")
+        tmp.write_text(Path(input_pdb).read_text())
+        return "", tmp
 
-    # Build reduce command — only add H, don't modify existing
-    # -NOFLIP or -FLIP for sidechain optimization
-    # -Quiet suppresses most output
-    # -ALLALT keeps all alt conformations
-    args = [REDUCE_BIN, "-Quiet"]
-    if flip:
-        args.append("-FLIP")
-    else:
-        args.append("-NOFLIP")
-    args.append(str(input_pdb))
-
+    args = [REDUCE_BIN, "-Quiet", "-FLIP", str(input_pdb)]
     result = subprocess.run(args, capture_output=True, text=True, timeout=60)
 
-    # reduce writes the protonated PDB to stdout
-    pdb_output = result.stdout
-    diagnostics = result.stderr
+    # Write reduce output to temp file (for parsing USER MOD lines)
+    tmp = Path(str(input_pdb) + ".reduce_tmp.pdb")
+    tmp.write_text(result.stdout)
 
-    if not pdb_output.strip():
-        raise RuntimeError(f"reduce produced no output. stderr:\n{diagnostics}")
-
-    # Write output, preserving HETATM lines from original
-    _write_reduce_output(input_pdb, pdb_output, output_pdb)
-
-    return diagnostics
+    return result.stderr, tmp
 
 
-def _write_reduce_output(original_pdb: Path, reduce_output: str, output_pdb: Path):
-    """Merge reduce's ATOM output with original HETATM and header lines.
+def run_pdbfixer(input_pdb: Path, output_pdb: Path, pH: float = 7.0):
+    """Use PDBFixer (OpenMM) to add ALL missing hydrogens with proper PDB names.
 
-    reduce modifies ATOM records but may mangle HETATM. We keep the original
-    HETATM lines and header/remarks, and take only ATOM lines from reduce.
+    pdbfixer knows full amino acid templates, so it adds every hydrogen:
+    HA on CA, HB2/HB3 on CB, aromatic HD2 on HIS, etc.
+
+    Only adds H to ATOM records; HETATM lines are preserved from the original.
     """
-    # Parse original for HETATM and non-coordinate lines
-    original_lines = Path(original_pdb).read_text().splitlines()
-    header_lines = [l for l in original_lines if not l.startswith(("ATOM", "HETATM", "TER", "END", "CONECT"))]
+    from pdbfixer import PDBFixer
+    from openmm.app import PDBFile
+
+    fixer = PDBFixer(filename=str(input_pdb))
+    fixer.addMissingHydrogens(pH)
+
+    # Write pdbfixer output to temp file
+    tmp_pdbfixer = Path(str(output_pdb) + ".pdbfixer_tmp.pdb")
+    with open(tmp_pdbfixer, "w") as f:
+        PDBFile.writeFile(fixer.topology, fixer.positions, f, keepIds=True)
+
+    # Merge: take ATOM lines from pdbfixer, HETATM + headers from original
+    original_lines = Path(input_pdb).read_text().splitlines()
+    header_lines = [l for l in original_lines
+                    if not l.startswith(("ATOM", "HETATM", "TER", "END", "CONECT"))]
     hetatm_lines = [l for l in original_lines if l.startswith("HETATM")]
-    ter_after_hetatm = any(
-        l.startswith("TER") for l in original_lines
-        if original_lines.index(l) > max(
-            (i for i, x in enumerate(original_lines) if x.startswith("HETATM")), default=-1
-        )
-    )
 
-    # Parse reduce output for ATOM lines (including new H atoms)
-    reduce_lines = reduce_output.splitlines()
-    atom_lines = [l for l in reduce_lines if l.startswith("ATOM")]
-    # Also grab USER MOD lines (reduce diagnostics)
-    user_lines = [l for l in reduce_lines if l.startswith("USER")]
+    pdbfixer_lines = Path(tmp_pdbfixer).read_text().splitlines()
+    atom_lines = [l for l in pdbfixer_lines if l.startswith("ATOM")]
 
-    # Assemble output
     out = []
     out.extend(header_lines)
-    out.extend(user_lines)
     out.extend(atom_lines)
     out.append("TER")
     out.extend(hetatm_lines)
-    if ter_after_hetatm or hetatm_lines:
+    if hetatm_lines:
         out.append("TER")
     out.append("END")
 
     Path(output_pdb).write_text("\n".join(out) + "\n")
+
+    # Cleanup
+    tmp_pdbfixer.unlink(missing_ok=True)
+
+    n_orig = sum(1 for l in original_lines if l.startswith("ATOM"))
+    n_new = len(atom_lines)
+    log.info(f"  pdbfixer: {n_orig} → {n_new} ATOM lines ({n_new - n_orig} H added)")
+    log.info(f"  HETATM preserved: {len(hetatm_lines)} lines (untouched)")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -468,21 +466,19 @@ def protonate_active_site(
     log.info(f"Output: {output_pdb}")
     log.info(f"pH: {pH}, ligand charge: {ligand_charge:+d}")
 
-    # Step 1: Add hydrogens with reduce
-    log.info("Step 1: Running reduce (hydrogen addition) ...")
-    reduce_diag = run_reduce(input_pdb, output_pdb, flip=flip)
-
-    # Parse reduce diagnostics
-    h_added = 0
-    for line in reduce_diag.splitlines():
-        m = re.search(r"found=(\d+), std=(\d+), add=(\d+)", line)
-        if m:
-            h_added = int(m.group(3))
-    log.info(f"  Hydrogens added: {h_added}")
+    # Step 1a: Run reduce for metal-coordination detection (diagnostic only)
+    log.info("Step 1a: Running reduce (metal coordination detection) ...")
+    reduce_diag, reduce_tmp = run_reduce_for_diagnostics(input_pdb)
 
     # Step 1b: Parse reduce's metal coordination diagnostics
     log.info("Step 1b: Parsing metal coordination from reduce ...")
-    metal_coord = parse_reduce_metal_coordination(output_pdb)
+    metal_coord = parse_reduce_metal_coordination(reduce_tmp)
+    reduce_tmp.unlink(missing_ok=True)  # cleanup temp file
+
+    # Step 1c: Add ALL hydrogens with pdbfixer (proper PDB atom names)
+    log.info("Step 1c: Running pdbfixer (full hydrogen addition) ...")
+    run_pdbfixer(input_pdb, output_pdb, pH=pH)
+
     if metal_coord:
         log.info(f"  Found {len(metal_coord)} metal-coordinating residue(s)")
     else:
@@ -537,7 +533,8 @@ def protonate_active_site(
             if v["resn"] in ("HIS", "ASP", "GLU", "LYS", "CYS")
         },
         "charged_residues": breakdown["residue_charges"],
-        "h_added": h_added,
+        "h_added": sum(1 for l in Path(output_pdb).read_text().splitlines()
+                       if l.startswith("ATOM") and l[76:78].strip() == "H"),
     }
 
     return summary
