@@ -284,7 +284,16 @@ def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True) -> dict:
             if i == insert_after:
                 new_lines.append(new_line)
 
-    Path(pdb_path).write_text("\n".join(new_lines) + "\n")
+    # Renumber all ATOM/HETATM serial numbers sequentially
+    renumbered = []
+    serial = 1
+    for line in new_lines:
+        if line.startswith(("ATOM", "HETATM")) and len(line) >= 54:
+            line = line[:6] + f"{serial:>5d}" + line[11:]
+            serial += 1
+        renumbered.append(line)
+
+    Path(pdb_path).write_text("\n".join(renumbered) + "\n")
 
     return {"covalent_bonds": covalent_bonds}
 
@@ -817,6 +826,26 @@ def protonate_active_site(
 
     # Write charge info as REMARK in the output PDB
     _add_charge_remarks(output_pdb, total_charge, breakdown)
+
+    # Step 6: PDB quality checks
+    log.info("Step 6: PDB validation ...")
+    try:
+        from qcb.prep.validate_pdb import validate_pdb as _validate
+        issues = _validate(output_pdb)
+        errors = [i for i in issues if i.severity == "ERROR"]
+        warnings = [i for i in issues if i.severity == "WARNING"]
+        if errors:
+            log.error(f"  PDB VALIDATION: {len(errors)} ERRORS found!")
+            for issue in errors:
+                log.error(f"    {issue}")
+        elif warnings:
+            log.warning(f"  PDB validation: {len(warnings)} warnings")
+            for issue in warnings:
+                log.warning(f"    {issue}")
+        else:
+            log.info("  PDB validation PASSED (no errors or warnings)")
+    except ImportError:
+        log.info("  PDB validation skipped (qcb.prep.validate_pdb not importable)")
 
     summary = {
         "input_pdb": str(input_pdb),
