@@ -2,8 +2,8 @@
   "input_pdb": "tests/test_data/protonation/input_theozyme.pdb",
   "output_pdb": "tests/test_data/protonation/output_protonated.pdb",
   "pH": 7.0,
-  "total_charge": 3,
-  "protein_charge": 0,
+  "total_charge": 2,
+  "protein_charge": -1,
   "ligand_charge": 3,
   "pka_predictions": {
     "HIS_A:1": 7.934268093880172,
@@ -14,7 +14,6 @@
     "GLU_F:6": 4.939941339843463
   },
   "charged_residues": {
-    "C:3:LYS": 1,
     "F:6:GLU": -1
   },
   "h_added": 57

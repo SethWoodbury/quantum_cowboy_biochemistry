@@ -139,15 +139,19 @@ def run_pdbfixer(input_pdb: Path, output_pdb: Path, pH: float = 7.0):
 # ══════════════════════════════════════════════════════════════
 
 
-def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True):
+def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True) -> dict:
     """Fix common issues with pdbfixer's hydrogen placement.
 
     1. N-terminal: remove extra H to make NH2 (neutral) instead of NH3+ (charged)
     2. C-terminal: add aldehyde H to bare C=O (becomes C(=O)H)
     3. Cross-residue covalent bonds: detect ATOM NZ within 1.6A of HETATM C
        and remove excess H on NZ (e.g., carbamylated lysine: NH not NH3+)
+
+    Returns dict with cross-residue bond info for charge correction:
+      {'covalent_bonds': {(chain, resnum): {'atom': str, 'ligand_atom': str}}}
     """
     lines = Path(pdb_path).read_text().splitlines()
+    covalent_bonds = {}  # {(chain, resnum): {'atom': str, ...}}
 
     # Parse atom positions for distance checks
     atom_records = []  # (line_idx, record_type, chain, resnum, resname, atomname, x, y, z)
@@ -249,6 +253,10 @@ def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True):
                     f"{hrsn} {hch}:{hrn} {han} ({d:.2f} A)"
                 )
                 # This atom is covalently bonded to the ligand
+                # Track for charge correction
+                covalent_bonds[(ach, arn)] = {
+                    "atom": aan, "resn": arsn, "ligand_atom": han,
+                }
                 # Remove excess H: NZ should have at most 1 H (NH), not 3 (NH3+)
                 if aan == "NZ":
                     # Find all HZ* atoms on this residue and keep only HZ1
@@ -266,19 +274,19 @@ def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True):
                         )
 
     # Apply removals and additions
-    # First sort additions by position (insert after)
     lines_to_add.sort(key=lambda x: x[0], reverse=True)
 
     new_lines = []
     for i, line in enumerate(lines):
         if i not in lines_to_remove:
             new_lines.append(line)
-        # Check if we need to insert after this line
         for insert_after, new_line in lines_to_add:
             if i == insert_after:
                 new_lines.append(new_line)
 
     Path(pdb_path).write_text("\n".join(new_lines) + "\n")
+
+    return {"covalent_bonds": covalent_bonds}
 
 
 def relax_hydrogens_xtb(pdb_path: Path, charge: int = 0):
@@ -335,19 +343,21 @@ def relax_hydrogens_xtb(pdb_path: Path, charge: int = 0):
     with open(fix_file, "w") as f:
         f.write(f"$fix\n  atoms: {idx_str}\n$end\n")
 
-    # Run xTB optimization
+    # Run xTB optimization (use relative paths from tmpdir)
     log.info(f"  xTB H relaxation: {len(elements)} atoms, {len(heavy_indices)} frozen ...")
     result = subprocess.run(
-        [XTB_BIN, str(xyz_file), "--opt", "tight", "--input", str(fix_file),
+        [XTB_BIN, "input.xyz", "--opt", "tight", "--input", "fix.inp",
          "--gfn", "2", "--chrg", str(charge)],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=300,
         cwd=str(tmpdir),
     )
 
     opt_xyz = tmpdir / "xtbopt.xyz"
     if not opt_xyz.exists():
-        log.warning(f"  xTB optimization failed: {result.stderr[-200:]}")
-        # Cleanup
+        log.warning(f"  xTB optimization failed.")
+        # Show last few lines of stderr for debugging
+        for line in result.stderr.splitlines()[-5:]:
+            log.warning(f"    xTB: {line}")
         import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)
         return
@@ -515,6 +525,7 @@ def determine_residue_charges(
     user_overrides: dict | None = None,
     pka_dict: dict | None = None,
     metal_coord: dict | None = None,
+    covalent_bonds: dict | None = None,
 ) -> dict:
     """Determine the formal charge of each protein residue.
 
@@ -526,6 +537,8 @@ def determine_residue_charges(
         pka_dict: Pre-computed propka results (or None to run propka)
         metal_coord: Dict from parse_reduce_metal_coordination() — residues
                      coordinating metals are forced to neutral charge
+        covalent_bonds: Dict from postprocess_hydrogens() — residues with
+                        atoms covalently bonded to ligand (e.g. carbamylated LYS)
 
     Returns:
         Dict of {(chain, resnum): {'resn': str, 'charge': int, 'reason': str}}
@@ -640,6 +653,21 @@ def determine_residue_charges(
                     f"→ deprotonated carboxylate (-1)"
                 )
 
+        # Covalent bond to ligand override: if a key atom (NZ, SG, etc.) is
+        # covalently bonded to the ligand, it cannot carry the standard charge.
+        # E.g., LYS NZ bonded to carbamate C → amide NH (neutral, not NH3+)
+        if covalent_bonds and key in covalent_bonds:
+            cb = covalent_bonds[key]
+            if resn == "LYS" and cb.get("atom") == "NZ":
+                base_charge = 0  # NZ-H is an amide, not NH3+
+                reason = (
+                    f"COVALENT BOND: NZ bonded to ligand {cb.get('ligand_atom', '?')} "
+                    f"→ amide NH (0, not NH3+ +1)"
+                )
+            elif resn == "CYS" and cb.get("atom") == "SG":
+                base_charge = 0  # SG bonded to ligand = thioether, neutral
+                reason = f"COVALENT BOND: SG bonded to ligand → thioether (0)"
+
         # Handle KCX (carboxylated lysine)
         if resn == "KCX":
             base_charge = 0  # NH group (+1) + carboxylate (-1) = 0
@@ -741,19 +769,15 @@ def protonate_active_site(
 
     # Step 1d: Post-process — fix terminals, cross-residue covalent bonds
     log.info("Step 1d: Post-processing hydrogens ...")
-    postprocess_hydrogens(output_pdb, neutral_termini=neutral_termini)
+    pp_info = postprocess_hydrogens(output_pdb, neutral_termini=neutral_termini)
+    covalent_bonds = pp_info.get("covalent_bonds", {})
 
     if metal_coord:
         log.info(f"  Found {len(metal_coord)} metal-coordinating residue(s)")
     else:
         log.info("  No metal coordination detected")
 
-    # Step 1e: Optional xTB H relaxation (fixes sp2/sp3 geometry)
-    if relax_h:
-        log.info("Step 1e: xTB hydrogen relaxation ...")
-        relax_hydrogens_xtb(output_pdb, charge=ligand_charge)
-
-    # Step 2: propka pKa prediction
+    # Step 2: propka pKa prediction (needed before xTB to get correct total charge)
     log.info("Step 2: Running propka (pKa prediction) ...")
     pka_dict = run_propka(output_pdb, pH=pH)
     if pka_dict:
@@ -769,7 +793,7 @@ def protonate_active_site(
     residue_charges = determine_residue_charges(
         output_pdb, pH=pH, neutral_termini=neutral_termini,
         user_overrides=user_overrides, pka_dict=pka_dict,
-        metal_coord=metal_coord,
+        metal_coord=metal_coord, covalent_bonds=covalent_bonds,
     )
 
     for key, info in sorted(residue_charges.items()):
@@ -785,6 +809,11 @@ def protonate_active_site(
     log.info(f"  Ligand charge:   {breakdown['ligand_charge']:+d}")
     log.info(f"  TOTAL CHARGE:    {total_charge:+d}")
     log.info("=" * 50)
+
+    # Step 5: Optional xTB H relaxation (now we know the correct total charge)
+    if relax_h:
+        log.info(f"Step 5: xTB hydrogen relaxation (charge={total_charge:+d}) ...")
+        relax_hydrogens_xtb(output_pdb, charge=total_charge)
 
     # Write charge info as REMARK in the output PDB
     _add_charge_remarks(output_pdb, total_charge, breakdown)
