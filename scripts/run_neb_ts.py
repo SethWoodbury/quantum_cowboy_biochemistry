@@ -792,7 +792,7 @@ def run_neb(
         img.info["charge"] = charge
 
     # NEB object
-    neb = NEB(images, k=k_spring, allow_shared_calculator=False)
+    neb = NEB(images, k=k_spring, allow_shared_calculator=False, method="improvedtangent")
 
     # Interpolation – try geodesic, fall back to IDPP
     try:
@@ -801,7 +801,7 @@ def run_neb(
         _do_geodesic_interpolation(images)
     except ImportError:
         log.info("  Using IDPP interpolation (install geodesic-interpolate for better paths)")
-        neb.interpolate(method="idpp")
+        neb.interpolate(method="idpp", apply_constraint=True)
 
     write(os.path.join(outdir, "path-neb-init.xyz"), images)
 
