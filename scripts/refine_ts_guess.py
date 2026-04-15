@@ -99,23 +99,44 @@ def get_calculator(model_key, device="cuda", dtype="float64", head=None):
 # ══════════════════════════════════════════════════════════════
 
 
-def load_pdb(pdb_path):
-    """Load PDB → ASE Atoms + biotite template."""
-    pdb_file = pdb_io.PDBFile.read(str(pdb_path))
-    st = pdb_file.get_structure(model=1)
-    symbols = [e.capitalize() for e in st.element]
-    atoms = Atoms(symbols=symbols, positions=st.coord)
-    atoms.arrays.update(st._annot)
-    return atoms, st
+def load_structure(input_path):
+    """Load PDB or XYZ → ASE Atoms + biotite template (if PDB).
+
+    Returns (atoms, template_st_or_None)
+    """
+    input_path = Path(input_path)
+    ext = input_path.suffix.lower()
+
+    if ext == ".pdb":
+        pdb_file = pdb_io.PDBFile.read(str(input_path))
+        st = pdb_file.get_structure(model=1)
+        symbols = [e.capitalize() for e in st.element]
+        atoms = Atoms(symbols=symbols, positions=st.coord)
+        atoms.arrays.update(st._annot)
+        return atoms, st
+    elif ext in (".xyz", ".extxyz"):
+        atoms = read(str(input_path))
+        log.info(f"  Loaded XYZ: {len(atoms)} atoms (no PDB template for output)")
+        return atoms, None
+    else:
+        # Try ASE's generic reader
+        atoms = read(str(input_path))
+        return atoms, None
 
 
 def write_pdb(atoms, template_st, path):
-    """Write ASE Atoms as PDB using template for atom naming."""
-    out = template_st.copy()
-    out.coord = atoms.get_positions().astype(np.float32)
-    pdb_file = pdb_io.PDBFile()
-    pdb_file.set_structure(out)
-    Path(path).write_text(str(pdb_file))
+    """Write ASE Atoms as PDB using template for atom naming. Falls back to XYZ if no template."""
+    if template_st is not None:
+        out = template_st.copy()
+        out.coord = atoms.get_positions().astype(np.float32)
+        pdb_file = pdb_io.PDBFile()
+        pdb_file.set_structure(out)
+        Path(path).write_text(str(pdb_file))
+    else:
+        # No PDB template — write XYZ instead
+        xyz_path = str(path).replace(".pdb", ".xyz")
+        write(xyz_path, atoms)
+        log.info(f"  No PDB template — wrote {xyz_path} instead")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -331,7 +352,7 @@ def main():
     log.info("=" * 60)
 
     # Load structure
-    atoms, template_st = load_pdb(input_pdb)
+    atoms, template_st = load_structure(input_pdb)
     atoms.info["charge"] = args.charge
     log.info(f"  {len(atoms)} atoms loaded")
 
