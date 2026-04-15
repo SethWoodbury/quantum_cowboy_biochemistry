@@ -424,7 +424,7 @@ def load_structure(pdb_path):
 # ══════════════════════════════════════════════════════════════
 
 
-def setup_constraints(st, ligand_name, mode="ca-only"):
+def setup_constraints(st, ligand_name, mode="ca-only", fix_chains=None):
     """Set up constraints for optimisation and MD phases.
 
     Modes:
@@ -434,35 +434,47 @@ def setup_constraints(st, ligand_name, mode="ca-only"):
       ca-restrained CA fixed + harmonic restraints on C/N of isolated residues.
       none          No constraints at all.
 
-    Returns (opt_constraint, md_constraint) — may differ so MD can breathe.
+    Args:
+      fix_chains: Optional list of chain IDs. If specified, constraints are ONLY
+                  applied to atoms in these chains. Atoms in other chains are free.
+                  E.g., fix_chains=["B"] fixes only chain B, leaving chain A free.
+
+    Returns (opt_constraint, md_constraint, extra_constraints).
     """
     # Never constrain these residues (in any mode)
     never_fix_res = [ligand_name, "HOH", "WAT", "ZN"]
 
+    # Chain filter: if fix_chains specified, only constrain those chains
+    if fix_chains:
+        chain_mask = np.isin(st.chain_id, fix_chains)
+        log.info(f"  Chain filter: constraining only chain(s) {fix_chains}")
+    else:
+        chain_mask = np.ones(len(st), dtype=bool)  # all chains
+
     if mode == "ca-only":
-        opt_mask = (st.atom_name == "CA") & ~np.isin(st.res_name, never_fix_res)
+        opt_mask = (st.atom_name == "CA") & ~np.isin(st.res_name, never_fix_res) & chain_mask
         md_mask = opt_mask.copy()
         extra_constraints = []
 
     elif mode == "backbone":
         opt_mask = (
             np.isin(st.atom_name, ["CA", "C", "N", "O"])
-            & ~np.isin(st.res_name, never_fix_res)
+            & ~np.isin(st.res_name, never_fix_res) & chain_mask
         )
-        md_mask = (st.atom_name == "CA") & ~np.isin(st.res_name, never_fix_res)
+        md_mask = (st.atom_name == "CA") & ~np.isin(st.res_name, never_fix_res) & chain_mask
         extra_constraints = []
 
     elif mode == "backbone-water":
         never_fix_no_water = [ligand_name, "ZN"]
         opt_mask = (
             np.isin(st.atom_name, ["CA", "C", "N", "O"])
-            & ~np.isin(st.res_name, never_fix_no_water)
+            & ~np.isin(st.res_name, never_fix_no_water) & chain_mask
         )
-        md_mask = (st.atom_name == "CA") & ~np.isin(st.res_name, never_fix_res)
+        md_mask = (st.atom_name == "CA") & ~np.isin(st.res_name, never_fix_res) & chain_mask
         extra_constraints = []
 
     elif mode == "ca-restrained":
-        opt_mask = (st.atom_name == "CA") & ~np.isin(st.res_name, never_fix_res)
+        opt_mask = (st.atom_name == "CA") & ~np.isin(st.res_name, never_fix_res) & chain_mask
         md_mask = opt_mask.copy()
         # Add harmonic restraints on backbone C/N of terminal/isolated residues
         extra_constraints = _build_terminal_restraints(st, ligand_name)
@@ -1234,7 +1246,8 @@ def run_pipeline(args):
 
     # ── Constraints ──
     opt_c, md_c, extra_constraints = setup_constraints(
-        bt_struct, ligand, mode=args.constraint_mode
+        bt_struct, ligand, mode=args.constraint_mode,
+        fix_chains=args.fix_chains,
     )
 
     # ── Steps 1 & 2: Generate both endpoints by driving bonds in both directions ──
@@ -1431,6 +1444,12 @@ Examples:
              "backbone-water = like backbone but also pin water O during opt; "
              "ca-restrained = CA fixed + harmonic restraints on isolated residue termini; "
              "none = no constraints"
+    )
+    p.add_argument(
+        "--fix-chains", nargs="*", default=None,
+        help="Only apply constraints to atoms in these chain(s). "
+             "Atoms in other chains are completely free. "
+             "E.g., --fix-chains B fixes only chain B backbone, leaving chain A free."
     )
 
     return p.parse_args()

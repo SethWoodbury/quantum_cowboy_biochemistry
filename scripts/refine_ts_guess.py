@@ -200,13 +200,15 @@ def sella_ts(atoms, outdir, fmax=0.01, max_steps=1000, internal=True):
 def run_irc(atoms, calc_fn, outdir, fmax=0.02, max_steps=200):
     """Run IRC forward and reverse from the TS to find reactant and product.
 
-    This validates that the TS actually connects two minima.
+    After IRC finds the approximate endpoint, FIRE+LBFGS relaxation is applied
+    to fully optimize the reactant and product geometries in their basins.
     """
     log.info("Step 3: IRC (intrinsic reaction coordinate) ...")
 
     results = {}
     for direction in ["forward", "reverse"]:
-        log.info(f"  IRC {direction} ...")
+        label = "reactant" if direction == "forward" else "product"
+        log.info(f"  IRC {direction} → {label} ...")
         irc_atoms = atoms.copy()
         irc_atoms.calc = calc_fn()
 
@@ -216,13 +218,26 @@ def run_irc(atoms, calc_fn, outdir, fmax=0.02, max_steps=200):
         try:
             irc = IRC(irc_atoms, trajectory=traj_path, logfile=log_path,
                       dx=0.1, eta=1e-4, gamma=0.4)
-            if direction == "forward":
-                irc.run(fmax=fmax, steps=max_steps, direction="forward")
-            else:
-                irc.run(fmax=fmax, steps=max_steps, direction="reverse")
+            irc.run(fmax=fmax, steps=max_steps, direction=direction)
 
-            e = irc_atoms.get_potential_energy()
-            log.info(f"    {direction}: E={e * EV_TO_KCAL:.1f} kcal/mol")
+            e_irc = irc_atoms.get_potential_energy()
+            log.info(f"    IRC endpoint: E={e_irc * EV_TO_KCAL:.1f} kcal/mol")
+
+            # Relax the IRC endpoint to a proper minimum (FIRE → LBFGS)
+            log.info(f"    Relaxing {label} in basin (FIRE → LBFGS) ...")
+            irc_atoms.calc = calc_fn()
+
+            fire = FIRE(irc_atoms, logfile=os.path.join(outdir, f"{label}_fire.log"))
+            fire.run(fmax=0.1, steps=100)
+
+            lbfgs = LBFGS(irc_atoms, logfile=os.path.join(outdir, f"{label}_lbfgs.log"))
+            lbfgs.run(fmax=0.02, steps=300)
+
+            e_relaxed = irc_atoms.get_potential_energy()
+            fmax_relaxed = np.max(np.linalg.norm(irc_atoms.get_forces(), axis=1))
+            log.info(f"    {label} relaxed: E={e_relaxed * EV_TO_KCAL:.1f} kcal/mol, "
+                     f"fmax={fmax_relaxed:.4f} eV/A")
+
             results[direction] = irc_atoms.copy()
         except Exception as e:
             log.warning(f"    IRC {direction} failed: {e}")
