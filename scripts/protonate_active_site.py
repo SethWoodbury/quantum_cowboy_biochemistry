@@ -659,10 +659,10 @@ def determine_residue_charges(
         if covalent_bonds and key in covalent_bonds:
             cb = covalent_bonds[key]
             if resn == "LYS" and cb.get("atom") == "NZ":
-                base_charge = 0  # NZ-H is an amide, not NH3+
+                base_charge = -1  # NZ-H is NH⁻ (fills open-shell C on ligand carbamate)
                 reason = (
                     f"COVALENT BOND: NZ bonded to ligand {cb.get('ligand_atom', '?')} "
-                    f"→ amide NH (0, not NH3+ +1)"
+                    f"→ NH⁻ (-1, not NH3+ +1)"
                 )
             elif resn == "CYS" and cb.get("atom") == "SG":
                 base_charge = 0  # SG bonded to ligand = thioether, neutral
