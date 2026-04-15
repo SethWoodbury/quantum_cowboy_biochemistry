@@ -1,0 +1,16 @@
+{
+  "system": "ZAPP_i1_P1D1__bestHIT_active_site_wBB_wKCX__netCHG_0",
+  "model": "mace-mp",
+  "mode": "standard",
+  "n_atoms": 890,
+  "charge": 0,
+  "ligand": "YYE",
+  "barrier_fwd_kcal": 19.61951643977906,
+  "barrier_rev_kcal": 39.96161942481679,
+  "dE_rxn_kcal": -20.342102985037734,
+  "e_start_eV": -5745.032004139076,
+  "e_end_eV": -5745.914107742363,
+  "e_ts_eV": -5744.181234375546,
+  "elapsed_min": 157.06525415579478,
+  "freq_validation": null
+}

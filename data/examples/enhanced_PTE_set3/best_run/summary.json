@@ -1,0 +1,16 @@
+{
+  "system": "enhanced_PTE_theozyme__set_3__wBB_wKCX__netCHG_minus1",
+  "model": "mace-mp",
+  "mode": "standard",
+  "n_atoms": 475,
+  "charge": -1,
+  "ligand": "YYL",
+  "barrier_fwd_kcal": 11.739841408841844,
+  "barrier_rev_kcal": 10.995528623632772,
+  "dE_rxn_kcal": 0.7443127852090716,
+  "e_start_eV": -3090.7730839797277,
+  "e_end_eV": -3090.740808015424,
+  "e_ts_eV": -3090.2640040475117,
+  "elapsed_min": 53.92430732250214,
+  "freq_validation": null
+}

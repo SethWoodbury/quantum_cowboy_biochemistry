@@ -1,0 +1,16 @@
+{
+  "system": "frankenstein_ACHE_PTE__set_1_wBB_wKCX__netCHG_minus2",
+  "model": "mace-mp",
+  "mode": "standard",
+  "n_atoms": 1060,
+  "charge": -2,
+  "ligand": "YYL",
+  "barrier_fwd_kcal": 27.9025847713034,
+  "barrier_rev_kcal": 30.347951916652377,
+  "dE_rxn_kcal": -2.4453671453489774,
+  "e_start_eV": -6954.389681634004,
+  "e_end_eV": -6954.49572117042,
+  "e_ts_eV": -6953.179729517161,
+  "elapsed_min": 187.13036374251047,
+  "freq_validation": null
+}
