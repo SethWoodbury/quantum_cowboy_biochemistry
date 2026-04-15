@@ -375,20 +375,30 @@ def main():
     # Summary
     elapsed = time.time() - t0
 
-    e_reactant = irc_results.get("forward")
-    e_product = irc_results.get("reverse")
+    # Get IRC endpoint energies (re-attach calculator if needed)
+    e_r = e_p = None
+    reactant_atoms = irc_results.get("forward")
+    product_atoms = irc_results.get("reverse")
+
+    if reactant_atoms is not None:
+        if reactant_atoms.calc is None:
+            reactant_atoms.calc = make_calc()
+        e_r = reactant_atoms.get_potential_energy()
+
+    if product_atoms is not None:
+        if product_atoms.calc is None:
+            product_atoms.calc = make_calc()
+        e_p = product_atoms.get_potential_energy()
 
     log.info("")
     log.info("=" * 60)
     log.info("TS REFINEMENT COMPLETE")
     log.info(f"  Time: {elapsed / 60:.1f} min")
     log.info(f"  E(TS): {e_ts * EV_TO_KCAL:.1f} kcal/mol")
-    if e_reactant is not None:
-        e_r = e_reactant.get_potential_energy()
+    if e_r is not None:
         log.info(f"  E(reactant): {e_r * EV_TO_KCAL:.1f} kcal/mol")
         log.info(f"  Barrier (fwd): {(e_ts - e_r) * EV_TO_KCAL:.1f} kcal/mol")
-    if e_product is not None:
-        e_p = e_product.get_potential_energy()
+    if e_p is not None:
         log.info(f"  E(product): {e_p * EV_TO_KCAL:.1f} kcal/mol")
         log.info(f"  Barrier (rev): {(e_ts - e_p) * EV_TO_KCAL:.1f} kcal/mol")
     if freq_result:
@@ -405,12 +415,12 @@ def main():
         "e_ts_kcal": e_ts * EV_TO_KCAL,
         "elapsed_min": elapsed / 60,
     }
-    if e_reactant is not None:
-        summary["e_reactant_kcal"] = e_reactant.get_potential_energy() * EV_TO_KCAL
-        summary["barrier_fwd_kcal"] = (e_ts - e_reactant.get_potential_energy()) * EV_TO_KCAL
-    if e_product is not None:
-        summary["e_product_kcal"] = e_product.get_potential_energy() * EV_TO_KCAL
-        summary["barrier_rev_kcal"] = (e_ts - e_product.get_potential_energy()) * EV_TO_KCAL
+    if e_r is not None:
+        summary["e_reactant_kcal"] = e_r * EV_TO_KCAL
+        summary["barrier_fwd_kcal"] = (e_ts - e_r) * EV_TO_KCAL
+    if e_p is not None:
+        summary["e_product_kcal"] = e_p * EV_TO_KCAL
+        summary["barrier_rev_kcal"] = (e_ts - e_p) * EV_TO_KCAL
     if freq_result:
         summary["freq_validation"] = freq_result
 
