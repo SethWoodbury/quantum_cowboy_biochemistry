@@ -135,6 +135,265 @@ def run_pdbfixer(input_pdb: Path, output_pdb: Path, pH: float = 7.0):
 
 
 # ══════════════════════════════════════════════════════════════
+#  STEP 1d: POST-PROCESSING — fix terminals, cross-residue bonds
+# ══════════════════════════════════════════════════════════════
+
+
+def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True):
+    """Fix common issues with pdbfixer's hydrogen placement.
+
+    1. N-terminal: remove extra H to make NH2 (neutral) instead of NH3+ (charged)
+    2. C-terminal: add aldehyde H to bare C=O (becomes C(=O)H)
+    3. Cross-residue covalent bonds: detect ATOM NZ within 1.6A of HETATM C
+       and remove excess H on NZ (e.g., carbamylated lysine: NH not NH3+)
+    """
+    lines = Path(pdb_path).read_text().splitlines()
+
+    # Parse atom positions for distance checks
+    atom_records = []  # (line_idx, record_type, chain, resnum, resname, atomname, x, y, z)
+    for i, line in enumerate(lines):
+        if line.startswith(("ATOM", "HETATM")) and len(line) >= 54:
+            rec = line[:6].strip()
+            atomname = line[12:16].strip()
+            resname = line[17:20].strip()
+            chain = line[21]
+            try:
+                resnum = int(line[22:26])
+                x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
+            except ValueError:
+                continue
+            atom_records.append((i, rec, chain, resnum, resname, atomname, x, y, z))
+
+    # Identify termini (first/last residue per chain, ATOM records only)
+    chain_residues = {}
+    for _, rec, chain, resnum, resname, aname, *_ in atom_records:
+        if rec == "ATOM":
+            chain_residues.setdefault(chain, set()).add(resnum)
+
+    terminal_n = set()
+    terminal_c = set()
+    for chain, resnums in chain_residues.items():
+        srt = sorted(resnums)
+        if srt:
+            terminal_n.add((chain, srt[0]))
+            terminal_c.add((chain, srt[-1]))
+
+    lines_to_remove = set()
+    lines_to_add = []  # (insert_after_idx, new_line)
+
+    # ── Fix 1: Neutral N-termini (remove H3 to go from NH3+ → NH2) ──
+    if neutral_termini:
+        for i, rec, chain, resnum, resname, aname, x, y, z in atom_records:
+            if rec == "ATOM" and (chain, resnum) in terminal_n and aname == "H3":
+                lines_to_remove.add(i)
+                log.info(f"  Terminal fix: removed H3 on N-terminus {resname} {chain}:{resnum} (NH3+ → NH2)")
+
+    # ── Fix 2: C-terminal aldehyde H (C=O → C(=O)H) ──
+    for i, rec, chain, resnum, resname, aname, x, y, z in atom_records:
+        if rec == "ATOM" and (chain, resnum) in terminal_c and aname == "C":
+            # Find the O on the same residue
+            o_pos = None
+            for j, rec2, ch2, rn2, _, an2, ox, oy, oz in atom_records:
+                if rec2 == "ATOM" and ch2 == chain and rn2 == resnum and an2 == "O":
+                    o_pos = (ox, oy, oz)
+                    break
+
+            if o_pos is not None:
+                import numpy as np
+                c_pos = np.array([x, y, z])
+                o_vec = np.array(o_pos) - c_pos
+                o_dist = np.linalg.norm(o_vec)
+                # Place aldehyde H opposite to O, ~1.1A from C, in the C-CA-O plane
+                # Find CA
+                ca_pos = None
+                for j, rec2, ch2, rn2, _, an2, cx, cy, cz in atom_records:
+                    if rec2 == "ATOM" and ch2 == chain and rn2 == resnum and an2 == "CA":
+                        ca_pos = np.array([cx, cy, cz])
+                        break
+
+                if ca_pos is not None:
+                    # H goes opposite to O relative to C, in the C-CA-O plane
+                    ca_vec = ca_pos - c_pos
+                    ca_vec = ca_vec / np.linalg.norm(ca_vec)
+                    o_unit = o_vec / o_dist
+                    # Bisect the CA-C and opposite-O directions
+                    h_dir = ca_vec - o_unit
+                    h_dir = h_dir / np.linalg.norm(h_dir)
+                    h_pos = c_pos + h_dir * 1.10  # C-H bond ~1.1 A
+
+                    # Format PDB ATOM line
+                    h_line = (
+                        f"ATOM  {0:>5d}  HXT {resname:>3s} {chain}{resnum:>4d}    "
+                        f"{h_pos[0]:>8.3f}{h_pos[1]:>8.3f}{h_pos[2]:>8.3f}"
+                        f"  1.00  0.00           H  "
+                    )
+                    lines_to_add.append((i, h_line))
+                    log.info(f"  Terminal fix: added aldehyde H (HXT) on C-terminus {resname} {chain}:{resnum}")
+
+    # ── Fix 3: Cross-residue covalent bonds (carbamylated LYS etc.) ──
+    # Find ATOM nitrogen atoms within 1.6A of any HETATM carbon
+    import math
+    atom_n_records = [(i, chain, resnum, resname, aname, x, y, z)
+                      for i, rec, chain, resnum, resname, aname, x, y, z in atom_records
+                      if rec == "ATOM" and aname in ("NZ", "NE2", "ND1", "SG")]
+    hetatm_c_records = [(i, chain, resnum, resname, aname, x, y, z)
+                        for i, rec, chain, resnum, resname, aname, x, y, z in atom_records
+                        if rec == "HETATM" and aname.startswith("C")]
+
+    for ai, ach, arn, arsn, aan, ax, ay, az in atom_n_records:
+        for hi, hch, hrn, hrsn, han, hx, hy, hz in hetatm_c_records:
+            d = math.sqrt((ax-hx)**2 + (ay-hy)**2 + (az-hz)**2)
+            if d < 1.65:  # covalent bond distance
+                log.info(
+                    f"  Cross-residue bond: {arsn} {ach}:{arn} {aan} → "
+                    f"{hrsn} {hch}:{hrn} {han} ({d:.2f} A)"
+                )
+                # This atom is covalently bonded to the ligand
+                # Remove excess H: NZ should have at most 1 H (NH), not 3 (NH3+)
+                if aan == "NZ":
+                    # Find all HZ* atoms on this residue and keep only HZ1
+                    hz_indices = [
+                        idx for idx, rec2, ch2, rn2, _, an2, *_ in atom_records
+                        if rec2 == "ATOM" and ch2 == ach and rn2 == arn
+                        and an2.startswith("HZ") and an2 != "HZ1"
+                    ]
+                    for hz_idx in hz_indices:
+                        lines_to_remove.add(hz_idx)
+                    if hz_indices:
+                        log.info(
+                            f"    Removed {len(hz_indices)} excess H on {aan} "
+                            f"(covalent bond to ligand → NH, not NH3+)"
+                        )
+
+    # Apply removals and additions
+    # First sort additions by position (insert after)
+    lines_to_add.sort(key=lambda x: x[0], reverse=True)
+
+    new_lines = []
+    for i, line in enumerate(lines):
+        if i not in lines_to_remove:
+            new_lines.append(line)
+        # Check if we need to insert after this line
+        for insert_after, new_line in lines_to_add:
+            if i == insert_after:
+                new_lines.append(new_line)
+
+    Path(pdb_path).write_text("\n".join(new_lines) + "\n")
+
+
+def relax_hydrogens_xtb(pdb_path: Path, charge: int = 0):
+    """Optionally relax hydrogen positions using xTB (GFN2, ~seconds on CPU).
+
+    Fixes sp2/sp3 geometry issues by optimizing H positions while freezing
+    all heavy atoms. Extremely cheap — seconds for 100-atom systems.
+    """
+    XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
+    if not os.path.isfile(XTB_BIN):
+        log.warning(f"xTB not found at {XTB_BIN} — skipping H relaxation")
+        return
+
+    import numpy as np
+
+    # Read PDB and extract ALL atoms (ATOM + HETATM) for xTB
+    all_lines = Path(pdb_path).read_text().splitlines()
+    coord_lines = [l for l in all_lines if l.startswith(("ATOM", "HETATM")) and len(l) >= 54]
+
+    elements = []
+    positions = []
+    heavy_indices = []  # 1-indexed for xTB constraint file
+
+    for idx, line in enumerate(coord_lines):
+        el = line[76:78].strip()
+        if not el:
+            # Fallback: guess from atom name
+            aname = line[12:16].strip()
+            el = aname[0] if aname[0].isalpha() else aname[1]
+        elements.append(el)
+        x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
+        positions.append((x, y, z))
+        if el != "H":
+            heavy_indices.append(idx + 1)  # 1-indexed
+
+    if not heavy_indices:
+        return
+
+    # Write XYZ for xTB
+    tmpdir = Path(pdb_path).parent / ".xtb_tmp"
+    tmpdir.mkdir(exist_ok=True)
+
+    xyz_file = tmpdir / "input.xyz"
+    with open(xyz_file, "w") as f:
+        f.write(f"{len(elements)}\n")
+        f.write(f"charge={charge}\n")
+        for el, (x, y, z) in zip(elements, positions):
+            f.write(f"{el:2s} {x:12.6f} {y:12.6f} {z:12.6f}\n")
+
+    # Write constraint file (fix all heavy atoms)
+    fix_file = tmpdir / "fix.inp"
+    # Format: $fix atoms: 1,2,3,...  $end
+    idx_str = ",".join(str(i) for i in heavy_indices)
+    with open(fix_file, "w") as f:
+        f.write(f"$fix\n  atoms: {idx_str}\n$end\n")
+
+    # Run xTB optimization
+    log.info(f"  xTB H relaxation: {len(elements)} atoms, {len(heavy_indices)} frozen ...")
+    result = subprocess.run(
+        [XTB_BIN, str(xyz_file), "--opt", "tight", "--input", str(fix_file),
+         "--gfn", "2", "--chrg", str(charge)],
+        capture_output=True, text=True, timeout=120,
+        cwd=str(tmpdir),
+    )
+
+    opt_xyz = tmpdir / "xtbopt.xyz"
+    if not opt_xyz.exists():
+        log.warning(f"  xTB optimization failed: {result.stderr[-200:]}")
+        # Cleanup
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return
+
+    # Read optimized positions
+    opt_lines = opt_xyz.read_text().splitlines()
+    new_positions = []
+    for line in opt_lines[2:]:  # skip header
+        parts = line.split()
+        if len(parts) >= 4:
+            new_positions.append((float(parts[1]), float(parts[2]), float(parts[3])))
+
+    if len(new_positions) != len(positions):
+        log.warning("  xTB output atom count mismatch — skipping")
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return
+
+    # Update ONLY hydrogen positions in the PDB
+    coord_idx = 0
+    new_pdb_lines = []
+    for line in all_lines:
+        if line.startswith(("ATOM", "HETATM")) and len(line) >= 54:
+            el = line[76:78].strip()
+            if not el:
+                aname = line[12:16].strip()
+                el = aname[0] if aname[0].isalpha() else aname[1]
+
+            if el == "H" and coord_idx < len(new_positions):
+                x, y, z = new_positions[coord_idx]
+                line = line[:30] + f"{x:8.3f}{y:8.3f}{z:8.3f}" + line[54:]
+
+            coord_idx += 1
+            new_pdb_lines.append(line)
+        else:
+            new_pdb_lines.append(line)
+
+    Path(pdb_path).write_text("\n".join(new_pdb_lines) + "\n")
+    log.info("  xTB H relaxation done (sp2/sp3 geometry fixed)")
+
+    # Cleanup
+    import shutil
+    shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ══════════════════════════════════════════════════════════════
 #  STEP 1b: PARSE REDUCE DIAGNOSTICS — metal coordination
 # ══════════════════════════════════════════════════════════════
 
@@ -444,6 +703,7 @@ def protonate_active_site(
     neutral_termini: bool = True,
     user_overrides: dict | None = None,
     flip: bool = True,
+    relax_h: bool = False,
 ) -> dict:
     """Protonate a protein active site cluster.
 
@@ -479,10 +739,19 @@ def protonate_active_site(
     log.info("Step 1c: Running pdbfixer (full hydrogen addition) ...")
     run_pdbfixer(input_pdb, output_pdb, pH=pH)
 
+    # Step 1d: Post-process — fix terminals, cross-residue covalent bonds
+    log.info("Step 1d: Post-processing hydrogens ...")
+    postprocess_hydrogens(output_pdb, neutral_termini=neutral_termini)
+
     if metal_coord:
         log.info(f"  Found {len(metal_coord)} metal-coordinating residue(s)")
     else:
         log.info("  No metal coordination detected")
+
+    # Step 1e: Optional xTB H relaxation (fixes sp2/sp3 geometry)
+    if relax_h:
+        log.info("Step 1e: xTB hydrogen relaxation ...")
+        relax_hydrogens_xtb(output_pdb, charge=ligand_charge)
 
     # Step 2: propka pKa prediction
     log.info("Step 2: Running propka (pKa prediction) ...")
@@ -593,6 +862,8 @@ Examples:
                    help="Treat termini as charged (NH3+/COO-) instead of neutral")
     p.add_argument("--override", nargs="*", default=[],
                    help="Manual charge overrides: CHAIN:RESNUM:CHARGE (e.g. A:1:+1 C:3:0)")
+    p.add_argument("--relax-h", action="store_true",
+                   help="Relax hydrogen positions with xTB (fixes sp2/sp3 geometry, ~seconds)")
     p.add_argument("--summary-json", default=None,
                    help="Write summary JSON to this path")
 
@@ -616,6 +887,7 @@ Examples:
         neutral_termini=not args.charged_termini,
         user_overrides=user_overrides if user_overrides else None,
         flip=not args.no_flip,
+        relax_h=args.relax_h,
     )
 
     if args.summary_json:
