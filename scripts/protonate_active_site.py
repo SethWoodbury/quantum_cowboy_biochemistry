@@ -212,12 +212,12 @@ def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True):
                         break
 
                 if ca_pos is not None:
-                    # H goes opposite to O relative to C, in the C-CA-O plane
-                    ca_vec = ca_pos - c_pos
-                    ca_vec = ca_vec / np.linalg.norm(ca_vec)
+                    # sp2 aldehyde: H is the third arm at ~120° from both CA and O
+                    # Direction = -(CA_unit + O_unit) gives the vector opposite
+                    # to the bisector of CA-C-O, which is the sp2 third arm
+                    ca_unit = (ca_pos - c_pos) / np.linalg.norm(ca_pos - c_pos)
                     o_unit = o_vec / o_dist
-                    # Bisect the CA-C and opposite-O directions
-                    h_dir = ca_vec - o_unit
+                    h_dir = -(ca_unit + o_unit)
                     h_dir = h_dir / np.linalg.norm(h_dir)
                     h_pos = c_pos + h_dir * 1.10  # C-H bond ~1.1 A
 
