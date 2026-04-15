@@ -1,0 +1,30 @@
+[project]
+name = "quantum-cowboy-biochemistry"
+version = "0.1.0"
+description = "One-stop shop for enzyme quantum chemistry: active site prep, MLFF NEB/TS searches, and QM job management"
+authors = [
+    { name = "Seth M. Woodbury", email = "woodbuse@uw.edu" },
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "biotite",
+]
+
+[project.optional-dependencies]
+mlff = ["ase", "mace-torch", "sella"]
+qm = ["ase"]
+all = ["ase", "mace-torch", "sella", "biotite"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["qcb*"]
+
+[tool.ruff]
+lint.select = ["I", "UP", "F", "E", "W"]
+lint.ignore = ["E501"]
