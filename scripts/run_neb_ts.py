@@ -698,13 +698,14 @@ def generate_endpoints(
     spring_k=6.0, spring_fmax=5.0,
     fmax_spring=0.10, fmax_final=0.04,
     md_steps=100, md_temp=300.0,
+    unidirectional=False,
 ):
-    """Generate both reactant and product states by driving bonds in BOTH directions.
+    """Generate reactant and product states for NEB.
 
-    From the input PDB (which may be near the TS), we:
-      - Drive bonds TOWARD reactant geometry (reverse the reaction)
-      - Drive bonds TOWARD product geometry (forward the reaction)
-    This ensures proper endpoints regardless of where the input PDB starts.
+    If bidirectional (default): drives bonds BOTH ways from input.
+    If unidirectional: relaxes input as start, drives bonds forward for product only.
+      Use unidirectional for inputs that are already near the reactant geometry
+      or for chimeric/docked structures where reverse driving creates bad states.
     """
     if ligand_name not in BOND_BREAKING_DEFS:
         raise ValueError(
@@ -730,17 +731,31 @@ def generate_endpoints(
         else:
             rev_defs.append((atom1, atom2, target_r, mode))
 
-    log.info("Step 1: Generating reactant (start) state ...")
-    log.info("  Driving bonds TOWARD reactant geometry (reversing reaction)")
-    atoms_start = atoms.copy()
-    atoms_start.calc = atoms.calc
-    atoms_start.info = atoms.info.copy()
-    start = _drive_and_relax(
-        atoms_start, st, ligand_name, opt_constraint, md_constraint, outdir, "start",
-        spring_defs=rev_defs, spring_k=spring_k, spring_fmax=spring_fmax,
-        fmax_spring=fmax_spring, fmax_final=fmax_final,
-        md_steps=md_steps, md_temp=md_temp,
-    )
+    if not unidirectional:
+        log.info("Step 1: Generating reactant (start) state ...")
+        log.info("  Driving bonds TOWARD reactant geometry (reversing reaction)")
+        atoms_start = atoms.copy()
+        atoms_start.calc = atoms.calc
+        atoms_start.info = atoms.info.copy()
+        start = _drive_and_relax(
+            atoms_start, st, ligand_name, opt_constraint, md_constraint, outdir, "start",
+            spring_defs=rev_defs, spring_k=spring_k, spring_fmax=spring_fmax,
+            fmax_spring=fmax_spring, fmax_final=fmax_final,
+            md_steps=md_steps, md_temp=md_temp,
+        )
+    else:
+        log.info("Step 1: Relaxing input as reactant (unidirectional mode) ...")
+        atoms_start = atoms.copy()
+        atoms_start.calc = atoms.calc
+        atoms_start.info = atoms.info.copy()
+        # Simple relaxation without spring driving
+        atoms_start.constraints = [opt_constraint] if opt_constraint else []
+        opt = LBFGS(atoms_start, logfile=os.path.join(outdir, "opt-start-relax.log"))
+        opt.run(fmax=fmax_final, steps=500)
+        start = atoms_start.copy()
+        outfile = os.path.join(outdir, "relaxation-start.xyz")
+        write(outfile, start)
+        log.info(f"  Reactant relaxed (fmax={fmax_final})")
 
     log.info("Step 2: Generating product (end) state ...")
     log.info("  Driving bonds TOWARD product geometry (forward reaction)")
@@ -1279,6 +1294,7 @@ def run_pipeline(args):
         spring_k=args.spring_k, spring_fmax=args.spring_fmax,
         fmax_spring=args.fmax_end_spring, fmax_final=args.fmax_end_final,
         md_steps=args.md_steps, md_temp=args.md_temp,
+        unidirectional=args.unidirectional,
     )
     # Switch to primary model (--model) for energy evaluation and NEB/TS
     start.calc = make_calc(for_neb=True)
@@ -1472,6 +1488,11 @@ Examples:
              "Atoms in other chains are completely free. "
              "E.g., --fix-chains B fixes only chain B backbone, leaving chain A free."
     )
+    p.add_argument("--unidirectional", action="store_true",
+                   help="Only drive bonds FORWARD (to product). Use the relaxed input as "
+                        "reactant instead of reverse-driving. Best for inputs that are "
+                        "already near reactant geometry or chimeric structures where "
+                        "reverse driving creates bad states.")
 
     return p.parse_args()
 
