@@ -1,0 +1,16 @@
+{
+  "system": "input",
+  "model": "mace-mh",
+  "mode": "standard",
+  "n_atoms": 1060,
+  "charge": 0,
+  "ligand": "YYL",
+  "barrier_fwd_kcal": 37.82565175543345,
+  "barrier_rev_kcal": 33.702171294407044,
+  "dE_rxn_kcal": 4.123480461026403,
+  "e_start_eV": -852018.4284957702,
+  "e_end_eV": -852018.2496874643,
+  "e_ts_eV": -852016.7882453136,
+  "elapsed_min": 139.63488757212957,
+  "freq_validation": null
+}
