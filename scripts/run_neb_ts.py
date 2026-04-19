@@ -265,6 +265,16 @@ BOND_BREAKING_DEFS = {
         ("C7", "C8", 2.1, "repulsive"),
         ("C7", "C5", 1.4, "attractive"),
     ],
+    # XUW: PTE substrate with KCX variant (O3 nucleophile, O7 leaving group)
+    "XUW": [
+        ("P1", "O3", 1.4, "attractive"),
+        ("P1", "O7", 2.1, "repulsive"),
+    ],
+    # YZW: PTE substrate with GLU variant (O1 nucleophile, O5 leaving group)
+    "YZW": [
+        ("P1", "O1", 1.4, "attractive"),
+        ("P1", "O5", 2.1, "repulsive"),
+    ],
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -398,7 +408,7 @@ def load_structure(pdb_path):
         charge = 0
 
     # Auto-detect ligand
-    known_ligands = ["YYL", "YYE", "YYF", "PT4"]
+    known_ligands = ["YYL", "YYE", "YYF", "PT4", "XUW", "YZW"]
     found = [r for r in known_ligands if r in np.unique(st.res_name)]
     if len(found) != 1:
         raise ValueError(
