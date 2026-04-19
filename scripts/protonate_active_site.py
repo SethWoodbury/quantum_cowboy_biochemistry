@@ -168,7 +168,10 @@ def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True) -> dict:
                 continue
             atom_records.append((i, rec, chain, resnum, resname, atomname, x, y, z))
 
-    # Identify termini (first/last residue per chain, ATOM records only)
+    # Identify fragment termini — NOT just first/last residue per chain,
+    # but every residue that has a gap in numbering (non-consecutive).
+    # E.g., residues 55,56,57,131,132,169 → fragments [55-57], [131-132], [169]
+    # Each fragment start is an N-terminus, each fragment end is a C-terminus.
     chain_residues = {}
     for _, rec, chain, resnum, resname, aname, *_ in atom_records:
         if rec == "ATOM":
@@ -178,19 +181,77 @@ def postprocess_hydrogens(pdb_path: Path, neutral_termini: bool = True) -> dict:
     terminal_c = set()
     for chain, resnums in chain_residues.items():
         srt = sorted(resnums)
-        if srt:
-            terminal_n.add((chain, srt[0]))
-            terminal_c.add((chain, srt[-1]))
+        if not srt:
+            continue
+        # Walk through sorted residue numbers and find gaps
+        terminal_n.add((chain, srt[0]))  # first residue is always N-terminal
+        for i in range(1, len(srt)):
+            if srt[i] - srt[i - 1] > 1:
+                # Gap found: previous residue is C-terminal, current is N-terminal
+                terminal_c.add((chain, srt[i - 1]))
+                terminal_n.add((chain, srt[i]))
+        terminal_c.add((chain, srt[-1]))  # last residue is always C-terminal
+
+    log.info(f"  Fragment termini: {len(terminal_n)} N-term, {len(terminal_c)} C-term")
 
     lines_to_remove = set()
     lines_to_add = []  # (insert_after_idx, new_line)
 
-    # ── Fix 1: Neutral N-termini (remove H3 to go from NH3+ → NH2) ──
+    # ── Fix 1: Neutral N-termini → ensure exactly 2 H on N (NH2) ──
     if neutral_termini:
-        for i, rec, chain, resnum, resname, aname, x, y, z in atom_records:
-            if rec == "ATOM" and (chain, resnum) in terminal_n and aname == "H3":
-                lines_to_remove.add(i)
-                log.info(f"  Terminal fix: removed H3 on N-terminus {resname} {chain}:{resnum} (NH3+ → NH2)")
+        for chain_resnum in terminal_n:
+            chain, resnum = chain_resnum
+            # Count existing H atoms on N for this residue
+            n_idx = None
+            h_on_n = []
+            for i, rec, ch, rn, resname, aname, x, y, z in atom_records:
+                if rec == "ATOM" and ch == chain and rn == resnum:
+                    if aname == "N":
+                        n_idx = i
+                    elif aname in ("H", "H1", "H2", "H3", "HN"):
+                        h_on_n.append((i, aname, x, y, z))
+
+            if len(h_on_n) == 3:
+                # NH3+ → remove H3 to get NH2
+                for i, aname, *_ in h_on_n:
+                    if aname == "H3":
+                        lines_to_remove.add(i)
+                        resname_str = next((rn for _, _, ch, rn, rname, _, *_ in atom_records if ch == chain and rn == resnum), "?")
+                        log.info(f"  Terminal fix: removed H3 on {chain}:{resnum} (NH3+ → NH2)")
+            elif len(h_on_n) == 1:
+                # Only 1 H (peptide-like) → add a second H to make NH2
+                # Place H2 using N, CA, and existing H geometry
+                import numpy as np
+                n_pos = None
+                ca_pos = None
+                h1_pos = None
+                for _, rec, ch, rn, _, aname, x, y, z in atom_records:
+                    if rec == "ATOM" and ch == chain and rn == resnum:
+                        if aname == "N":
+                            n_pos = np.array([x, y, z])
+                        elif aname == "CA":
+                            ca_pos = np.array([x, y, z])
+                if n_pos is not None and ca_pos is not None and h_on_n:
+                    h1_pos = np.array(h_on_n[0][2:5])
+                    # Place H2 to make a tetrahedral-like NH2:
+                    # H2 direction = mirror H1 across the N-CA axis
+                    ca_dir = (ca_pos - n_pos) / np.linalg.norm(ca_pos - n_pos)
+                    h1_dir = h1_pos - n_pos
+                    # Project h1 onto ca_dir and reflect
+                    proj = np.dot(h1_dir, ca_dir) * ca_dir
+                    h2_dir = 2 * proj - h1_dir
+                    h2_dir = h2_dir / np.linalg.norm(h2_dir) * 1.01
+                    h2_pos = n_pos + h2_dir
+                    resname_str = next((rname for _, _, ch, rn, rname, _, *_ in atom_records if ch == chain and rn == resnum), "UNK")
+                    h_line = (
+                        f"ATOM  {0:>5d}  H2  {resname_str:>3s} {chain}{resnum:>4d}    "
+                        f"{h2_pos[0]:>8.3f}{h2_pos[1]:>8.3f}{h2_pos[2]:>8.3f}"
+                        f"  1.00  0.00           H  "
+                    )
+                    lines_to_add.append((n_idx, h_line))
+                    log.info(f"  Terminal fix: added H2 on {chain}:{resnum} (NH → NH2)")
+            elif len(h_on_n) == 0 and n_idx is not None:
+                log.warning(f"  Terminal: {chain}:{resnum} N has no H — skipping")
 
     # ── Fix 2: C-terminal aldehyde H (C=O → C(=O)H) ──
     for i, rec, chain, resnum, resname, aname, x, y, z in atom_records:
@@ -560,6 +621,8 @@ def determine_residue_charges(
     terminal_n = set()  # (chain, resnum) of N-terminal residues
     terminal_c = set()  # (chain, resnum) of C-terminal residues
 
+    residue_atoms = {}  # {(chain, resnum): set of atom names}
+
     with open(pdb_path) as f:
         chain_residues = {}  # {chain: [resnum, ...]}
         for line in f:
@@ -568,19 +631,26 @@ def determine_residue_charges(
             chain = line[21]
             resnum = int(line[22:26])
             resn = line[17:20].strip()
+            aname = line[12:16].strip()
             key = (chain, resnum)
             if key not in residues:
                 residues[key] = resn
+            residue_atoms.setdefault(key, set()).add(aname)
             if chain not in chain_residues:
                 chain_residues[chain] = []
             if resnum not in chain_residues[chain]:
                 chain_residues[chain].append(resnum)
 
-    # Identify termini
+    # Identify fragment termini (same logic as postprocess_hydrogens)
     for chain, resnums in chain_residues.items():
-        resnums_sorted = sorted(resnums)
-        if resnums_sorted:
-            terminal_n.add((chain, resnums_sorted[0]))
+        resnums_sorted = sorted(set(resnums))
+        if not resnums_sorted:
+            continue
+        terminal_n.add((chain, resnums_sorted[0]))
+        for i in range(1, len(resnums_sorted)):
+            if resnums_sorted[i] - resnums_sorted[i - 1] > 1:
+                terminal_c.add((chain, resnums_sorted[i - 1]))
+                terminal_n.add((chain, resnums_sorted[i]))
             terminal_c.add((chain, resnums_sorted[-1]))
 
     # Assign charges
@@ -601,8 +671,19 @@ def determine_residue_charges(
         base_charge = STANDARD_CHARGES.get(resn, 0)
         reason = "standard"
 
-        # Check propka for pKa-shifted protonation
-        if key in pka_dict:
+        # Check for pre-existing H on carboxylate oxygens (ASP/GLU).
+        # If HD2/HE2 is already present in the PDB, the residue was intentionally
+        # protonated — override propka and treat as neutral.
+        atoms_in_res = residue_atoms.get(key, set())
+        if resn == "ASP" and any(a in atoms_in_res for a in ("HD2", "HD1")):
+            base_charge = 0
+            reason = "PRE-EXISTING H on carboxylate → protonated (neutral, not -1)"
+        elif resn == "GLU" and any(a in atoms_in_res for a in ("HE2", "HE1")):
+            base_charge = 0
+            reason = "PRE-EXISTING H on carboxylate → protonated (neutral, not -1)"
+
+        # Check propka for pKa-shifted protonation (only if not already overridden)
+        elif key in pka_dict:
             pka_info = pka_dict[key]
             pka_val = pka_info["pKa"]
 
@@ -741,6 +822,7 @@ def protonate_active_site(
     user_overrides: dict | None = None,
     flip: bool = True,
     relax_h: bool = False,
+    strip_h: bool = False,
 ) -> dict:
     """Protonate a protein active site cluster.
 
@@ -762,6 +844,29 @@ def protonate_active_site(
     log.info(f"Input: {input_pdb}")
     log.info(f"Output: {output_pdb}")
     log.info(f"pH: {pH}, ligand charge: {ligand_charge:+d}")
+
+    # Step 0: Optionally strip existing protein H before re-protonating
+    if strip_h:
+        log.info("Step 0: Stripping existing protein hydrogens ...")
+        stripped_pdb = Path(str(input_pdb) + ".stripped.pdb")
+        lines = Path(input_pdb).read_text().splitlines()
+        kept = []
+        n_stripped = 0
+        for line in lines:
+            if line.startswith("ATOM") and len(line) >= 78:
+                el = line[76:78].strip()
+                if el == "H":
+                    n_stripped += 1
+                    continue
+            elif line.startswith("ATOM") and len(line) >= 16:
+                aname = line[12:16].strip()
+                if aname.startswith("H") and aname not in ("HG", "HG1"):
+                    n_stripped += 1
+                    continue
+            kept.append(line)
+        stripped_pdb.write_text("\n".join(kept) + "\n")
+        log.info(f"  Stripped {n_stripped} H atoms from protein")
+        input_pdb = stripped_pdb
 
     # Step 1a: Run reduce for metal-coordination detection (diagnostic only)
     log.info("Step 1a: Running reduce (metal coordination detection) ...")
@@ -918,6 +1023,9 @@ Examples:
                    help="Don't optimize HIS/ASN/GLN orientations (faster)")
     p.add_argument("--charged-termini", action="store_true",
                    help="Treat termini as charged (NH3+/COO-) instead of neutral")
+    p.add_argument("--strip-h", action="store_true",
+                   help="Strip ALL existing protein hydrogens before adding new ones. "
+                        "Use when input has incorrect/partial H that confuse pdbfixer.")
     p.add_argument("--override", nargs="*", default=[],
                    help="Manual charge overrides: CHAIN:RESNUM:CHARGE (e.g. A:1:+1 C:3:0)")
     p.add_argument("--relax-h", action="store_true",
@@ -946,6 +1054,7 @@ Examples:
         user_overrides=user_overrides if user_overrides else None,
         flip=not args.no_flip,
         relax_h=args.relax_h,
+        strip_h=args.strip_h,
     )
 
     if args.summary_json:
