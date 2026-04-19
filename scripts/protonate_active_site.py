@@ -698,8 +698,23 @@ def determine_residue_charges(
             elif resn == "HIS":
                 # Normally neutral. Doubly-protonated (+1) if pKa > pH
                 if pka_val is not None and pka_val > pH:
-                    base_charge = 1  # HIP = +1
-                    reason = f"propka pKa={pka_val:.1f} > pH={pH} → doubly protonated (+1)"
+                    # Check if both HD1 and HE2 are actually present.
+                    # If pdbfixer couldn't place HD1 (due to clash), it's singly protonated.
+                    has_hd1 = "HD1" in atoms_in_res
+                    has_he2 = "HE2" in atoms_in_res
+                    if has_hd1 and has_he2:
+                        base_charge = 1  # HIP = +1
+                        reason = f"propka pKa={pka_val:.1f} > pH → doubly protonated (+1, HD1+HE2 present)"
+                    elif has_hd1 or has_he2:
+                        base_charge = 0  # only one H on ring N → singly protonated
+                        missing = "HD1" if not has_hd1 else "HE2"
+                        reason = (
+                            f"propka pKa={pka_val:.1f} suggests +1, but {missing} missing "
+                            f"(likely clash) → singly protonated (0)"
+                        )
+                    else:
+                        base_charge = 0
+                        reason = f"propka pKa={pka_val:.1f} suggests +1, but no ring H found → neutral (0)"
                 else:
                     reason = f"propka pKa={pka_val:.1f} → singly protonated (0)"
 
