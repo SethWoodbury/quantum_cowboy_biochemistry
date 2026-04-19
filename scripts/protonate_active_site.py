@@ -128,42 +128,65 @@ def _rebuild_missing_backbone(input_pdb: Path) -> Path:
             ca_cb = cb_pos - ca_pos
             ca_cb_norm = ca_cb / np.linalg.norm(ca_cb)
 
-            # Create a perpendicular vector
+            # Build a proper tetrahedral frame from CA with CB as one arm.
+            # For L-amino acid: N, C, H are the other 3 tetrahedral arms.
+            # Tetrahedral angle = 109.47°, cos(109.47°) = -1/3
+            #
+            # Strategy: place N and C at proper tetrahedral angles from CB,
+            # with L-chirality (right-handed cross product N×C · CB > 0).
             arb = np.array([1, 0, 0]) if abs(ca_cb_norm[0]) < 0.9 else np.array([0, 1, 0])
             perp1 = np.cross(ca_cb_norm, arb)
             perp1 = perp1 / np.linalg.norm(perp1)
             perp2 = np.cross(ca_cb_norm, perp1)
 
+            # Tetrahedral directions (relative to CB direction):
+            # The 3 other arms of a tetrahedron at angle 109.47° from CB
+            # cos(109.47°) ≈ -0.333, sin(109.47°) ≈ 0.943
+            tet_n = -0.333 * ca_cb_norm + 0.943 * (np.cos(0) * perp1 + np.sin(0) * perp2)
+            tet_c = -0.333 * ca_cb_norm + 0.943 * (np.cos(2.094) * perp1 + np.sin(2.094) * perp2)
+            # (2.094 rad = 120° rotation around CB axis)
+
             if "N" in missing:
-                # N is roughly anti to CB, tilted ~30° toward perp1 (L-chirality)
-                n_dir = -0.7 * ca_cb_norm + 0.7 * perp1
-                n_dir = n_dir / np.linalg.norm(n_dir)
+                n_dir = tet_n / np.linalg.norm(tet_n)
                 n_pos = ca_pos + n_dir * 1.47
                 new_lines.append(_make_atom_line(resname, chain, resnum, "N", n_pos, "N"))
 
             if "C" in missing:
-                # C is roughly anti to CB, tilted toward perp2
-                c_dir = -0.5 * ca_cb_norm - 0.5 * perp1 + 0.7 * perp2
-                c_dir = c_dir / np.linalg.norm(c_dir)
+                c_dir = tet_c / np.linalg.norm(tet_c)
                 c_pos = ca_pos + c_dir * 1.52
                 new_lines.append(_make_atom_line(resname, chain, resnum, "C", c_pos, "C"))
 
                 if "O" in missing:
-                    # O is on C, roughly opposite to CA from C
-                    o_dir = c_dir + 0.5 * perp2
+                    # O on C: sp2 carbonyl, ~120° from CA-C bond.
+                    # Place O in the N-CA-C plane, on the opposite side from N.
+                    ca_c_dir = (c_pos - ca_pos) / np.linalg.norm(c_pos - ca_pos)
+                    if "N" not in missing:
+                        # Use N position for plane definition
+                        n_pos_ref = n_pos if "N" in locals() else ca_pos + tet_n * 1.47
+                    else:
+                        n_pos_ref = ca_pos + tet_n * 1.47
+                    ca_n_dir = (n_pos_ref - ca_pos) / np.linalg.norm(n_pos_ref - ca_pos)
+                    # Normal to the N-CA-C plane
+                    plane_normal = np.cross(ca_n_dir, ca_c_dir)
+                    plane_normal = plane_normal / np.linalg.norm(plane_normal)
+                    # O direction: in the N-CA-C plane, 120° from CA-C toward N side
+                    in_plane_perp = np.cross(ca_c_dir, plane_normal)
+                    in_plane_perp = in_plane_perp / np.linalg.norm(in_plane_perp)
+                    # 120° from CA means: -cos(120°)*along_CA + sin(120°)*perp
+                    o_dir = 0.5 * ca_c_dir + 0.866 * in_plane_perp
                     o_dir = o_dir / np.linalg.norm(o_dir)
                     o_pos = c_pos + o_dir * 1.23
                     new_lines.append(_make_atom_line(resname, chain, resnum, "O", o_pos, "O"))
         else:
-            # No CB — place backbone atoms in arbitrary directions from CA
+            # No CB — place backbone in arbitrary but reasonable geometry
             if "N" in missing:
                 n_pos = ca_pos + np.array([1.47, 0, 0])
                 new_lines.append(_make_atom_line(resname, chain, resnum, "N", n_pos, "N"))
             if "C" in missing:
-                c_pos = ca_pos + np.array([-0.76, 1.32, 0])
+                c_pos = ca_pos + np.array([-0.76, -1.32, 0])
                 new_lines.append(_make_atom_line(resname, chain, resnum, "C", c_pos, "C"))
                 if "O" in missing:
-                    o_pos = c_pos + np.array([0, 1.23, 0])
+                    o_pos = c_pos + np.array([-1.07, -0.62, 0])
                     new_lines.append(_make_atom_line(resname, chain, resnum, "O", o_pos, "O"))
 
         log.warning(f"    Added {len([m for m in missing])} backbone atom(s): {sorted(missing)}")
@@ -189,7 +212,20 @@ def _rebuild_missing_backbone(input_pdb: Path) -> Path:
     rebuilt_pdb = Path(str(input_pdb) + ".rebuilt.pdb")
     rebuilt_pdb.write_text("\n".join(out_lines) + "\n")
     log.info(f"  Rebuilt backbone written to {rebuilt_pdb}")
+
+    # Store rebuilt atom info globally so xTB knows not to freeze them
+    global _REBUILT_ATOMS
+    _REBUILT_ATOMS = set()
+    for line in new_lines:
+        aname = line[12:16].strip()
+        chain = line[21]
+        resnum = int(line[22:26])
+        _REBUILT_ATOMS.add((chain, resnum, aname))
+    log.info(f"  {len(_REBUILT_ATOMS)} rebuilt atoms will be FREE during xTB relaxation")
+
     return rebuilt_pdb
+
+_REBUILT_ATOMS = set()  # module-level storage
 
 
 def _make_atom_line(resname, chain, resnum, atomname, pos, element):
@@ -523,17 +559,34 @@ def relax_hydrogens_xtb(pdb_path: Path, charge: int = 0):
     positions = []
     heavy_indices = []  # 1-indexed for xTB constraint file
 
+    global _REBUILT_ATOMS
+    n_freed = 0
+
     for idx, line in enumerate(coord_lines):
         el = line[76:78].strip()
+        aname = line[12:16].strip()
         if not el:
-            # Fallback: guess from atom name
-            aname = line[12:16].strip()
             el = aname[0] if aname[0].isalpha() else aname[1]
         elements.append(el)
         x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
         positions.append((x, y, z))
+
         if el != "H":
-            heavy_indices.append(idx + 1)  # 1-indexed
+            # Check if this is a rebuilt atom — if so, let it be FREE in xTB
+            chain = line[21] if len(line) > 21 else ""
+            try:
+                resnum = int(line[22:26])
+            except (ValueError, IndexError):
+                resnum = 0
+            if (chain, resnum, aname) in _REBUILT_ATOMS:
+                n_freed += 1
+                # Don't add to heavy_indices → will be free to move
+            else:
+                heavy_indices.append(idx + 1)  # 1-indexed, frozen
+        # H atoms are always free (not in heavy_indices)
+
+    if n_freed > 0:
+        log.info(f"  {n_freed} rebuilt backbone atoms will be FREE during xTB")
 
     if not heavy_indices:
         return
