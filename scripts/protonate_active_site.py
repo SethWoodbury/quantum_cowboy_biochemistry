@@ -59,6 +59,149 @@ STANDARD_CHARGES = {
 # ══════════════════════════════════════════════════════════════
 
 
+def _rebuild_missing_backbone(input_pdb: Path) -> Path:
+    """Detect and rebuild missing backbone atoms (N, C, O) on partial residues.
+
+    Some theozyme residues only have sidechain + CA (no N, C, O).
+    This builds the missing backbone atoms using standard geometry from CA/CB,
+    with correct L-amino acid chirality.
+
+    Returns the (possibly modified) PDB path.
+    """
+    import numpy as np
+
+    lines = Path(input_pdb).read_text().splitlines()
+
+    # Collect atoms per residue
+    residues = {}  # {(chain, resnum): {atomname: (line_idx, x, y, z)}}
+    resnames = {}
+    for i, line in enumerate(lines):
+        if not line.startswith("ATOM") or len(line) < 54:
+            continue
+        aname = line[12:16].strip()
+        resname = line[17:20].strip()
+        chain = line[21]
+        try:
+            resnum = int(line[22:26])
+            x, y, z = float(line[30:38]), float(line[38:46]), float(line[46:54])
+        except ValueError:
+            continue
+        key = (chain, resnum)
+        residues.setdefault(key, {})[aname] = (i, x, y, z)
+        resnames[key] = resname
+
+    # Check for missing backbone on each residue
+    required_backbone = {"N", "CA", "C", "O"}
+    new_lines = []
+    modified = False
+
+    for key, atoms in residues.items():
+        chain, resnum = key
+        resname = resnames[key]
+        present = set(atoms.keys())
+        missing = required_backbone - present
+
+        if not missing:
+            continue
+        if "CA" not in present:
+            # Can't rebuild without CA
+            log.warning(f"  Residue {resname} {chain}:{resnum} missing backbone ({missing}) "
+                        f"AND CA — cannot rebuild")
+            continue
+
+        log.warning(f"  *** PARTIAL RESIDUE: {resname} {chain}:{resnum} "
+                    f"missing {sorted(missing)} — REBUILDING ***")
+        modified = True
+
+        ca_pos = np.array(atoms["CA"][1:4])
+
+        # Get CB position if available (for chirality)
+        cb_pos = None
+        if "CB" in atoms:
+            cb_pos = np.array(atoms["CB"][1:4])
+
+        # Build missing atoms using standard geometry
+        # Standard L-amino acid: N-CA-C angle ~111°, CA-N ~1.47A, CA-C ~1.52A
+        # N is roughly opposite to CB from CA; C is roughly between N and CB
+
+        if cb_pos is not None:
+            ca_cb = cb_pos - ca_pos
+            ca_cb_norm = ca_cb / np.linalg.norm(ca_cb)
+
+            # Create a perpendicular vector
+            arb = np.array([1, 0, 0]) if abs(ca_cb_norm[0]) < 0.9 else np.array([0, 1, 0])
+            perp1 = np.cross(ca_cb_norm, arb)
+            perp1 = perp1 / np.linalg.norm(perp1)
+            perp2 = np.cross(ca_cb_norm, perp1)
+
+            if "N" in missing:
+                # N is roughly anti to CB, tilted ~30° toward perp1 (L-chirality)
+                n_dir = -0.7 * ca_cb_norm + 0.7 * perp1
+                n_dir = n_dir / np.linalg.norm(n_dir)
+                n_pos = ca_pos + n_dir * 1.47
+                new_lines.append(_make_atom_line(resname, chain, resnum, "N", n_pos, "N"))
+
+            if "C" in missing:
+                # C is roughly anti to CB, tilted toward perp2
+                c_dir = -0.5 * ca_cb_norm - 0.5 * perp1 + 0.7 * perp2
+                c_dir = c_dir / np.linalg.norm(c_dir)
+                c_pos = ca_pos + c_dir * 1.52
+                new_lines.append(_make_atom_line(resname, chain, resnum, "C", c_pos, "C"))
+
+                if "O" in missing:
+                    # O is on C, roughly opposite to CA from C
+                    o_dir = c_dir + 0.5 * perp2
+                    o_dir = o_dir / np.linalg.norm(o_dir)
+                    o_pos = c_pos + o_dir * 1.23
+                    new_lines.append(_make_atom_line(resname, chain, resnum, "O", o_pos, "O"))
+        else:
+            # No CB — place backbone atoms in arbitrary directions from CA
+            if "N" in missing:
+                n_pos = ca_pos + np.array([1.47, 0, 0])
+                new_lines.append(_make_atom_line(resname, chain, resnum, "N", n_pos, "N"))
+            if "C" in missing:
+                c_pos = ca_pos + np.array([-0.76, 1.32, 0])
+                new_lines.append(_make_atom_line(resname, chain, resnum, "C", c_pos, "C"))
+                if "O" in missing:
+                    o_pos = c_pos + np.array([0, 1.23, 0])
+                    new_lines.append(_make_atom_line(resname, chain, resnum, "O", o_pos, "O"))
+
+        log.warning(f"    Added {len([m for m in missing])} backbone atom(s): {sorted(missing)}")
+        log.warning(f"    *** These will be relaxed by xTB — verify geometry! ***")
+
+    if not modified:
+        return input_pdb
+
+    # Insert new backbone atoms into the PDB (after the last ATOM of each residue)
+    # Find the last ATOM line index for modified residues
+    out_lines = list(lines)
+    # Sort new_lines by the residue they belong to
+    for new_line in reversed(new_lines):
+        # Find the residue in the PDB and insert after the last atom of that residue
+        resname = new_line[17:20].strip()
+        chain = new_line[21]
+        resnum = int(new_line[22:26])
+        key = (chain, resnum)
+        if key in residues:
+            last_idx = max(atoms[0] for atoms in residues[key].values())
+            out_lines.insert(last_idx + 1, new_line)
+
+    rebuilt_pdb = Path(str(input_pdb) + ".rebuilt.pdb")
+    rebuilt_pdb.write_text("\n".join(out_lines) + "\n")
+    log.info(f"  Rebuilt backbone written to {rebuilt_pdb}")
+    return rebuilt_pdb
+
+
+def _make_atom_line(resname, chain, resnum, atomname, pos, element):
+    """Create a PDB ATOM line."""
+    import numpy as np
+    return (
+        f"ATOM  {0:>5d} {atomname:>4s} {resname:>3s} {chain}{resnum:>4d}    "
+        f"{pos[0]:>8.3f}{pos[1]:>8.3f}{pos[2]:>8.3f}"
+        f"  1.00  0.00           {element:>2s}  "
+    )
+
+
 def run_reduce_for_diagnostics(input_pdb: Path) -> tuple[str, Path]:
     """Run reduce on the input PDB to get metal-coordination diagnostics.
 
@@ -882,6 +1025,9 @@ def protonate_active_site(
         stripped_pdb.write_text("\n".join(kept) + "\n")
         log.info(f"  Stripped {n_stripped} H atoms from protein")
         input_pdb = stripped_pdb
+
+    # Step 0b: Rebuild missing backbone atoms on partial residues
+    input_pdb = _rebuild_missing_backbone(input_pdb)
 
     # Step 1a: Run reduce for metal-coordination detection (diagnostic only)
     log.info("Step 1a: Running reduce (metal coordination detection) ...")
