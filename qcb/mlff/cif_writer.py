@@ -102,38 +102,64 @@ def write_ts_cif(
             log.info(f"  Bonds from xTB WBO: {bond_list.get_bond_count()} bonds "
                      f"({n_aromatic} aromatic)")
 
+        # Always run RDKit as cross-check (instant, zero cost)
+        rdkit_bonds = {}
+        rdkit_formal = {}
+        try:
+            mol = atom_array_to_rdkit(
+                atom_array, infer_bonds=True, system_charge=total_charge,
+            )
+            if mol is not None:
+                from rdkit import Chem
+                for bond in mol.GetBonds():
+                    i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+                    key = (min(i, j), max(i, j))
+                    rdkit_bonds[key] = bond.GetBondTypeAsDouble()
+                for atom in mol.GetAtoms():
+                    fc = atom.GetFormalCharge()
+                    if fc != 0:
+                        rdkit_formal[atom.GetIdx()] = fc
+                log.info(f"  RDKit cross-check: {len(rdkit_bonds)} bonds, "
+                         f"{len(rdkit_formal)} formal charges")
+        except Exception as e:
+            log.info(f"  RDKit cross-check skipped: {e}")
+
+        if not wiberg_bond_orders:
+            # No xTB WBO — use RDKit as primary
+            for (i, j), bo in rdkit_bonds.items():
+                if bo <= 1.0:
+                    btype = bonds.BondType.SINGLE
+                elif bo <= 1.5:
+                    btype = bonds.BondType.AROMATIC_SINGLE
+                elif bo <= 2.0:
+                    btype = bonds.BondType.DOUBLE
+                else:
+                    btype = bonds.BondType.TRIPLE
+                bond_list.add_bond(i, j, btype)
+            atom_array.bonds = bond_list
+            log.info(f"  Using RDKit bonds (no xTB WBO available): {bond_list.get_bond_count()}")
+
         else:
-            # Fallback: RDKit bond perception from 3D geometry
-            try:
-                mol = atom_array_to_rdkit(
-                    atom_array, infer_bonds=True, system_charge=total_charge,
-                )
-                if mol is not None:
-                    from rdkit import Chem
-                    for bond in mol.GetBonds():
-                        i = bond.GetBeginAtomIdx()
-                        j = bond.GetEndAtomIdx()
-                        is_aromatic = bond.GetIsAromatic()
-                        bt = bond.GetBondType()
+            # xTB WBO is primary — compare with RDKit to flag discrepancies
+            discrepancies = 0
+            for (i, j), wbo in wiberg_bond_orders.items():
+                key = (min(i, j), max(i, j))
+                if key in rdkit_bonds:
+                    rdkit_bo = rdkit_bonds[key]
+                    # Flag if bond order disagrees by >0.5
+                    if abs(wbo - rdkit_bo) > 0.5:
+                        discrepancies += 1
+                        if discrepancies <= 5:  # don't spam
+                            sym_i = ts_atoms.get_chemical_symbols()[i]
+                            sym_j = ts_atoms.get_chemical_symbols()[j]
+                            log.warning(f"    Bond {sym_i}({i})-{sym_j}({j}): "
+                                        f"xTB WBO={wbo:.2f} vs RDKit={rdkit_bo:.1f}")
 
-                        if is_aromatic:
-                            if bt == Chem.BondType.DOUBLE or bond.GetBondTypeAsDouble() >= 2.0:
-                                btype = bonds.BondType.AROMATIC_DOUBLE
-                            else:
-                                btype = bonds.BondType.AROMATIC_SINGLE
-                        elif bt == Chem.BondType.DOUBLE:
-                            btype = bonds.BondType.DOUBLE
-                        elif bt == Chem.BondType.TRIPLE:
-                            btype = bonds.BondType.TRIPLE
-                        else:
-                            btype = bonds.BondType.SINGLE
-
-                        bond_list.add_bond(i, j, btype)
-
-                    atom_array.bonds = bond_list
-                    log.info(f"  Bonds from RDKit (fallback): {bond_list.get_bond_count()} bonds")
-            except Exception as e:
-                log.warning(f"  Bond perception failed: {e}")
+            if discrepancies > 0:
+                log.warning(f"  *** {discrepancies} bond order discrepancies between xTB and RDKit ***")
+                log.info(f"  Using xTB WBO (preferred — from electronic structure)")
+            else:
+                log.info(f"  xTB and RDKit bond orders agree")
 
         # Write CIF using atomworks
         config = CIFWriteConfig(
