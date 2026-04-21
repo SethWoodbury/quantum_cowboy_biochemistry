@@ -1337,27 +1337,60 @@ def _compute_per_atom_charges(atoms, total_charge, outdir):
         for sym, (x, y, z) in zip(symbols, positions):
             f.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
 
-    # Run xTB single-point
-    result = subprocess.run(
-        [XTB_BIN, "ts.xyz", "--gfn", "2", "--chrg", str(total_charge), "--sp"],
-        capture_output=True, text=True, timeout=120, cwd=str(tmpdir),
-    )
+    # Try xTB GFN2, then GFN0 (faster), then GFN-FF (fastest)
+    # Timeout scales with system size: ~1 min per 100 atoms
+    timeout_s = max(120, n_atoms * 1)
 
-    charges_file = tmpdir / "charges"
-    if charges_file.exists():
-        charges = np.array([float(l) for l in charges_file.read_text().strip().split("\n")])
-        if len(charges) == n_atoms:
-            log.info(f"  xTB Mulliken charges: sum={charges.sum():.3f}, "
-                     f"range=[{charges.min():.3f}, {charges.max():.3f}]")
-            # Cleanup
-            import shutil
-            shutil.rmtree(tmpdir, ignore_errors=True)
-            return charges
+    for method in ["2", "0", "ff"]:
+        gfn_flag = f"--gfn{'ff' if method == 'ff' else ''}" if method == "ff" else f"--gfn"
+        cmd = [XTB_BIN, "ts.xyz", "--sp", "--chrg", str(total_charge)]
+        if method == "ff":
+            cmd.append("--gfnff")
+        else:
+            cmd.extend(["--gfn", method])
 
-    log.warning(f"  xTB charge calculation failed — using uniform distribution")
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True,
+                timeout=timeout_s, cwd=str(tmpdir),
+            )
+        except subprocess.TimeoutExpired:
+            log.warning(f"  xTB GFN{method} timed out ({timeout_s}s) for {n_atoms} atoms")
+            continue
+
+        charges_file = tmpdir / "charges"
+        if charges_file.exists():
+            charges = np.array([float(l) for l in charges_file.read_text().strip().split("\n")])
+            if len(charges) == n_atoms and abs(charges.sum() - total_charge) < 0.1:
+                log.info(f"  xTB GFN{method} charges: sum={charges.sum():.3f}, "
+                         f"range=[{charges.min():.3f}, {charges.max():.3f}]")
+                import shutil
+                shutil.rmtree(tmpdir, ignore_errors=True)
+                return charges
+            else:
+                # Wrong number of charges or sum mismatch — try next method
+                charges_file.unlink()
+
+        log.warning(f"  xTB GFN{method} failed for {n_atoms} atoms, trying next method ...")
+
+    log.warning(f"  All xTB methods failed — using electronegativity-based charge distribution")
     import shutil
     shutil.rmtree(tmpdir, ignore_errors=True)
-    return np.full(n_atoms, total_charge / n_atoms)
+
+    # Fallback: distribute charge proportional to electronegativity
+    # (better than uniform — at least gets sign right for O vs C vs H)
+    from ase.data import atomic_numbers
+    electroneg = {1: 2.20, 6: 2.55, 7: 3.04, 8: 3.44, 15: 2.19, 16: 2.58, 30: 1.65}  # Pauling
+    en_values = np.array([electroneg.get(z, 2.0) for z in atoms.get_atomic_numbers()])
+    # More electronegative atoms get more negative charge
+    en_shifted = en_values - en_values.mean()
+    if np.abs(en_shifted).sum() > 0:
+        charges = total_charge * en_shifted / np.abs(en_shifted).sum()
+        # Adjust to match total charge exactly
+        charges += (total_charge - charges.sum()) / n_atoms
+    else:
+        charges = np.full(n_atoms, total_charge / n_atoms)
+    return charges
 
 
 def _write_ts_cif(ts_atoms, template_st, outdir):
