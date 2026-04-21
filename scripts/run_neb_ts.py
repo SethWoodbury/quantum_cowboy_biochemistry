@@ -627,6 +627,7 @@ def _drive_and_relax(
     atoms, st, ligand_name, opt_constraint, md_constraint, outdir, label,
     spring_defs, spring_k, spring_fmax,
     fmax_spring, fmax_final, md_steps, md_temp,
+    md_strategy="short", n_md_seeds=5, anneal_peak=600.0,
 ):
     """Drive bonds with springs, relax, run MD, and polish.
 
@@ -669,24 +670,94 @@ def _drive_and_relax(
     opt2.run(fmax=fmax_spring, steps=300)
     log.info("  Opt-constrained relax done")
 
-    # Phase C: MD with LIGHTER constraints (CA-only or none — lets backbone breathe)
+    # Phase C: MD equilibration (strategy-dependent)
     if md_steps > 0:
         atoms.constraints = [md_constraint] if md_constraint else []
-        log.info(f"  Running {md_steps}-step Langevin MD at {md_temp} K (light constraints) ...")
-        md = Langevin(atoms, timestep=1.0 * units.fs, temperature_K=md_temp,
-                      friction=0.01, fixcm=False)
-
-        # Save MD snapshots for later trajectory PDB conversion
         md_snapshots = [atoms.copy()]
-        def _save_md_snap():
+
+        if md_strategy == "short":
+            # Classic single short MD
+            log.info(f"  MD strategy=short: {md_steps} steps at {md_temp} K ...")
+            md = Langevin(atoms, timestep=1.0 * units.fs, temperature_K=md_temp,
+                          friction=0.01, fixcm=False)
+            def _save_md_snap():
+                md_snapshots.append(atoms.copy())
+            md.attach(_save_md_snap, interval=max(1, md_steps // 20))
+            MaxwellBoltzmannDistribution(atoms, temperature_K=md_temp)
+            md.run(md_steps)
+
+        elif md_strategy == "annealing":
+            # Simulated annealing: heat → peak → cool
+            log.info(f"  MD strategy=annealing: {md_temp}K → {anneal_peak}K → {md_temp}K "
+                     f"({md_steps} steps total) ...")
+            ramp_steps = md_steps // 3
+            hold_steps = md_steps // 3
+            cool_steps = md_steps - ramp_steps - hold_steps
+
+            md = Langevin(atoms, timestep=1.0 * units.fs, temperature_K=md_temp,
+                          friction=0.01, fixcm=False)
+            MaxwellBoltzmannDistribution(atoms, temperature_K=md_temp)
+
+            # Heat
+            for step in range(ramp_steps):
+                t = md_temp + (anneal_peak - md_temp) * step / ramp_steps
+                md.set_temperature(temperature_K=t)
+                md.run(1)
+            # Hold at peak
+            md.set_temperature(temperature_K=anneal_peak)
+            md.run(hold_steps)
             md_snapshots.append(atoms.copy())
-        md.attach(_save_md_snap, interval=max(1, md_steps // 20))  # ~20 frames
+            # Cool
+            for step in range(cool_steps):
+                t = anneal_peak - (anneal_peak - md_temp) * step / cool_steps
+                md.set_temperature(temperature_K=t)
+                md.run(1)
+            log.info(f"  Annealing complete")
 
-        MaxwellBoltzmannDistribution(atoms, temperature_K=md_temp)
-        md.run(md_steps)
-        md_snapshots.append(atoms.copy())  # final frame
+        elif md_strategy == "multi-seed":
+            # Multiple independent short MDs, pick lowest energy
+            log.info(f"  MD strategy=multi-seed: {n_md_seeds} seeds × {md_steps} steps ...")
+            best_energy = float("inf")
+            best_atoms = atoms.copy()
+            start_positions = atoms.get_positions().copy()
 
-        # Save snapshots as xyz for later conversion to PDB
+            for seed in range(n_md_seeds):
+                atoms.set_positions(start_positions)  # reset to same starting point
+                md = Langevin(atoms, timestep=1.0 * units.fs, temperature_K=md_temp,
+                              friction=0.01, fixcm=False)
+                MaxwellBoltzmannDistribution(atoms, temperature_K=md_temp)
+                md.run(md_steps)
+
+                # Quick relax to find the minimum this seed reached
+                atoms.constraints = [opt_constraint] if opt_constraint else []
+                opt_seed = LBFGS(atoms, logfile=os.devnull)
+                opt_seed.run(fmax=0.1, steps=100)
+                e = atoms.get_potential_energy()
+
+                if e < best_energy:
+                    best_energy = e
+                    best_atoms = atoms.copy()
+                    log.info(f"    Seed {seed+1}/{n_md_seeds}: E={e*EV_TO_KCAL:.1f} kcal/mol ← new best")
+                else:
+                    log.info(f"    Seed {seed+1}/{n_md_seeds}: E={e*EV_TO_KCAL:.1f} kcal/mol")
+
+                atoms.constraints = [md_constraint] if md_constraint else []
+
+            atoms.set_positions(best_atoms.get_positions())
+            log.info(f"  Best seed: E={best_energy*EV_TO_KCAL:.1f} kcal/mol")
+
+        elif md_strategy == "long":
+            # Single long MD (md_steps should be 5000+ for this)
+            log.info(f"  MD strategy=long: {md_steps} steps at {md_temp} K ...")
+            md = Langevin(atoms, timestep=1.0 * units.fs, temperature_K=md_temp,
+                          friction=0.01, fixcm=False)
+            def _save_md_snap_long():
+                md_snapshots.append(atoms.copy())
+            md.attach(_save_md_snap_long, interval=max(1, md_steps // 50))
+            MaxwellBoltzmannDistribution(atoms, temperature_K=md_temp)
+            md.run(md_steps)
+
+        md_snapshots.append(atoms.copy())
         write(os.path.join(outdir, f"md-traj-{label}.xyz"), md_snapshots, format="xyz")
 
         # Re-apply opt constraints for post-MD relaxation
@@ -712,13 +783,18 @@ def generate_endpoints(
     fmax_spring=0.10, fmax_final=0.04,
     md_steps=100, md_temp=300.0,
     unidirectional=False,
+    spring_mode="both",
+    md_strategy="short", n_md_seeds=5, anneal_peak=600.0,
 ):
     """Generate reactant and product states for NEB.
 
     If bidirectional (default): drives bonds BOTH ways from input.
     If unidirectional: relaxes input as start, drives bonds forward for product only.
-      Use unidirectional for inputs that are already near the reactant geometry
-      or for chimeric/docked structures where reverse driving creates bad states.
+
+    spring_mode controls which bonds are driven:
+      both = drive nucleophile AND leaving group (may bias concerted mechanism)
+      nuc-only = only attract nucleophile (LG responds naturally to energy surface)
+      lg-only = only push leaving group (nuc responds naturally)
     """
     if ligand_name not in BOND_BREAKING_DEFS:
         raise ValueError(
@@ -726,7 +802,18 @@ def generate_endpoints(
             f"Known: {list(BOND_BREAKING_DEFS.keys())}."
         )
 
-    fwd_defs = BOND_BREAKING_DEFS[ligand_name]
+    fwd_defs_full = BOND_BREAKING_DEFS[ligand_name]
+
+    # Filter spring definitions based on spring_mode
+    if spring_mode == "nuc-only":
+        fwd_defs = [d for d in fwd_defs_full if d[3] == "attractive"]
+        log.info(f"  Spring mode: nuc-only (only driving nucleophile, LG responds naturally)")
+    elif spring_mode == "lg-only":
+        fwd_defs = [d for d in fwd_defs_full if d[3] == "repulsive"]
+        log.info(f"  Spring mode: lg-only (only driving leaving group, nuc responds naturally)")
+    else:
+        fwd_defs = fwd_defs_full
+        log.info(f"  Spring mode: both (driving nucleophile AND leaving group)")
 
     # Reverse the spring modes to drive TOWARD reactant:
     #   attractive (forming bond) → repulsive (keep that bond broken)
@@ -755,13 +842,13 @@ def generate_endpoints(
             spring_defs=rev_defs, spring_k=spring_k, spring_fmax=spring_fmax,
             fmax_spring=fmax_spring, fmax_final=fmax_final,
             md_steps=md_steps, md_temp=md_temp,
+            md_strategy=md_strategy, n_md_seeds=n_md_seeds, anneal_peak=anneal_peak,
         )
     else:
         log.info("Step 1: Relaxing input as reactant (unidirectional mode) ...")
         atoms_start = atoms.copy()
         atoms_start.calc = atoms.calc
         atoms_start.info = atoms.info.copy()
-        # Simple relaxation without spring driving
         atoms_start.constraints = [opt_constraint] if opt_constraint else []
         opt = LBFGS(atoms_start, logfile=os.path.join(outdir, "opt-start-relax.log"))
         opt.run(fmax=fmax_final, steps=500)
@@ -780,6 +867,7 @@ def generate_endpoints(
         spring_defs=fwd_defs, spring_k=spring_k, spring_fmax=spring_fmax,
         fmax_spring=fmax_spring, fmax_final=fmax_final,
         md_steps=md_steps, md_temp=md_temp,
+        md_strategy=md_strategy, n_md_seeds=n_md_seeds, anneal_peak=anneal_peak,
     )
 
     return start, end
@@ -1340,6 +1428,10 @@ def run_pipeline(args):
         fmax_spring=args.fmax_end_spring, fmax_final=args.fmax_end_final,
         md_steps=args.md_steps, md_temp=args.md_temp,
         unidirectional=args.unidirectional,
+        spring_mode=args.spring_mode,
+        md_strategy=args.md_strategy,
+        n_md_seeds=args.n_md_seeds,
+        anneal_peak=args.anneal_peak,
     )
     # Switch to primary model (--model) for energy evaluation and NEB/TS
     start.calc = make_calc(for_neb=True)
@@ -1522,6 +1614,30 @@ Examples:
     # MD parameters
     p.add_argument("--md-steps", type=int, default=200, help="Langevin MD steps for endpoint equilibration (default: 200, critical for proper minima)")
     p.add_argument("--md-temp", type=float, default=300.0, help="MD temperature in K (default: 300)")
+    p.add_argument(
+        "--md-strategy", default="short",
+        choices=["short", "annealing", "multi-seed", "long"],
+        help="MD equilibration strategy: "
+             "short = single 200-step MD (default, fast); "
+             "annealing = heat to --anneal-peak then cool (better exploration); "
+             "multi-seed = N independent short MDs, pick lowest energy (best for conformational sampling); "
+             "long = single long MD (--md-steps controls length, use 5000+ for thorough)"
+    )
+    p.add_argument("--n-md-seeds", type=int, default=5,
+                   help="Number of independent MD seeds for multi-seed strategy (default: 5)")
+    p.add_argument("--anneal-peak", type=float, default=600.0,
+                   help="Peak temperature for simulated annealing in K (default: 600)")
+
+    # Spring mode for endpoint generation
+    p.add_argument(
+        "--spring-mode", default="both",
+        choices=["both", "nuc-only", "lg-only"],
+        help="Which bonds to drive with springs during endpoint generation: "
+             "both = drive nucleophile AND leaving group (default, may bias concerted); "
+             "nuc-only = only attract nucleophile to P (LG responds naturally); "
+             "lg-only = only push leaving group away (nuc responds naturally). "
+             "For unbiased mechanistic investigation, use nuc-only or lg-only."
+    )
 
     # Mode
     p.add_argument(
