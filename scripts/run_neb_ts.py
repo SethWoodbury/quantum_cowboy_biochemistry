@@ -187,11 +187,42 @@ def ase_to_pdb_string(atoms, template_st):
 
 
 def write_result_pdb(atoms, template_st, path):
-    """Write a single structure as PDB with input-matching formatting."""
+    """Write a single structure as PDB with input-matching formatting.
+
+    Always includes REMARK QCB lines with charge, energy, and provenance.
+    """
+    charge = atoms.info.get("charge", 0)
+    energy = None
+    try:
+        energy = atoms.get_potential_energy()
+    except Exception:
+        pass
+
     pdb_str = ase_to_pdb_string(atoms, template_st)
+    lines = pdb_str.strip().split("\n")
+
+    # Insert QCB REMARK lines after any existing REMARK/HEADER lines
+    insert_idx = 0
+    for i, line in enumerate(lines):
+        if line.startswith(("REMARK", "HEADER", "USER")):
+            insert_idx = i + 1
+        elif line.startswith(("ATOM", "HETATM", "TER")):
+            break
+
+    remarks = [
+        f"REMARK QCB TOTAL_CHARGE {charge:+d}",
+    ]
+    if energy is not None:
+        remarks.append(f"REMARK QCB ENERGY_KCAL {energy * EV_TO_KCAL:.2f}")
+    basename = os.path.basename(path).replace(".pdb", "")
+    remarks.append(f"REMARK QCB STRUCTURE {basename}")
+
+    for i, r in enumerate(remarks):
+        lines.insert(insert_idx + i, r)
+
     with open(path, "w") as f:
-        f.write(pdb_str)
-    log.info(f"  Wrote {path}")
+        f.write("\n".join(lines) + "\n")
+    log.info(f"  Wrote {path} (charge={charge:+d})")
 
 
 def write_trajectory_pdb(atoms_list, template_st, path, energies=None):
