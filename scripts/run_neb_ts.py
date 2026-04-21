@@ -249,31 +249,34 @@ def extract_net_charge(path):
 #   Departure of aryl leaving group (O7/O5)
 #
 BOND_BREAKING_DEFS = {
+    # PTE phosphoester substrates
+    # Target 3.5 A for leaving group ensures full P-O dissociation (not just
+    # pentacoordinate intermediate at ~1.7 A). Target 1.4 A for nucleophile
+    # ensures full bond formation.
     "YYL": [
-        ("P1", "O1", 1.4, "attractive"),
-        ("P1", "O5", 2.1, "repulsive"),
+        ("P1", "O1", 1.4, "attractive"),   # nucleophile forms bond
+        ("P1", "O5", 3.5, "repulsive"),    # leaving group fully dissociates
     ],
     "YYE": [
         ("P1", "O3", 1.4, "attractive"),
-        ("P1", "O7", 2.1, "repulsive"),
+        ("P1", "O7", 3.5, "repulsive"),
     ],
     "YYF": [
         ("P1", "O3", 1.4, "attractive"),
-        ("P1", "O7", 2.1, "repulsive"),
+        ("P1", "O7", 3.5, "repulsive"),
     ],
-    "PT4": [
-        ("C7", "C8", 2.1, "repulsive"),
-        ("C7", "C5", 1.4, "attractive"),
-    ],
-    # XUW: PTE substrate with KCX variant (O3 nucleophile, O7 leaving group)
     "XUW": [
         ("P1", "O3", 1.4, "attractive"),
-        ("P1", "O7", 2.1, "repulsive"),
+        ("P1", "O7", 3.5, "repulsive"),
     ],
-    # YZW: PTE substrate with GLU variant (O1 nucleophile, O5 leaving group)
     "YZW": [
         ("P1", "O1", 1.4, "attractive"),
-        ("P1", "O5", 2.1, "repulsive"),
+        ("P1", "O5", 3.5, "repulsive"),
+    ],
+    # Non-PTE
+    "PT4": [
+        ("C7", "C8", 2.5, "repulsive"),
+        ("C7", "C5", 1.4, "attractive"),
     ],
 }
 
@@ -1151,6 +1154,9 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
     write_result_pdb(end, template_st, os.path.join(outdir, "product.pdb"))
     write_result_pdb(ts, template_st, os.path.join(outdir, "transition_state.pdb"))
 
+    # Write CIF for transition state (includes charge annotation)
+    _write_ts_cif(ts, template_st, outdir)
+
     # NEB path as multi-MODEL PDB
     if images:
         neb_energies = []
@@ -1182,6 +1188,35 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
     log.info(f"    {outdir}/neb_path.pdb")
     log.info(f"    {outdir}/energy_profile.png")
     log.info(f"    {outdir}/technical/  (raw logs, traj, xyz)")
+
+
+def _write_ts_cif(ts_atoms, template_st, outdir):
+    """Write transition state as CIF with charge and energy annotations."""
+    try:
+        from ase.io import write as ase_write
+        cif_path = os.path.join(outdir, "transition_state.cif")
+
+        # Write basic CIF via ASE
+        ase_write(cif_path, ts_atoms, format="cif")
+
+        # Append charge info as CIF data items
+        charge = ts_atoms.info.get("charge", 0)
+        energy = None
+        try:
+            energy = ts_atoms.get_potential_energy()
+        except Exception:
+            pass
+
+        with open(cif_path, "a") as f:
+            f.write(f"\n# QCB annotations\n")
+            f.write(f"_qcb.total_charge  {charge}\n")
+            if energy is not None:
+                f.write(f"_qcb.energy_eV  {energy:.6f}\n")
+                f.write(f"_qcb.energy_kcal_mol  {energy * EV_TO_KCAL:.2f}\n")
+
+        log.info(f"  Wrote {cif_path} (charge={charge})")
+    except Exception as e:
+        log.warning(f"  Could not write CIF: {e}")
 
 
 def _write_md_traj_pdbs(outdir, tech_dir, template_st):
@@ -1318,6 +1353,29 @@ def run_pipeline(args):
     log.info(f"  E(start) = {e_start:.4f} eV ({e_start * EV_TO_KCAL:.1f} kcal/mol)")
     log.info(f"  E(end)   = {e_end:.4f} eV ({e_end * EV_TO_KCAL:.1f} kcal/mol)")
     log.info(f"  ΔE(rxn)  = {(e_end - e_start) * EV_TO_KCAL:.1f} kcal/mol")
+
+    # ── Endpoint geometry validation ──
+    if ligand in BOND_BREAKING_DEFS:
+        defs = BOND_BREAKING_DEFS[ligand]
+        log.info("  Endpoint bond distance validation:")
+        valid = True
+        for atom1, atom2, target_r, mode in defs:
+            idx1 = np.where((bt_struct.res_name == ligand) & (bt_struct.atom_name == atom1))[0]
+            idx2 = np.where((bt_struct.res_name == ligand) & (bt_struct.atom_name == atom2))[0]
+            if len(idx1) == 1 and len(idx2) == 1:
+                i1, i2 = int(idx1[0]), int(idx2[0])
+                d_start = start.get_distance(i1, i2)
+                d_end = end.get_distance(i1, i2)
+                ok_start = (mode == "attractive" and d_start > 2.5) or (mode == "repulsive" and d_start < 1.8)
+                ok_end = (mode == "attractive" and d_end < 1.8) or (mode == "repulsive" and d_end > 2.5)
+                status_s = "✓" if ok_start else "✗"
+                status_e = "✓" if ok_end else "✗"
+                log.info(f"    {atom1}-{atom2} ({mode}): start={d_start:.2f} {status_s}  end={d_end:.2f} {status_e}")
+                if not ok_start or not ok_end:
+                    valid = False
+        if not valid:
+            log.warning("  *** ENDPOINT VALIDATION FAILED: bonds not properly separated! ***")
+            log.warning("  *** NEB barrier may be unreliable. Check input geometry. ***")
 
     # ── Step 3: NEB (always uses primary --model) ──
     def make_neb_calc():
