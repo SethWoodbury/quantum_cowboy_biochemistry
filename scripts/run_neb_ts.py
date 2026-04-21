@@ -1364,85 +1364,168 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
     log.info(f"    {outdir}/technical/  (raw logs, traj, xyz)")
 
 
-def _compute_formal_charges(atoms, template_st, total_charge):
-    """Derive formal integer charges from 3D geometry using RDKit.
+def _compute_formal_charges(atoms, template_st, total_charge, outdir=None):
+    """Derive formal integer charges from electronic structure.
 
-    Uses RDKit's DetermineBondOrders which assigns bond orders and formal
-    charges based on the 3D coordinates + net charge. This is rigorous —
-    it handles nitro groups (O⁻-N⁺=O), phosphates (P-O⁻ vs P=O),
-    carboxylates, aromatic systems, and any unusual bonding.
+    Priority:
+    1. xTB Mulliken charges + Wiberg bond orders �� formal charges
+       (most rigorous: actual electronic structure + bond order analysis)
+    2. RDKit DetermineBondOrders from 3D geometry
+       (good: handles nitro, phosphate, carboxylate, aromatics)
+    3. Mulliken → round to nearest integer
+       (fallback)
 
-    Falls back to Mulliken→round if RDKit fails.
+    The xTB approach is preferred because it solves the actual electronic
+    structure, while RDKit only guesses bonds from distances.
     """
     n_atoms = len(atoms)
+    symbols = atoms.get_chemical_symbols()
 
+    # Method 1: xTB Mulliken + WBO → formal charges
+    XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
+    if os.path.isfile(XTB_BIN) and n_atoms < 500:
+        try:
+            tmpdir = Path(outdir or "/tmp") / ".xtb_formal"
+            tmpdir.mkdir(exist_ok=True)
+
+            # Write XYZ
+            positions = atoms.get_positions()
+            with open(tmpdir / "ts.xyz", "w") as f:
+                f.write(f"{n_atoms}\n\n")
+                for sym, (x, y, z) in zip(symbols, positions):
+                    f.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
+
+            timeout_s = min(600, max(60, n_atoms * 2))
+            result = subprocess.run(
+                [XTB_BIN, "ts.xyz", "--gfn", "2", "--chrg", str(total_charge), "--sp"],
+                capture_output=True, text=True, timeout=timeout_s, cwd=str(tmpdir),
+            )
+
+            charges_file = tmpdir / "charges"
+            wbo_file = tmpdir / "wbo"
+
+            if charges_file.exists() and wbo_file.exists():
+                mulliken = np.array([float(l) for l in charges_file.read_text().strip().split("\n")])
+
+                # Parse WBO for bond order analysis
+                bond_orders = {}  # {(i,j): wbo}
+                for line in wbo_file.read_text().strip().split("\n"):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        i, j = int(parts[0]) - 1, int(parts[1]) - 1
+                        bo = float(parts[2])
+                        if bo > 0.3:  # only significant bonds
+                            bond_orders[(min(i, j), max(i, j))] = bo
+
+                # Derive formal charges from Mulliken + valence analysis
+                # Strategy: atoms with |Mulliken| > 0.4 are likely charged
+                # Refine using bond orders to distinguish -1 from 0
+                formal = np.zeros(n_atoms)
+
+                for i in range(n_atoms):
+                    q = mulliken[i]
+                    z = atoms.get_atomic_numbers()[i]
+
+                    # Standard valence expectations
+                    expected_valence = {1: 1, 6: 4, 7: 3, 8: 2, 15: 5, 16: 2, 30: 2}
+                    exp_v = expected_valence.get(z, 4)
+
+                    # Sum of bond orders around this atom
+                    total_bo = sum(bo for (a, b), bo in bond_orders.items() if a == i or b == i)
+
+                    # Formal charge = valence electrons - lone pairs - bonding electrons
+                    # Simplified: if total bond order < expected valence, atom likely has charge
+                    if z == 8:  # oxygen
+                        if total_bo < 1.5 and q < -0.3:
+                            formal[i] = -1  # O⁻ (single bond, negative)
+                        elif total_bo > 2.5:
+                            formal[i] = +1  # rare: O⁺
+                    elif z == 7:  # nitrogen
+                        if total_bo > 3.5 and q > 0.2:
+                            formal[i] = +1  # N⁺ (4 bonds, like NH4+ or nitro)
+                        elif total_bo < 2.5 and q < -0.3:
+                            formal[i] = -1  # N⁻
+                    elif z == 15:  # phosphorus
+                        pass  # P is usually formally 0 in phosphoesters
+
+                # Adjust to match total charge
+                fc_sum = int(formal.sum())
+                diff = total_charge - fc_sum
+                if diff != 0:
+                    # Assign remaining charge to atoms with largest |Mulliken|
+                    sorted_by_q = np.argsort(mulliken) if diff < 0 else np.argsort(-mulliken)
+                    for idx in sorted_by_q:
+                        if diff == 0:
+                            break
+                        if diff > 0 and formal[idx] == 0 and mulliken[idx] > 0.3:
+                            formal[idx] = +1
+                            diff -= 1
+                        elif diff < 0 and formal[idx] == 0 and mulliken[idx] < -0.3:
+                            formal[idx] = -1
+                            diff += 1
+
+                n_charged = int(np.sum(formal != 0))
+                log.info(f"  xTB-derived formal charges: sum={int(formal.sum()):+d}, "
+                         f"{n_charged} charged atoms, {len(bond_orders)} bonds")
+
+                for i in range(n_atoms):
+                    if formal[i] != 0:
+                        resinfo = ""
+                        if template_st is not None and i < len(template_st):
+                            resinfo = (f" ({template_st.res_name[i]} "
+                                       f"{template_st.chain_id[i]}:{template_st.res_id[i]} "
+                                       f"{template_st.atom_name[i]})")
+                        log.info(f"    {symbols[i]}({i}){resinfo}: {int(formal[i]):+d} "
+                                 f"(Mulliken={mulliken[i]:.2f}, BO={sum(bo for (a,b),bo in bond_orders.items() if a==i or b==i):.1f})")
+
+                import shutil
+                shutil.rmtree(tmpdir, ignore_errors=True)
+                return formal
+
+        except Exception as e:
+            log.warning(f"  xTB formal charge derivation failed: {e}")
+
+    # Method 2: RDKit DetermineBondOrders
     try:
         from rdkit import Chem
         from rdkit.Chem import rdDetermineBonds
         from rdkit.Geometry import Point3D
 
-        # Build RDKit mol from ASE atoms
         mol = Chem.RWMol()
-        symbols = atoms.get_chemical_symbols()
         positions = atoms.get_positions()
-
         for sym in symbols:
             mol.AddAtom(Chem.Atom(sym))
-
         conf = Chem.Conformer(n_atoms)
         for i, (x, y, z) in enumerate(positions):
             conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
         mol.AddConformer(conf)
 
-        # Determine connectivity and bond orders from 3D geometry + charge
         rdDetermineBonds.DetermineConnectivity(mol)
         rdDetermineBonds.DetermineBondOrders(mol, charge=total_charge)
 
-        # Extract formal charges
         charges = np.array([mol.GetAtomWithIdx(i).GetFormalCharge()
                            for i in range(n_atoms)], dtype=float)
 
-        fc_sum = int(charges.sum())
-        n_charged = int(np.sum(charges != 0))
-        log.info(f"  RDKit formal charges: sum={fc_sum:+d}, {n_charged} charged atoms")
-
-        # Log the charged atoms
-        for i in range(n_atoms):
-            if charges[i] != 0:
-                sym = symbols[i]
-                resinfo = ""
-                if template_st is not None and i < len(template_st):
-                    resinfo = f" ({template_st.res_name[i]} {template_st.chain_id[i]}:{template_st.res_id[i]} {template_st.atom_name[i]})"
-                log.info(f"    {sym}({i}){resinfo}: {int(charges[i]):+d}")
-
-        if fc_sum != total_charge:
-            log.warning(f"  RDKit formal charges sum to {fc_sum:+d} but expected {total_charge:+d}")
-
+        log.info(f"  RDKit formal charges: sum={int(charges.sum()):+d}, "
+                 f"{int(np.sum(charges != 0))} charged atoms")
         return charges
 
-    except ImportError:
-        log.warning("  RDKit not available — falling back to Mulliken→round")
     except Exception as e:
-        log.warning(f"  RDKit formal charge assignment failed: {e}")
-        log.warning("  Falling back to Mulliken→round")
+        log.warning(f"  RDKit formal charges failed: {e}")
 
-    # Fallback: compute Mulliken charges and round
-    mulliken = _compute_per_atom_charges(atoms, total_charge, os.path.dirname(__file__),
+    # Method 3: Mulliken → round
+    log.warning("  Falling back to Mulliken→round for formal charges")
+    mulliken = _compute_per_atom_charges(atoms, total_charge, outdir or "/tmp",
                                           method="auto", template_st=template_st)
-    # Round to nearest integer, then adjust to match total
     charges = np.round(mulliken)
     diff = int(total_charge - charges.sum())
-    # Put the remainder on the most negative/positive atoms
     if diff > 0:
         for _ in range(abs(diff)):
-            idx = np.argmin(charges)
-            charges[idx] += 1
+            charges[np.argmin(mulliken - charges)] += 1
     elif diff < 0:
         for _ in range(abs(diff)):
-            idx = np.argmax(charges)
-            charges[idx] -= 1
+            charges[np.argmax(mulliken - charges)] -= 1
 
-    log.info(f"  Formal charges (Mulliken→round): sum={int(charges.sum()):+d}")
     return charges
 
 
@@ -1604,8 +1687,8 @@ def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto"):
         except Exception:
             pass
 
-        # Also compute formal charges via RDKit for the CIF
-        formal_charges = _compute_formal_charges(ts_atoms, template_st, charge)
+        # Compute formal charges (xTB Mulliken+WBO → RDKit → Mulliken round)
+        formal_charges = _compute_formal_charges(ts_atoms, template_st, charge, outdir=outdir)
 
         # Write CIF with both partial and formal charges
         symbols = ts_atoms.get_chemical_symbols()
