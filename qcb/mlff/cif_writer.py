@@ -34,9 +34,14 @@ def write_ts_cif(
     total_charge: int = 0,
     partial_charges: np.ndarray | None = None,
     formal_charges: np.ndarray | None = None,
+    wiberg_bond_orders: dict | None = None,
     filename: str = "transition_state.cif",
 ):
     """Write transition state as CIF using atomworks with proper bond types.
+
+    Bond order priority:
+      1. xTB Wiberg bond orders (if provided) — most rigorous
+      2. RDKit bond perception — fallback only
 
     Args:
         ts_atoms: ASE Atoms of the transition state
@@ -45,6 +50,7 @@ def write_ts_cif(
         total_charge: System net charge
         partial_charges: Per-atom partial charges (Mulliken/EEM)
         formal_charges: Per-atom formal charges (integers)
+        wiberg_bond_orders: Dict of {(i,j): float} from xTB WBO (preferred)
         filename: Output filename
     """
     cif_path = Path(outdir) / filename
@@ -69,35 +75,52 @@ def write_ts_cif(
         if formal_charges is not None and len(formal_charges) == n_atoms:
             atom_array.set_annotation("charge", formal_charges.astype(int))
 
-        # Try to get bond orders via RDKit (handles aromaticity)
-        try:
-            mol = atom_array_to_rdkit(
-                atom_array,
-                infer_bonds=True,
-                system_charge=total_charge,
-            )
+        # Build BondList — prefer xTB WBO, fall back to RDKit
+        bond_list = struc.BondList(n_atoms)
 
-            if mol is not None:
-                from rdkit import Chem
+        if wiberg_bond_orders:
+            # Primary: use xTB Wiberg bond orders (from actual electronic structure)
+            for (i, j), wbo in wiberg_bond_orders.items():
+                if wbo < 0.3:
+                    continue
+                if wbo < 1.3:
+                    btype = bonds.BondType.SINGLE
+                elif wbo < 1.7:
+                    # Aromatic / delocalized — need to decide SINGLE vs DOUBLE
+                    # Use Kekulé convention: alternate AROMATIC_SINGLE / AROMATIC_DOUBLE
+                    btype = bonds.BondType.AROMATIC_SINGLE  # default
+                elif wbo < 2.3:
+                    btype = bonds.BondType.DOUBLE
+                elif wbo < 2.7:
+                    btype = bonds.BondType.AROMATIC_DOUBLE
+                else:
+                    btype = bonds.BondType.TRIPLE
+                bond_list.add_bond(i, j, btype)
 
-                # Build BondList with proper aromatic types
-                bond_list = struc.BondList(n_atoms)
-                for bond in mol.GetBonds():
-                    i = bond.GetBeginAtomIdx()
-                    j = bond.GetEndAtomIdx()
-                    is_aromatic = bond.GetIsAromatic()
-                    bt = bond.GetBondType()
+            atom_array.bonds = bond_list
+            n_aromatic = sum(1 for (i, j), w in wiberg_bond_orders.items() if 1.3 <= w < 1.7)
+            log.info(f"  Bonds from xTB WBO: {bond_list.get_bond_count()} bonds "
+                     f"({n_aromatic} aromatic)")
 
-                    if is_aromatic:
-                        if bt == Chem.BondType.SINGLE or bond.GetBondTypeAsDouble() <= 1.0:
-                            btype = bonds.BondType.AROMATIC_SINGLE
-                        elif bt == Chem.BondType.DOUBLE or bond.GetBondTypeAsDouble() >= 2.0:
-                            btype = bonds.BondType.AROMATIC_DOUBLE
-                        else:
-                            btype = bonds.BondType.AROMATIC_SINGLE
-                    else:
-                        if bt == Chem.BondType.SINGLE:
-                            btype = bonds.BondType.SINGLE
+        else:
+            # Fallback: RDKit bond perception from 3D geometry
+            try:
+                mol = atom_array_to_rdkit(
+                    atom_array, infer_bonds=True, system_charge=total_charge,
+                )
+                if mol is not None:
+                    from rdkit import Chem
+                    for bond in mol.GetBonds():
+                        i = bond.GetBeginAtomIdx()
+                        j = bond.GetEndAtomIdx()
+                        is_aromatic = bond.GetIsAromatic()
+                        bt = bond.GetBondType()
+
+                        if is_aromatic:
+                            if bt == Chem.BondType.DOUBLE or bond.GetBondTypeAsDouble() >= 2.0:
+                                btype = bonds.BondType.AROMATIC_DOUBLE
+                            else:
+                                btype = bonds.BondType.AROMATIC_SINGLE
                         elif bt == Chem.BondType.DOUBLE:
                             btype = bonds.BondType.DOUBLE
                         elif bt == Chem.BondType.TRIPLE:
@@ -105,14 +128,12 @@ def write_ts_cif(
                         else:
                             btype = bonds.BondType.SINGLE
 
-                    bond_list.add_bond(i, j, btype)
+                        bond_list.add_bond(i, j, btype)
 
-                atom_array.bonds = bond_list
-                log.info(f"  Bond perception: {bond_list.get_bond_count()} bonds "
-                         f"(via RDKit with aromatic kekulization)")
-
-        except Exception as e:
-            log.warning(f"  Bond perception failed: {e}")
+                    atom_array.bonds = bond_list
+                    log.info(f"  Bonds from RDKit (fallback): {bond_list.get_bond_count()} bonds")
+            except Exception as e:
+                log.warning(f"  Bond perception failed: {e}")
 
         # Write CIF using atomworks
         config = CIFWriteConfig(
