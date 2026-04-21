@@ -1389,17 +1389,13 @@ def _compute_per_atom_charges(atoms, total_charge, outdir):
         for sym, (x, y, z) in zip(symbols, positions):
             f.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
 
-    # Try xTB GFN2, then GFN0 (faster), then GFN-FF (fastest)
-    # Timeout scales with system size: ~1 min per 100 atoms
-    timeout_s = max(120, n_atoms * 1)
+    # Try xTB GFN2, then GFN1 (lighter), then electronegativity fallback
+    # GFN2 timing: ~5s for 154 atoms, ~30s for 300 atoms, ~15-30 min for 1000 atoms
+    # Scale timeout generously: 2s per atom, min 120s, max 1800s (30 min)
+    timeout_s = min(1800, max(120, n_atoms * 2))
 
-    for method in ["2", "0", "ff"]:
-        gfn_flag = f"--gfn{'ff' if method == 'ff' else ''}" if method == "ff" else f"--gfn"
-        cmd = [XTB_BIN, "ts.xyz", "--sp", "--chrg", str(total_charge)]
-        if method == "ff":
-            cmd.append("--gfnff")
-        else:
-            cmd.extend(["--gfn", method])
+    for method in ["2", "1"]:
+        cmd = [XTB_BIN, "ts.xyz", "--sp", "--chrg", str(total_charge), "--gfn", method]
 
         try:
             result = subprocess.run(
