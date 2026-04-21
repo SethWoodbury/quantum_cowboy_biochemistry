@@ -225,15 +225,36 @@ def write_trajectory_pdb(atoms_list, template_st, path, energies=None):
 
 
 def extract_net_charge(path):
-    """Extract net formal charge from filename pattern  netCHG_plus3 / netCHG_minus2 / netCHG_0."""
+    """Extract net formal charge from multiple sources (priority order):
+
+    1. PDB REMARK QCB TOTAL_CHARGE line (from protonation pipeline)
+    2. Filename pattern netCHG_plus3 / netCHG_minus2 / netCHG_0
+    3. Returns None if neither found (caller should error, not default to 0)
+    """
+    # Try PDB REMARK first
+    try:
+        with open(path) as f:
+            for line in f:
+                if line.startswith("REMARK QCB TOTAL_CHARGE"):
+                    val = line.split()[-1]
+                    charge = int(val.replace("+", ""))
+                    log.info(f"  Charge from PDB REMARK: {charge:+d}")
+                    return charge
+                if not line.startswith(("REMARK", "HEADER", "USER")):
+                    break  # stop after header section
+    except Exception:
+        pass
+
+    # Try filename
     name = os.path.basename(path)
-    m = re.search(r"net[Cc][Hh][Gg]_?(plus|minus)?(\d+)", name)
-    if m is None:
-        return None
-    sign_str, val = m.group(1), int(m.group(2))
-    if sign_str == "minus":
-        return -val
-    return val
+    m = re.search(r"net[Cc][Hh][Gg]_?(plus|minus)?_?(\d+)", name)
+    if m is not None:
+        sign_str, val = m.group(1), int(m.group(2))
+        charge = -val if sign_str == "minus" else val
+        log.info(f"  Charge from filename: {charge:+d}")
+        return charge
+
+    return None
 
 
 # ══════════════════════════════════════════════════════════════
@@ -434,13 +455,13 @@ def load_structure(pdb_path):
 
     ase_atoms = biotite_to_ase(st)
 
-    # Extract charge
+    # Extract charge (priority: CLI --charge > PDB REMARK > filename > error)
     charge = extract_net_charge(pdb_path)
     if charge is not None:
         ase_atoms.info["charge"] = charge
-        log.info(f"  Net charge from filename: {charge}")
     else:
-        log.warning("  Could not extract charge from filename – defaulting to 0")
+        log.warning("  *** Could not determine charge from PDB or filename ***")
+        log.warning("  *** Use --charge N to specify, or protonate with protonate_active_site.py ***")
         ase_atoms.info["charge"] = 0
         charge = 0
 
@@ -1536,7 +1557,15 @@ def run_pipeline(args):
     # ── Load structure ──
     ase_atoms, bt_struct, meta = load_structure(pdb_path)
     ligand = meta["ligand"]
-    charge = meta["charge"]
+
+    # Resolve charge: CLI override > auto-detected
+    if args.charge is not None:
+        charge = args.charge
+        ase_atoms.info["charge"] = charge
+        log.info(f"  Charge from --charge flag: {charge:+d}")
+    else:
+        charge = meta["charge"]
+    log.info(f"  System net charge: {charge:+d}")
 
     # ── Calculator factory ──
     import torch
@@ -1790,6 +1819,12 @@ Examples:
 
     # Output
     p.add_argument("--outdir", default=None, help="Output directory (auto-generated if omitted)")
+
+    # Charge (explicit override — highest priority)
+    p.add_argument("--charge", type=int, default=None,
+                   help="System net charge (overrides PDB REMARK and filename). "
+                        "If not specified, reads from PDB REMARK QCB TOTAL_CHARGE "
+                        "or filename netCHG pattern.")
 
     # NEB parameters
     p.add_argument("--n-images", type=int, default=15, help="Number of NEB images (default: 15)")
