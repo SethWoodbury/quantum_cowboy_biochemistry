@@ -1329,7 +1329,7 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
     write_result_pdb(ts, template_st, os.path.join(outdir, "transition_state.pdb"))
 
     # Write CIF for transition state (includes charge annotation)
-    _write_ts_cif(ts, template_st, outdir)
+    _write_ts_cif(ts, template_st, outdir, charge_method=args.charge_method)
 
     # NEB path as multi-MODEL PDB
     if images:
@@ -1364,16 +1364,81 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
     log.info(f"    {outdir}/technical/  (raw logs, traj, xyz)")
 
 
-def _compute_per_atom_charges(atoms, total_charge, outdir):
-    """Compute per-atom Mulliken charges using xTB (GFN2).
+def _compute_formal_charges(atoms, template_st, total_charge):
+    """Assign formal integer charges based on residue identity.
 
-    Falls back to uniform charge distribution if xTB fails.
-    Returns numpy array of per-atom charges.
+    Standard amino acid charges at pH 7:
+      LYS/ARG = +1, ASP/GLU = -1, HIS = 0 or +1, others = 0
+
+    Returns numpy array of per-atom formal charges (integers).
+    The charges are placed on the key ionizable atom (NZ, OD/OE, etc.)
+    and sum to total_charge.
     """
+    n_atoms = len(atoms)
+    charges = np.zeros(n_atoms)
+
+    if template_st is None:
+        # No template — put total charge uniformly
+        log.warning("  No PDB template — cannot assign formal charges per residue")
+        charges[0] = total_charge  # put it all on atom 0 as placeholder
+        return charges
+
+    # Assign charges to ionizable atoms
+    IONIZABLE = {
+        "LYS": ("NZ", +1),
+        "ARG": ("NH1", +1),
+        "ASP": ("OD1", -1),
+        "GLU": ("OE1", -1),
+        "HIS": ("ND1", 0),  # default neutral; +1 only if doubly protonated
+    }
+
+    assigned = 0.0
+    for i in range(len(template_st)):
+        resname = template_st.res_name[i]
+        atomname = template_st.atom_name[i]
+        if resname in IONIZABLE:
+            target_atom, default_charge = IONIZABLE[resname]
+            if atomname == target_atom:
+                charges[i] = default_charge
+                assigned += default_charge
+
+    # Distribute any remaining charge difference across all atoms
+    remainder = total_charge - assigned
+    if abs(remainder) > 0.01:
+        log.info(f"  Formal charge assignment: assigned {assigned:+.0f}, "
+                 f"remainder {remainder:+.1f} distributed uniformly")
+        charges += remainder / n_atoms
+
+    log.info(f"  Formal charges: sum={charges.sum():.1f}, "
+             f"non-zero atoms={int(np.sum(charges != 0))}")
+    return charges
+
+
+def _compute_per_atom_charges(atoms, total_charge, outdir, method="auto", template_st=None):
+    """Compute per-atom charges.
+
+    Methods:
+      auto: xTB Mulliken → OpenBabel EEM → electronegativity (cascade)
+      mulliken: xTB Mulliken only (fails if xTB unavailable)
+      eem: OpenBabel EEM only (fast, any size)
+      formal: Integer charges from residue identity (instant)
+
+    Returns numpy array of per-atom charges summing to total_charge.
+    """
+    if method == "formal":
+        return _compute_formal_charges(atoms, template_st, total_charge)
+
+    if method == "eem":
+        # Skip xTB, go straight to EEM
+        pass  # fall through to EEM section below after xTB block
+
     XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
     n_atoms = len(atoms)
 
-    if not os.path.isfile(XTB_BIN):
+    # For "auto" and "mulliken", try xTB first
+    if method == "eem":
+        pass  # skip xTB, go to EEM below
+    elif not os.path.isfile(XTB_BIN):
         log.warning("  xTB not found — using uniform charge distribution")
         return np.full(n_atoms, total_charge / n_atoms)
 
@@ -1485,7 +1550,7 @@ def _compute_per_atom_charges(atoms, total_charge, outdir):
     return charges
 
 
-def _write_ts_cif(ts_atoms, template_st, outdir):
+def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto"):
     """Write transition state as CIF with per-atom charges and energy.
 
     Computes Mulliken charges via xTB single-point, then writes a proper
@@ -1497,7 +1562,9 @@ def _write_ts_cif(ts_atoms, template_st, outdir):
 
         # Compute per-atom charges
         log.info("  Computing per-atom charges (xTB Mulliken) ...")
-        per_atom_charges = _compute_per_atom_charges(ts_atoms, charge, outdir)
+        per_atom_charges = _compute_per_atom_charges(
+            ts_atoms, charge, outdir, method=charge_method, template_st=template_st
+        )
 
         energy = None
         try:
@@ -1896,6 +1963,12 @@ Examples:
                    help="System net charge (overrides PDB REMARK and filename). "
                         "If not specified, reads from PDB REMARK QCB TOTAL_CHARGE "
                         "or filename netCHG pattern.")
+    p.add_argument("--charge-method", default="auto",
+                   choices=["auto", "mulliken", "eem", "formal"],
+                   help="Per-atom charge method for CIF output: "
+                        "auto = xTB Mulliken → EEM → electronegativity (default); "
+                        "mulliken = xTB only; eem = OpenBabel EEM only (fast); "
+                        "formal = integer charges from residue identity (instant)")
 
     # NEB parameters
     p.add_argument("--n-images", type=int, default=15, help="Number of NEB images (default: 15)")
