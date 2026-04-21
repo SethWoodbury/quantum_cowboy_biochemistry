@@ -1421,20 +1421,64 @@ def _compute_per_atom_charges(atoms, total_charge, outdir):
 
         log.warning(f"  xTB GFN{method} failed for {n_atoms} atoms, trying next method ...")
 
-    log.warning(f"  All xTB methods failed — using electronegativity-based charge distribution")
+    log.warning(f"  xTB methods failed or timed out — trying OpenBabel EEM charges ...")
     import shutil
     shutil.rmtree(tmpdir, ignore_errors=True)
 
-    # Fallback: distribute charge proportional to electronegativity
-    # (better than uniform — at least gets sign right for O vs C vs H)
-    from ase.data import atomic_numbers
-    electroneg = {1: 2.20, 6: 2.55, 7: 3.04, 8: 3.44, 15: 2.19, 16: 2.58, 30: 1.65}  # Pauling
+    # Fallback: OpenBabel EEM (Electronegativity Equalization Method)
+    # Sub-second for any system size, physically motivated
+    OBABEL = "/home/dme5188/bin/openbabel/bin/obabel"
+    if os.path.isfile(OBABEL):
+        try:
+            tmpdir2 = Path(outdir) / ".obabel_charges"
+            tmpdir2.mkdir(exist_ok=True)
+
+            # Write PDB for OpenBabel
+            from ase.io import write as ase_write
+            pdb_tmp = tmpdir2 / "ts.pdb"
+            ase_write(str(pdb_tmp), atoms, format="proteindatabank")
+
+            mol2_tmp = tmpdir2 / "ts.mol2"
+            result = subprocess.run(
+                [OBABEL, str(pdb_tmp), "-O", str(mol2_tmp), "--partialcharge", "eem"],
+                capture_output=True, text=True, timeout=30,
+            )
+
+            if mol2_tmp.exists():
+                # Parse charges from mol2
+                eem_charges = []
+                reading = False
+                for line in mol2_tmp.read_text().splitlines():
+                    if "@<TRIPOS>ATOM" in line:
+                        reading = True
+                        continue
+                    if "@<TRIPOS>" in line and reading:
+                        break
+                    if reading:
+                        parts = line.split()
+                        if len(parts) >= 9:
+                            eem_charges.append(float(parts[8]))
+
+                if len(eem_charges) == n_atoms:
+                    charges = np.array(eem_charges)
+                    # Shift to match net charge (EEM assumes neutral)
+                    charges += (total_charge - charges.sum()) / n_atoms
+                    log.info(f"  OpenBabel EEM charges: sum={charges.sum():.3f}, "
+                             f"range=[{charges.min():.3f}, {charges.max():.3f}]")
+                    shutil.rmtree(tmpdir2, ignore_errors=True)
+                    return charges
+
+            shutil.rmtree(tmpdir2, ignore_errors=True)
+        except Exception as e:
+            log.warning(f"  OpenBabel EEM failed: {e}")
+
+    # Final fallback: electronegativity-based distribution
+    log.warning(f"  Using electronegativity-based charge distribution (last resort)")
+    electroneg = {1: 2.20, 6: 2.55, 7: 3.04, 8: 3.44, 15: 2.19, 16: 2.58, 30: 1.65}
     en_values = np.array([electroneg.get(z, 2.0) for z in atoms.get_atomic_numbers()])
-    # More electronegative atoms get more negative charge
     en_shifted = en_values - en_values.mean()
     if np.abs(en_shifted).sum() > 0:
         charges = total_charge * en_shifted / np.abs(en_shifted).sum()
-        # Adjust to match total charge exactly
         charges += (total_charge - charges.sum()) / n_atoms
     else:
         charges = np.full(n_atoms, total_charge / n_atoms)
