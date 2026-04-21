@@ -1365,52 +1365,84 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
 
 
 def _compute_formal_charges(atoms, template_st, total_charge):
-    """Assign formal integer charges based on residue identity.
+    """Derive formal integer charges from 3D geometry using RDKit.
 
-    Standard amino acid charges at pH 7:
-      LYS/ARG = +1, ASP/GLU = -1, HIS = 0 or +1, others = 0
+    Uses RDKit's DetermineBondOrders which assigns bond orders and formal
+    charges based on the 3D coordinates + net charge. This is rigorous —
+    it handles nitro groups (O⁻-N⁺=O), phosphates (P-O⁻ vs P=O),
+    carboxylates, aromatic systems, and any unusual bonding.
 
-    Returns numpy array of per-atom formal charges (integers).
-    The charges are placed on the key ionizable atom (NZ, OD/OE, etc.)
-    and sum to total_charge.
+    Falls back to Mulliken→round if RDKit fails.
     """
     n_atoms = len(atoms)
-    charges = np.zeros(n_atoms)
 
-    if template_st is None:
-        # No template — put total charge uniformly
-        log.warning("  No PDB template — cannot assign formal charges per residue")
-        charges[0] = total_charge  # put it all on atom 0 as placeholder
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import rdDetermineBonds
+        from rdkit.Geometry import Point3D
+
+        # Build RDKit mol from ASE atoms
+        mol = Chem.RWMol()
+        symbols = atoms.get_chemical_symbols()
+        positions = atoms.get_positions()
+
+        for sym in symbols:
+            mol.AddAtom(Chem.Atom(sym))
+
+        conf = Chem.Conformer(n_atoms)
+        for i, (x, y, z) in enumerate(positions):
+            conf.SetAtomPosition(i, Point3D(float(x), float(y), float(z)))
+        mol.AddConformer(conf)
+
+        # Determine connectivity and bond orders from 3D geometry + charge
+        rdDetermineBonds.DetermineConnectivity(mol)
+        rdDetermineBonds.DetermineBondOrders(mol, charge=total_charge)
+
+        # Extract formal charges
+        charges = np.array([mol.GetAtomWithIdx(i).GetFormalCharge()
+                           for i in range(n_atoms)], dtype=float)
+
+        fc_sum = int(charges.sum())
+        n_charged = int(np.sum(charges != 0))
+        log.info(f"  RDKit formal charges: sum={fc_sum:+d}, {n_charged} charged atoms")
+
+        # Log the charged atoms
+        for i in range(n_atoms):
+            if charges[i] != 0:
+                sym = symbols[i]
+                resinfo = ""
+                if template_st is not None and i < len(template_st):
+                    resinfo = f" ({template_st.res_name[i]} {template_st.chain_id[i]}:{template_st.res_id[i]} {template_st.atom_name[i]})"
+                log.info(f"    {sym}({i}){resinfo}: {int(charges[i]):+d}")
+
+        if fc_sum != total_charge:
+            log.warning(f"  RDKit formal charges sum to {fc_sum:+d} but expected {total_charge:+d}")
+
         return charges
 
-    # Assign charges to ionizable atoms
-    IONIZABLE = {
-        "LYS": ("NZ", +1),
-        "ARG": ("NH1", +1),
-        "ASP": ("OD1", -1),
-        "GLU": ("OE1", -1),
-        "HIS": ("ND1", 0),  # default neutral; +1 only if doubly protonated
-    }
+    except ImportError:
+        log.warning("  RDKit not available — falling back to Mulliken→round")
+    except Exception as e:
+        log.warning(f"  RDKit formal charge assignment failed: {e}")
+        log.warning("  Falling back to Mulliken→round")
 
-    assigned = 0.0
-    for i in range(len(template_st)):
-        resname = template_st.res_name[i]
-        atomname = template_st.atom_name[i]
-        if resname in IONIZABLE:
-            target_atom, default_charge = IONIZABLE[resname]
-            if atomname == target_atom:
-                charges[i] = default_charge
-                assigned += default_charge
+    # Fallback: compute Mulliken charges and round
+    mulliken = _compute_per_atom_charges(atoms, total_charge, os.path.dirname(__file__),
+                                          method="auto", template_st=template_st)
+    # Round to nearest integer, then adjust to match total
+    charges = np.round(mulliken)
+    diff = int(total_charge - charges.sum())
+    # Put the remainder on the most negative/positive atoms
+    if diff > 0:
+        for _ in range(abs(diff)):
+            idx = np.argmin(charges)
+            charges[idx] += 1
+    elif diff < 0:
+        for _ in range(abs(diff)):
+            idx = np.argmax(charges)
+            charges[idx] -= 1
 
-    # Distribute any remaining charge difference across all atoms
-    remainder = total_charge - assigned
-    if abs(remainder) > 0.01:
-        log.info(f"  Formal charge assignment: assigned {assigned:+.0f}, "
-                 f"remainder {remainder:+.1f} distributed uniformly")
-        charges += remainder / n_atoms
-
-    log.info(f"  Formal charges: sum={charges.sum():.1f}, "
-             f"non-zero atoms={int(np.sum(charges != 0))}")
+    log.info(f"  Formal charges (Mulliken→round): sum={int(charges.sum()):+d}")
     return charges
 
 
@@ -1572,20 +1604,22 @@ def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto"):
         except Exception:
             pass
 
-        # Write CIF manually with charge column
+        # Also compute formal charges via RDKit for the CIF
+        formal_charges = _compute_formal_charges(ts_atoms, template_st, charge)
+
+        # Write CIF with both partial and formal charges
         symbols = ts_atoms.get_chemical_symbols()
         positions = ts_atoms.get_positions()
+        has_template = template_st is not None
 
         with open(cif_path, "w") as f:
             f.write("data_transition_state\n")
             f.write(f"_qcb.total_charge  {charge}\n")
+            f.write(f"_qcb.charge_method  {charge_method}\n")
             if energy is not None:
                 f.write(f"_qcb.energy_eV  {energy:.6f}\n")
                 f.write(f"_qcb.energy_kcal_mol  {energy * EV_TO_KCAL:.2f}\n")
             f.write("\n")
-
-            # Add residue info if template available
-            has_template = template_st is not None
 
             f.write("loop_\n")
             f.write("_atom_site.id\n")
@@ -1598,7 +1632,8 @@ def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto"):
             f.write("_atom_site.Cartn_x\n")
             f.write("_atom_site.Cartn_y\n")
             f.write("_atom_site.Cartn_z\n")
-            f.write("_atom_site.charge\n")
+            f.write("_atom_site.partial_charge\n")
+            f.write("_atom_site.pdbx_formal_charge\n")
 
             for i in range(len(ts_atoms)):
                 parts = [str(i + 1), symbols[i]]
@@ -1614,10 +1649,11 @@ def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto"):
                     f"{positions[i][1]:.4f}",
                     f"{positions[i][2]:.4f}",
                     f"{per_atom_charges[i]:.4f}",
+                    f"{int(formal_charges[i])}",
                 ])
                 f.write(" ".join(parts) + "\n")
 
-        log.info(f"  Wrote {cif_path} (charge={charge}, {len(ts_atoms)} atoms with Mulliken charges)")
+        log.info(f"  Wrote {cif_path} (both partial + formal charges, {len(ts_atoms)} atoms)")
     except Exception as e:
         log.warning(f"  Could not write CIF: {e}")
 
