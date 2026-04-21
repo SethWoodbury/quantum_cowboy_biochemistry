@@ -248,11 +248,45 @@ def extract_net_charge(path):
 #   Nucleophilic attack on P by bridging hydroxide (O3/O1)
 #   Departure of aryl leaving group (O7/O5)
 #
+def get_smart_bond_targets(atoms, st, ligand_name, bond_defs):
+    """Replace hardcoded target distances with covalent-radii-based values.
+
+    For 'attractive' (bond forming): target = sum of covalent radii (natural bond length)
+    For 'repulsive' (bond breaking): target = 2.5 × sum of covalent radii (well-dissociated)
+
+    Falls back to hardcoded values if atoms can't be found.
+    """
+    from ase.data import covalent_radii, atomic_numbers
+
+    smart_defs = []
+    for atom_name1, atom_name2, default_target, mode in bond_defs:
+        idx1 = np.where((st.res_name == ligand_name) & (st.atom_name == atom_name1))[0]
+        idx2 = np.where((st.res_name == ligand_name) & (st.atom_name == atom_name2))[0]
+
+        if len(idx1) == 1 and len(idx2) == 1:
+            z1 = atoms.get_atomic_numbers()[int(idx1[0])]
+            z2 = atoms.get_atomic_numbers()[int(idx2[0])]
+            r_cov = covalent_radii[z1] + covalent_radii[z2]
+
+            if mode == "attractive":
+                target = round(r_cov, 2)  # natural bond length
+            else:
+                target = round(r_cov * 2.5, 2)  # well-dissociated
+
+            log.info(f"  Smart target: {atom_name1}-{atom_name2} ({mode}): "
+                     f"cov_radii={r_cov:.2f} → target={target:.2f} A "
+                     f"(default was {default_target:.1f})")
+            smart_defs.append((atom_name1, atom_name2, target, mode))
+        else:
+            smart_defs.append((atom_name1, atom_name2, default_target, mode))
+
+    return smart_defs
+
+
 BOND_BREAKING_DEFS = {
     # PTE phosphoester substrates
-    # Target 3.5 A for leaving group ensures full P-O dissociation (not just
-    # pentacoordinate intermediate at ~1.7 A). Target 1.4 A for nucleophile
-    # ensures full bond formation.
+    # These are DEFAULT targets — get_smart_bond_targets() overrides them
+    # with covalent-radii-based values when --endpoint-method auto is used.
     "YYL": [
         ("P1", "O1", 1.4, "attractive"),   # nucleophile forms bond
         ("P1", "O5", 3.5, "repulsive"),    # leaving group fully dissociates
@@ -1419,20 +1453,62 @@ def run_pipeline(args):
         fix_chains=args.fix_chains,
     )
 
-    # ── Steps 1 & 2: Generate both endpoints by driving bonds in both directions ──
-    # From the input PDB (which may be near the TS), we drive toward reactant
-    # AND toward product to ensure proper endpoints regardless of input geometry.
-    start, end = generate_endpoints(
-        ase_atoms, bt_struct, ligand, opt_c, md_c, relax_dir,
-        spring_k=args.spring_k, spring_fmax=args.spring_fmax,
-        fmax_spring=args.fmax_end_spring, fmax_final=args.fmax_end_final,
-        md_steps=args.md_steps, md_temp=args.md_temp,
-        unidirectional=args.unidirectional,
-        spring_mode=args.spring_mode,
-        md_strategy=args.md_strategy,
-        n_md_seeds=args.n_md_seeds,
-        anneal_peak=args.anneal_peak,
-    )
+    # ── Override bond targets with smart covalent-radii-based values ──
+    endpoint_method = args.endpoint_method
+    if endpoint_method == "auto" and ligand in BOND_BREAKING_DEFS:
+        log.info("  Using smart bond targets (covalent radii) ...")
+        smart_defs = get_smart_bond_targets(ase_atoms, bt_struct, ligand, BOND_BREAKING_DEFS[ligand])
+        BOND_BREAKING_DEFS[ligand] = smart_defs
+
+    # ── Steps 1 & 2: Generate endpoints ──
+    if endpoint_method in ("spring", "auto"):
+        start, end = generate_endpoints(
+            ase_atoms, bt_struct, ligand, opt_c, md_c, relax_dir,
+            spring_k=args.spring_k, spring_fmax=args.spring_fmax,
+            fmax_spring=args.fmax_end_spring, fmax_final=args.fmax_end_final,
+            md_steps=args.md_steps, md_temp=args.md_temp,
+            unidirectional=args.unidirectional,
+            spring_mode=args.spring_mode,
+            md_strategy=args.md_strategy,
+            n_md_seeds=args.n_md_seeds,
+            anneal_peak=args.anneal_peak,
+        )
+    elif endpoint_method == "constrained-scan":
+        try:
+            from qcb.mlff.endpoint_generation import constrained_endpoint
+            log.info("  Using constrained-scan endpoint generation ...")
+            start = constrained_endpoint(
+                ase_atoms.copy(), bt_struct, ligand, "reactant",
+                make_calc, relax_dir, opt_c, fmax=args.fmax_end_final,
+            )
+            end = constrained_endpoint(
+                ase_atoms.copy(), bt_struct, ligand, "product",
+                make_calc, relax_dir, opt_c, fmax=args.fmax_end_final,
+            )
+        except ImportError:
+            log.warning("  qcb.mlff.endpoint_generation not found, falling back to spring method")
+            start, end = generate_endpoints(
+                ase_atoms, bt_struct, ligand, opt_c, md_c, relax_dir,
+                spring_k=args.spring_k, spring_fmax=args.spring_fmax,
+                fmax_spring=args.fmax_end_spring, fmax_final=args.fmax_end_final,
+                md_steps=args.md_steps, md_temp=args.md_temp,
+            )
+    elif endpoint_method == "incremental-stretch":
+        try:
+            from qcb.mlff.endpoint_generation import incremental_stretch_endpoints
+            log.info("  Using incremental-stretch endpoint generation ...")
+            start, end = incremental_stretch_endpoints(
+                ase_atoms.copy(), bt_struct, ligand,
+                make_calc, relax_dir, opt_c, n_steps=10, fmax=args.fmax_end_final,
+            )
+        except ImportError:
+            log.warning("  qcb.mlff.endpoint_generation not found, falling back to spring method")
+            start, end = generate_endpoints(
+                ase_atoms, bt_struct, ligand, opt_c, md_c, relax_dir,
+                spring_k=args.spring_k, spring_fmax=args.spring_fmax,
+                fmax_spring=args.fmax_end_spring, fmax_final=args.fmax_end_final,
+                md_steps=args.md_steps, md_temp=args.md_temp,
+            )
     # Switch to primary model (--model) for energy evaluation and NEB/TS
     start.calc = make_calc(for_neb=True)
     start.info["charge"] = charge
@@ -1637,6 +1713,18 @@ Examples:
              "nuc-only = only attract nucleophile to P (LG responds naturally); "
              "lg-only = only push leaving group away (nuc responds naturally). "
              "For unbiased mechanistic investigation, use nuc-only or lg-only."
+    )
+
+    # Endpoint generation method
+    p.add_argument(
+        "--endpoint-method", default="spring",
+        choices=["spring", "constrained-scan", "incremental-stretch", "auto"],
+        help="How to generate reactant/product endpoints: "
+             "spring = spring-driven relaxation (current, fast but biased); "
+             "constrained-scan = fix bond at target distance, minimize rest (rigorous); "
+             "incremental-stretch = incrementally change bond in steps (traces MEP); "
+             "auto = use covalent radii for smart targets + spring method. "
+             "For gold-standard: constrained-scan or incremental-stretch."
     )
 
     # Mode
