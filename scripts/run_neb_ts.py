@@ -1296,7 +1296,8 @@ def validate_ts(ts_atoms, opt_constraint, outdir):
 # ══════════════════════════════════════════════════════════════
 
 
-def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, images):
+def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, images,
+                      system_name=None, charge_method="auto"):
     """Organize outputs into user-facing PDBs and a technical/ subdirectory.
 
     Top-level outputs (what the user cares about):
@@ -1323,13 +1324,17 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
         if os.path.isdir(src) and not os.path.isdir(dst):
             shutil.move(src, dst)
 
+    # Deterministic basename for all outputs (prevents overwrites when combining dirs)
+    prefix = f"{system_name}_" if system_name else ""
+
     # Write user-facing PDBs
-    write_result_pdb(start, template_st, os.path.join(outdir, "reactant.pdb"))
-    write_result_pdb(end, template_st, os.path.join(outdir, "product.pdb"))
-    write_result_pdb(ts, template_st, os.path.join(outdir, "transition_state.pdb"))
+    write_result_pdb(start, template_st, os.path.join(outdir, f"{prefix}reactant.pdb"))
+    write_result_pdb(end, template_st, os.path.join(outdir, f"{prefix}product.pdb"))
+    write_result_pdb(ts, template_st, os.path.join(outdir, f"{prefix}transition_state.pdb"))
 
     # Write CIF for transition state (includes charge annotation)
-    _write_ts_cif(ts, template_st, outdir, charge_method=args.charge_method)
+    _write_ts_cif(ts, template_st, outdir, charge_method=charge_method,
+                  filename=f"{prefix}transition_state.cif")
 
     # NEB path as multi-MODEL PDB
     if images:
@@ -1341,7 +1346,7 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
                 neb_energies.append(0.0)
         write_trajectory_pdb(
             images, template_st,
-            os.path.join(outdir, "neb_path.pdb"),
+            os.path.join(outdir, f"{prefix}neb_path.pdb"),
             energies=neb_energies,
         )
 
@@ -1352,7 +1357,7 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
     for png_name in ["neb-climb.png", "path-neb-noclimb.png"]:
         src = os.path.join(tech_dir, "ts", png_name)
         if os.path.isfile(src):
-            shutil.copy2(src, os.path.join(outdir, "energy_profile.png"))
+            shutil.copy2(src, os.path.join(outdir, f"{prefix}energy_profile.png"))
             break
 
     log.info("  Output organized:")
@@ -2012,6 +2017,8 @@ def run_pipeline(args):
     log.info("Organizing outputs ...")
     _organize_outputs(
         outdir_base, relax_dir, ts_dir, bt_struct, start, end, ts, images,
+        system_name=system_name,
+        charge_method=args.charge_method,
     )
 
     # Save summary JSON
