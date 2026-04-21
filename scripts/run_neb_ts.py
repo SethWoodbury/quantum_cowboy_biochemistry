@@ -1312,31 +1312,120 @@ def _organize_outputs(outdir, relax_dir, ts_dir, template_st, start, end, ts, im
     log.info(f"    {outdir}/technical/  (raw logs, traj, xyz)")
 
 
+def _compute_per_atom_charges(atoms, total_charge, outdir):
+    """Compute per-atom Mulliken charges using xTB (GFN2).
+
+    Falls back to uniform charge distribution if xTB fails.
+    Returns numpy array of per-atom charges.
+    """
+    XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
+    n_atoms = len(atoms)
+
+    if not os.path.isfile(XTB_BIN):
+        log.warning("  xTB not found — using uniform charge distribution")
+        return np.full(n_atoms, total_charge / n_atoms)
+
+    tmpdir = Path(outdir) / ".xtb_charges"
+    tmpdir.mkdir(exist_ok=True)
+
+    # Write XYZ
+    symbols = atoms.get_chemical_symbols()
+    positions = atoms.get_positions()
+    xyz_file = tmpdir / "ts.xyz"
+    with open(xyz_file, "w") as f:
+        f.write(f"{n_atoms}\n\n")
+        for sym, (x, y, z) in zip(symbols, positions):
+            f.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
+
+    # Run xTB single-point
+    result = subprocess.run(
+        [XTB_BIN, "ts.xyz", "--gfn", "2", "--chrg", str(total_charge), "--sp"],
+        capture_output=True, text=True, timeout=120, cwd=str(tmpdir),
+    )
+
+    charges_file = tmpdir / "charges"
+    if charges_file.exists():
+        charges = np.array([float(l) for l in charges_file.read_text().strip().split("\n")])
+        if len(charges) == n_atoms:
+            log.info(f"  xTB Mulliken charges: sum={charges.sum():.3f}, "
+                     f"range=[{charges.min():.3f}, {charges.max():.3f}]")
+            # Cleanup
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            return charges
+
+    log.warning(f"  xTB charge calculation failed — using uniform distribution")
+    import shutil
+    shutil.rmtree(tmpdir, ignore_errors=True)
+    return np.full(n_atoms, total_charge / n_atoms)
+
+
 def _write_ts_cif(ts_atoms, template_st, outdir):
-    """Write transition state as CIF with charge and energy annotations."""
+    """Write transition state as CIF with per-atom charges and energy.
+
+    Computes Mulliken charges via xTB single-point, then writes a proper
+    CIF with _atom_site.charge column.
+    """
     try:
-        from ase.io import write as ase_write
         cif_path = os.path.join(outdir, "transition_state.cif")
-
-        # Write basic CIF via ASE
-        ase_write(cif_path, ts_atoms, format="cif")
-
-        # Append charge info as CIF data items
         charge = ts_atoms.info.get("charge", 0)
+
+        # Compute per-atom charges
+        log.info("  Computing per-atom charges (xTB Mulliken) ...")
+        per_atom_charges = _compute_per_atom_charges(ts_atoms, charge, outdir)
+
         energy = None
         try:
             energy = ts_atoms.get_potential_energy()
         except Exception:
             pass
 
-        with open(cif_path, "a") as f:
-            f.write(f"\n# QCB annotations\n")
+        # Write CIF manually with charge column
+        symbols = ts_atoms.get_chemical_symbols()
+        positions = ts_atoms.get_positions()
+
+        with open(cif_path, "w") as f:
+            f.write("data_transition_state\n")
             f.write(f"_qcb.total_charge  {charge}\n")
             if energy is not None:
                 f.write(f"_qcb.energy_eV  {energy:.6f}\n")
                 f.write(f"_qcb.energy_kcal_mol  {energy * EV_TO_KCAL:.2f}\n")
+            f.write("\n")
 
-        log.info(f"  Wrote {cif_path} (charge={charge})")
+            # Add residue info if template available
+            has_template = template_st is not None
+
+            f.write("loop_\n")
+            f.write("_atom_site.id\n")
+            f.write("_atom_site.type_symbol\n")
+            if has_template:
+                f.write("_atom_site.label_atom_id\n")
+                f.write("_atom_site.label_comp_id\n")
+                f.write("_atom_site.label_asym_id\n")
+                f.write("_atom_site.label_seq_id\n")
+            f.write("_atom_site.Cartn_x\n")
+            f.write("_atom_site.Cartn_y\n")
+            f.write("_atom_site.Cartn_z\n")
+            f.write("_atom_site.charge\n")
+
+            for i in range(len(ts_atoms)):
+                parts = [str(i + 1), symbols[i]]
+                if has_template and i < len(template_st):
+                    parts.extend([
+                        template_st.atom_name[i],
+                        template_st.res_name[i],
+                        template_st.chain_id[i],
+                        str(template_st.res_id[i]),
+                    ])
+                parts.extend([
+                    f"{positions[i][0]:.4f}",
+                    f"{positions[i][1]:.4f}",
+                    f"{positions[i][2]:.4f}",
+                    f"{per_atom_charges[i]:.4f}",
+                ])
+                f.write(" ".join(parts) + "\n")
+
+        log.info(f"  Wrote {cif_path} (charge={charge}, {len(ts_atoms)} atoms with Mulliken charges)")
     except Exception as e:
         log.warning(f"  Could not write CIF: {e}")
 
