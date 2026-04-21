@@ -1,0 +1,3 @@
+[submodule "deps/atomworks"]
+	path = deps/atomworks
+	url = https://github.com/baker-laboratory/atomworks-dev.git
