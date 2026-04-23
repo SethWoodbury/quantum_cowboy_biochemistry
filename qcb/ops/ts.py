@@ -329,10 +329,12 @@ def _cv_spring_endpoints(
         )
         a.set_constraint(base_cs + [cv_spring])
         log.info(f"  CV-drive ({label}, s_target={s_target:+.1f}) ...")
-        opt = LBFGS(a, logfile=str(outdir / f"cv-drive-{label}.log"),
-                    trajectory=str(outdir / f"cv-drive-{label}.traj"))
+        # NOTE: no trajectory= here — ASE's Trajectory writer reopens+deserializes the file
+        # which fails for our custom BondDifferenceCVSpring constraint.
+        # Log-only; final geometry is what we care about.
+        opt = LBFGS(a, logfile=str(outdir / f"cv-drive-{label}.log"))
         opt.run(fmax=spring_drive_fmax, steps=300)
-        # Remove CV spring, keep opt constraint, polish
+        # Remove CV spring, keep opt constraint, polish (now safe to use trajectory)
         a.set_constraint(base_cs)
         opt2 = LBFGS(a, logfile=str(outdir / f"cv-polish-{label}.log"),
                      trajectory=str(outdir / f"cv-polish-{label}.traj"))
