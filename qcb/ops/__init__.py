@@ -15,6 +15,6 @@ Available ops:
     mtd      — well-tempered metadynamics
     ts       — high-level TS pipeline (composes saddle/irc/neb/mtd)
 """
-from qcb.ops import sp, opt, md, freq, scan, saddle, irc, neb, mtd, ts
+from qcb.ops import sp, opt, md, freq, scan, saddle, irc, neb, mtd, gsm, ts
 
-__all__ = ["sp", "opt", "md", "freq", "scan", "saddle", "irc", "neb", "mtd", "ts"]
+__all__ = ["sp", "opt", "md", "freq", "scan", "saddle", "irc", "neb", "mtd", "gsm", "ts"]

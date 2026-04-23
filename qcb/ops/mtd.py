@@ -19,14 +19,18 @@ def run(
     lg_idx: int = None,
     total_time_ps: float = 100.0,
     temperature_K: float = 300.0,
+    variant: str = "wt",  # "wt" = well-tempered; "opes" = OPES-MetaD
     **kwargs,
 ) -> dict:
-    """Well-tempered metadynamics on the bond-difference CV.
+    """Metadynamics on the bond-difference CV.
 
-    Required atom indices: p_idx (central atom), nuc_idx (nucleophile), lg_idx (leaving group).
+    Args:
+        variant: "wt" for classic well-tempered MTD (default),
+                 "opes" for OPES-MetaD (Invernizzi & Parrinello JPCL 2020,
+                 fewer parameters, faster convergence).
+
+    Required atom indices: p_idx, nuc_idx, lg_idx (for the CV s = d(P-LG) - d(P-nuc)).
     """
-    from qcb.mlff.metadynamics import run_metadynamics_rescue
-
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -38,7 +42,18 @@ def run(
     if p_idx is None or nuc_idx is None or lg_idx is None:
         raise ValueError("MTD requires p_idx, nuc_idx, lg_idx (atom indices for the CV)")
 
-    result = run_metadynamics_rescue(
+    if variant == "opes":
+        from qcb.mlff.metadynamics import run_opes_rescue
+        entry = run_opes_rescue
+        valid_kwargs = ("timestep_fs", "barrier_kJ_mol", "sigma_A",
+                        "pace_steps", "bias_factor", "friction_per_ps")
+    else:
+        from qcb.mlff.metadynamics import run_metadynamics_rescue
+        entry = run_metadynamics_rescue
+        valid_kwargs = ("timestep_fs", "bias_height_kJ_mol", "bias_sigma_A",
+                        "bias_pace_steps", "bias_factor", "friction_per_ps")
+
+    result = entry(
         atoms,
         p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx,
         calculator=atoms.calc,
@@ -46,9 +61,7 @@ def run(
         constraint=constraint,
         temperature_K=temperature_K,
         total_time_ps=total_time_ps,
-        **{k: v for k, v in kwargs.items()
-           if k in ("timestep_fs", "bias_height_kJ_mol", "bias_sigma_A",
-                    "bias_pace_steps", "bias_factor", "friction_per_ps")},
+        **{k: v for k, v in kwargs.items() if k in valid_kwargs},
     )
 
     return {

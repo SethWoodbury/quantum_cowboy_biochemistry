@@ -58,8 +58,12 @@ def _atoms_to_pysis_geom(atoms: Atoms):
     )
 
 
-def _make_ase_pysis_calc(calc_fn: Callable, charge: int = 0):
-    """Wrap an ASE calculator as a pysisyphus Calculator."""
+def _make_pysis_calc_getter(calc_fn: Callable, charge: int = 0):
+    """Build a pysisyphus calc_getter: zero-arg callable returning a fresh Calculator.
+
+    pysisyphus expects calc_getter() to return a new Calculator instance each call
+    (one per image) to avoid shared-state issues.
+    """
     from pysisyphus.calculators.Calculator import Calculator
 
     class _AsePysisCalc(Calculator):
@@ -68,7 +72,6 @@ def _make_ase_pysis_calc(calc_fn: Callable, charge: int = 0):
             self.ase_calc = calc_fn()
 
         def get_forces(self, atoms, coords):
-            import numpy as np
             from ase import Atoms as _Atoms
             ase = _Atoms(symbols=atoms, positions=coords.reshape(-1, 3))
             ase.calc = self.ase_calc
@@ -81,7 +84,10 @@ def _make_ase_pysis_calc(calc_fn: Callable, charge: int = 0):
         def get_energy(self, atoms, coords):
             return {"energy": self.get_forces(atoms, coords)["energy"]}
 
-    return _AsePysisCalc()
+    def calc_getter():
+        return _AsePysisCalc()
+
+    return calc_getter
 
 
 def run_fsm(
@@ -119,12 +125,12 @@ def run_fsm(
     log.info(f"FSM: {n_images} target images, fmax={fmax}")
     geom_r = _atoms_to_pysis_geom(reactant)
     geom_p = _atoms_to_pysis_geom(product)
-    calc = _make_ase_pysis_calc(calculator_fn, charge)
+    calc_getter = _make_pysis_calc_getter(calculator_fn, charge)
 
-    # FSM expects a pair of geometries
+    # FSM expects a pair of geometries + a calc_getter (zero-arg callable)
     fs = FreezingString(
         images=[geom_r, geom_p],
-        calculator=calc,
+        calc_getter=calc_getter,
         max_nodes=max_nodes,
     )
     opt = StringOptimizer(
@@ -204,11 +210,11 @@ def run_gsm(
     log.info(f"GSM: {n_images} target images, fmax={fmax}")
     geom_r = _atoms_to_pysis_geom(reactant)
     geom_p = _atoms_to_pysis_geom(product)
-    calc = _make_ase_pysis_calc(calculator_fn, charge)
+    calc_getter = _make_pysis_calc_getter(calculator_fn, charge)
 
     gs = GrowingString(
         images=[geom_r, geom_p],
-        calculator=calc,
+        calc_getter=calc_getter,
         max_nodes=n_images,
     )
     opt = StringOptimizer(

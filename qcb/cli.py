@@ -239,7 +239,28 @@ def _cmd_mtd(args):
     atoms, _, calc, constraint, _, outdir, _ = _setup_atoms_and_calc(args)
     return mtd.run(atoms, calc, outdir, constraint,
                    p_idx=args.p_idx, nuc_idx=args.nuc_idx, lg_idx=args.lg_idx,
-                   total_time_ps=args.time, temperature_K=args.temp)
+                   total_time_ps=args.time, temperature_K=args.temp,
+                   variant=args.variant)
+
+
+def _cmd_gsm(args):
+    from qcb.ops import gsm
+    from qcb.calc import make_calc_fn
+    from qcb.io import load_structure
+
+    r_atoms, _, r_charge = load_structure(args.reactant)
+    p_atoms, _, p_charge = load_structure(args.product)
+    charge = args.charge if args.charge is not None else (r_charge or 0)
+    calc_fn = make_calc_fn(model=args.model, head=args.head, device=args.device, charge=charge)
+    r_atoms.calc = calc_fn()
+    p_atoms.calc = calc_fn()
+    r_atoms.info["charge"] = charge
+    p_atoms.info["charge"] = charge
+
+    outdir = Path(args.outdir) if args.outdir else Path(f"qcb-{args.method}-out")
+
+    return gsm.run(r_atoms, p_atoms, calc_fn, outdir, method=args.method,
+                   charge=charge, n_images=args.n_images, fmax=args.fmax)
 
 
 def _cmd_ts(args):
@@ -346,13 +367,31 @@ def main(argv=None):
     p_neb.add_argument("--log-level", default="INFO")
 
     # mtd
-    p_mtd = sub.add_parser("mtd", help="Well-tempered metadynamics")
+    p_mtd = sub.add_parser("mtd", help="Metadynamics (well-tempered or OPES)")
     _common_parser_setup(p_mtd)
     p_mtd.add_argument("--p-idx", type=int, required=True, help="Central atom index")
     p_mtd.add_argument("--nuc-idx", type=int, required=True, help="Nucleophile atom index")
     p_mtd.add_argument("--lg-idx", type=int, required=True, help="Leaving-group atom index")
     p_mtd.add_argument("--time", type=float, default=100.0, help="Total MTD time in ps")
     p_mtd.add_argument("--temp", type=float, default=300.0)
+    p_mtd.add_argument("--variant", default="wt", choices=["wt", "opes"],
+                        help="wt = well-tempered MTD (default); opes = OPES-MetaD")
+
+    # gsm / fsm
+    p_gsm = sub.add_parser("gsm", help="Growing/Freezing String Method (via pysisyphus)")
+    p_gsm.add_argument("reactant")
+    p_gsm.add_argument("product")
+    p_gsm.add_argument("--method", default="fsm", choices=["fsm", "gsm"],
+                       help="fsm = Freezing String (faster, 88-90%% success vs CI-NEB 63-71%% per Wan 2026); "
+                            "gsm = Growing String (more optimization per node)")
+    p_gsm.add_argument("--model", default="mace-omol")
+    p_gsm.add_argument("--head", default=None)
+    p_gsm.add_argument("--charge", type=int, default=None)
+    p_gsm.add_argument("--device", default="cuda")
+    p_gsm.add_argument("--outdir", default=None)
+    p_gsm.add_argument("--n-images", type=int, default=15)
+    p_gsm.add_argument("--fmax", type=float, default=0.05)
+    p_gsm.add_argument("--log-level", default="INFO")
 
     # ts
     p_ts = sub.add_parser("ts", help="Full TS pipeline (wraps scripts/run_neb_ts.py)")
@@ -382,7 +421,8 @@ def main(argv=None):
         "sp": _cmd_sp, "opt": _cmd_opt, "md": _cmd_md,
         "freq": _cmd_freq, "scan": _cmd_scan,
         "saddle": _cmd_saddle, "irc": _cmd_irc,
-        "neb": _cmd_neb, "mtd": _cmd_mtd, "ts": _cmd_ts,
+        "neb": _cmd_neb, "mtd": _cmd_mtd,
+        "gsm": _cmd_gsm, "ts": _cmd_ts,
     }
     handler = dispatch[args.op]
     result = handler(args)
