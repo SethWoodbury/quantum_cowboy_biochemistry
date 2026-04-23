@@ -19,7 +19,8 @@ qcb/
     irc.py             # intrinsic reaction coordinate from a TS
     neb.py             # nudged elastic band (R + P given)
     mtd.py             # well-tempered metadynamics
-    ts.py              # full TS pipeline (wraps scripts/run_neb_ts.py for now)
+    ts.py              # full TS pipeline (native composition of saddle/irc/neb/mtd);
+                       #   legacy subprocess to scripts/run_neb_ts.py available via --legacy-subprocess
   mlff/                # lower-level ML-FF internals
     irc.py             # Sella saddle + IRC primitives
     interpolation.py   # geodesic / IDPP / linear NEB interpolation

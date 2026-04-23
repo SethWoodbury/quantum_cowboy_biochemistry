@@ -42,6 +42,8 @@ import logging
 import sys
 from pathlib import Path
 
+import numpy as np
+
 
 def _common_parser_setup(parser: argparse.ArgumentParser, needs_structure: bool = True):
     """Add flags common to all ops."""
@@ -264,18 +266,110 @@ def _cmd_gsm(args):
 
 
 def _cmd_ts(args):
-    from qcb.ops import ts
-    extra = []
-    if args.passthrough:
-        extra = args.passthrough
+    """Native qcb ts pipeline: loads structure + calc + constraint and calls ts.run()."""
+    from qcb.ops import ts as ts_op
+    from qcb.calc import make_calc_fn
+    from qcb.io import load_structure, parse_constraints, build_fix_atoms
+    from qcb.io.constraints import preset_to_specs, STANDARD_EXCLUDED_RES
+
+    # Legacy subprocess mode (opt-in via --legacy-subprocess)
+    if getattr(args, "legacy_subprocess", False):
+        extra = list(args.passthrough or [])
+        if args.fix_preset:
+            extra.extend(["--constraint-mode", args.fix_preset])
+        if args.head:
+            extra.extend(["--head", args.head])
+        outdir = Path(args.outdir) if args.outdir else Path("qcb-ts-out")
+        return ts_op.run_legacy_subprocess(
+            args.input, outdir, strategy=args.strategy,
+            model=args.model, charge=args.charge, extra_args=extra,
+        )
+
+    # Native pipeline (default)
+    atoms, bt_struct, charge_hint = load_structure(args.input)
+    if args.charge is not None and charge_hint is not None and args.charge != charge_hint:
+        logging.getLogger("qcb.cli").warning(
+            f"--charge {args.charge} disagrees with PDB REMARK ({charge_hint}); using CLI value"
+        )
+    charge = args.charge if args.charge is not None else (charge_hint or 0)
+
+    # Detect ligand name (first non-protein residue)
+    ligand_name = None
+    if bt_struct is not None:
+        protein_res = {"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE","LEU",
+                       "LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL","KCX"}
+        for rn in bt_struct.res_name:
+            rns = str(rn)
+            if rns not in STANDARD_EXCLUDED_RES and rns not in protein_res:
+                ligand_name = rns
+                break
+
+    # Constraints
+    constraint = None
+    fix_specs = list(getattr(args, "fix", []) or [])
+    free_specs = list(getattr(args, "free", []) or [])
     if args.fix_preset:
-        extra.extend(["--constraint-mode", args.fix_preset])
-    if args.head:
-        extra.extend(["--head", args.head])
-    charge = args.charge
+        preset_specs, preset_excluded = preset_to_specs(args.fix_preset, ligand_name)
+        fix_specs = preset_specs + fix_specs
+        excluded = preset_excluded
+    else:
+        excluded = STANDARD_EXCLUDED_RES
+
+    if fix_specs or free_specs:
+        fix_mask = parse_constraints(atoms, bt_struct, fix_specs, excluded) if fix_specs \
+                   else np.zeros(len(atoms), dtype=bool)
+        if free_specs:
+            free_mask = parse_constraints(atoms, bt_struct, free_specs, set())
+            fix_mask &= ~free_mask
+        constraint = build_fix_atoms(fix_mask)
+
+    # Auto-detect CV atoms from ligand bond-breaking defs (if ligand known)
+    p_idx = nuc_idx = lg_idx = None
+    if ligand_name and bt_struct is not None:
+        # Import bond-breaking defs from the legacy script module
+        try:
+            import sys
+            _script_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
+            if str(_script_dir) not in sys.path:
+                sys.path.insert(0, str(_script_dir))
+            from run_neb_ts import BOND_BREAKING_DEFS
+            if ligand_name in BOND_BREAKING_DEFS:
+                defs = BOND_BREAKING_DEFS[ligand_name]
+                nuc_name = next((d[1] for d in defs if d[3] == "attractive"), None)
+                lg_name = next((d[1] for d in defs if d[3] == "repulsive"), None)
+                p_name = defs[0][0]
+                try:
+                    p_idx = int(np.where((bt_struct.res_name == ligand_name) &
+                                          (bt_struct.atom_name == p_name))[0][0])
+                    nuc_idx = int(np.where((bt_struct.res_name == ligand_name) &
+                                            (bt_struct.atom_name == nuc_name))[0][0])
+                    lg_idx = int(np.where((bt_struct.res_name == ligand_name) &
+                                           (bt_struct.atom_name == lg_name))[0][0])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # CLI override of CV indices
+    if getattr(args, "p_idx", None) is not None:
+        p_idx = args.p_idx
+    if getattr(args, "nuc_idx", None) is not None:
+        nuc_idx = args.nuc_idx
+    if getattr(args, "lg_idx", None) is not None:
+        lg_idx = args.lg_idx
+
+    calc_fn = make_calc_fn(model=args.model, head=args.head, device=args.device, charge=charge)
     outdir = Path(args.outdir) if args.outdir else Path("qcb-ts-out")
-    return ts.run(args.input, outdir, strategy=args.strategy,
-                  model=args.model, charge=charge, extra_args=extra)
+
+    return ts_op.run(
+        atoms, calc_fn, outdir,
+        strategy=args.strategy, charge=charge, constraint=constraint,
+        n_images=args.n_images, interpolation=args.interpolation,
+        cv_s_reactant=args.cv_s_reactant, cv_s_product=args.cv_s_product,
+        p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx,
+        mtd_time_ps=args.mtd_time_ps,
+        template=bt_struct,
+    )
 
 
 def main(argv=None):
@@ -394,7 +488,7 @@ def main(argv=None):
     p_gsm.add_argument("--log-level", default="INFO")
 
     # ts
-    p_ts = sub.add_parser("ts", help="Full TS pipeline (wraps scripts/run_neb_ts.py)")
+    p_ts = sub.add_parser("ts", help="Native TS pipeline (composes saddle/irc/neb/mtd)")
     p_ts.add_argument("input")
     p_ts.add_argument("--outdir", default=None)
     p_ts.add_argument("--model", default="mace-omol")
@@ -403,10 +497,26 @@ def main(argv=None):
     p_ts.add_argument("--device", default="cuda")
     p_ts.add_argument("--strategy", default="legacy",
                       choices=["legacy", "irc", "cv-spring", "mtd"])
+    p_ts.add_argument("--fix", nargs="+", default=None,
+                      help="Constraint specs (see other ops for grammar)")
+    p_ts.add_argument("--free", nargs="+", default=None)
     p_ts.add_argument("--fix-preset", default=None,
                       choices=["ca-only", "backbone", "backbone-water", "none"])
+    p_ts.add_argument("--n-images", type=int, default=15)
+    p_ts.add_argument("--interpolation", default="geodesic",
+                      choices=["geodesic", "idpp", "linear"])
+    p_ts.add_argument("--cv-s-reactant", type=float, default=-2.0)
+    p_ts.add_argument("--cv-s-product", type=float, default=2.5)
+    p_ts.add_argument("--p-idx", type=int, default=None,
+                      help="Override: P atom index for CV (auto-detected from ligand)")
+    p_ts.add_argument("--nuc-idx", type=int, default=None)
+    p_ts.add_argument("--lg-idx", type=int, default=None)
+    p_ts.add_argument("--mtd-time-ps", type=float, default=100.0)
+    p_ts.add_argument("--legacy-subprocess", action="store_true",
+                      help="Use old subprocess wrapper around scripts/run_neb_ts.py "
+                           "(has known energy-consistency bug; use only for backward compat)")
     p_ts.add_argument("--passthrough", nargs=argparse.REMAINDER,
-                      help="Additional flags to pass to run_neb_ts.py")
+                      help="(legacy-subprocess only) additional flags to pass to run_neb_ts.py")
     p_ts.add_argument("--log-level", default="INFO")
 
     args = parser.parse_args(argv)
