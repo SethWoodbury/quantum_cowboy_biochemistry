@@ -1,3 +1,6 @@
 [submodule "deps/atomworks"]
 	path = deps/atomworks
 	url = https://github.com/baker-laboratory/atomworks-dev.git
+[submodule "deps/pysisyphus"]
+	path = deps/pysisyphus
+	url = https://github.com/eljost/pysisyphus.git

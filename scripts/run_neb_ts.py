@@ -1,17 +1,33 @@
 #!/usr/bin/env python
 """
-NEB Transition State Search Pipeline for Enzyme Active Sites
-=============================================================
-Uses MACE ML force fields + ASE NEB + Sella saddle-point optimisation.
+DEPRECATED ENTRY POINT — use `scripts/qcb ts` or `python -m qcb.cli ts` instead.
+================================================================================
 
-Full pipeline:
+This script is the full TS-search pipeline (legacy/irc/cv-spring/mtd strategies
++ NEB + Sella + frequencies). It is still fully functional and all existing
+SLURM scripts continue to work. However, new users should use the modular qcb
+CLI which provides the same pipeline plus standalone operations:
+
+    qcb ts input.pdb --strategy irc             # this script's equivalent
+    qcb opt input.pdb                            # just geometry optimization
+    qcb md input.pdb --time 10 --temp 300        # molecular dynamics
+    qcb freq input.pdb                           # vibrational frequencies
+    qcb scan input.pdb --coord bond ...          # Gaussian-style coordinate scan
+    qcb saddle input.pdb                         # Sella only
+    qcb irc input.pdb                            # IRC only
+    qcb neb reactant.pdb product.pdb             # NEB only
+    qcb mtd input.pdb --p-idx N --nuc-idx M ...  # metadynamics
+    qcb sp input.pdb                             # single-point energy
+
+See `docs/strategies.md` and `qcb --help` for details.
+
+Full pipeline (what THIS script does):
   1. Load PDB, auto-detect ligand, extract formal charge
   2. Set up backbone constraints
-  3. Relax start state (reactant)
-  4. Generate & relax end state (product) via spring-constrained optimisation
-  5. NEB path optimisation  →  climbing-image NEB
-  6. Sella TS refinement (internal coordinates)
-  7. Vibrational frequency validation
+  3. Endpoint generation (strategy-dependent)
+  4. NEB path optimisation + CI-NEB climbing image
+  5. Sella TS refinement (optional)
+  6. Vibrational frequency validation (optional)
 
 Designed for PTE theozyme active-site clusters (YYE / YYL / YYF / PT4 ligands)
 but adaptable to other enzyme systems.
@@ -20,7 +36,7 @@ Usage
 -----
   python run_neb_ts.py path/to/input.pdb                    # auto-detect model
   python run_neb_ts.py path/to/input.pdb --model mace-mp    # specific model
-  python run_neb_ts.py path/to/input.pdb --resume            # resume from checkpoint
+  python run_neb_ts.py path/to/input.pdb --strategy irc     # IRC-from-TS strategy
 
 Authors: synthesised from lschaaf / gbg222 / seth pipelines, March 2026.
 """
@@ -30,10 +46,16 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 from copy import deepcopy
 from pathlib import Path
+
+# Ensure project root is on sys.path so qcb package is importable
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 import numpy as np
 
@@ -300,15 +322,257 @@ def extract_net_charge(path):
 #   Nucleophilic attack on P by bridging hydroxide (O3/O1)
 #   Departure of aryl leaving group (O7/O5)
 #
-def get_smart_bond_targets(atoms, st, ligand_name, bond_defs):
-    """Replace hardcoded target distances with covalent-radii-based values.
+def _xtb_optimize_fragment(symbols, positions, charge, workdir, label="fragment"):
+    """Run xTB GFN2 geometry optimization on a fragment, return optimized positions.
 
-    For 'attractive' (bond forming): target = sum of covalent radii (natural bond length)
-    For 'repulsive' (bond breaking): target = 2.5 × sum of covalent radii (well-dissociated)
-
-    Falls back to hardcoded values if atoms can't be found.
+    Returns (opt_positions, energy) or (None, None) on failure.
     """
-    from ase.data import covalent_radii, atomic_numbers
+    import shutil
+
+    XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
+    if not os.path.isfile(XTB_BIN):
+        return None, None
+
+    tmpdir = Path(workdir) / f".xtb_ref_{label}"
+    tmpdir.mkdir(exist_ok=True)
+
+    n = len(symbols)
+    with open(tmpdir / "frag.xyz", "w") as f:
+        f.write(f"{n}\n\n")
+        for sym, (x, y, z) in zip(symbols, positions):
+            f.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
+
+    timeout_s = min(600, max(60, n * 3))
+    try:
+        result = subprocess.run(
+            [XTB_BIN, "frag.xyz", "--gfn", "2", "--chrg", str(charge), "--opt", "tight"],
+            capture_output=True, text=True, timeout=timeout_s, cwd=str(tmpdir),
+        )
+    except subprocess.TimeoutExpired:
+        log.warning(f"    xTB opt timed out for {label}")
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return None, None
+
+    opt_file = tmpdir / "xtbopt.xyz"
+    energy = None
+    if opt_file.exists():
+        lines = opt_file.read_text().strip().split("\n")
+        # Parse energy from comment line
+        if len(lines) >= 2:
+            import re as _re
+            e_match = _re.search(r"energy:\s*([-\d.]+)", lines[1])
+            if e_match:
+                energy = float(e_match.group(1))  # Hartree
+        opt_pos = []
+        for line in lines[2:]:
+            parts = line.split()
+            if len(parts) >= 4:
+                opt_pos.append([float(parts[1]), float(parts[2]), float(parts[3])])
+        if len(opt_pos) == n:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+            return np.array(opt_pos), energy
+
+    shutil.rmtree(tmpdir, ignore_errors=True)
+    return None, None
+
+
+def _xtb_reference_bond_lengths(atoms, st, ligand_name, bond_defs, total_charge, workdir):
+    """Use xTB to compute equilibrium bond lengths for reactant, product, and intermediate.
+
+    Extracts the ligand + first-shell coordinating atoms, builds three geometries:
+      - reactant: nuc far, LG bonded (input geometry with nuc pulled away)
+      - product: nuc bonded, LG far (input geometry with LG pulled away)
+      - intermediate: both nuc and LG bonded (pentacoordinate, if applicable)
+
+    Optimizes each with xTB GFN2 and returns equilibrium distances.
+
+    Returns dict: {
+        'product': {(atom1, atom2): distance, ...},
+        'reactant': {(atom1, atom2): distance, ...},
+        'intermediate': {(atom1, atom2): distance, ...} or None,
+        'intermediate_is_minimum': bool,
+    }
+    or None if xTB fails.
+    """
+    from ase.data import covalent_radii
+
+    log.info("  Running xTB reference geometry optimizations ...")
+
+    # Extract ligand atoms
+    ligand_mask = st.res_name == ligand_name
+    lig_indices = np.where(ligand_mask)[0]
+    if len(lig_indices) == 0:
+        return None
+
+    # Also include first-shell atoms (bonded to ligand via covalent criteria)
+    all_indices = set(lig_indices.tolist())
+    for li in lig_indices:
+        zi = atoms.get_atomic_numbers()[li]
+        for j in range(len(atoms)):
+            if j in all_indices:
+                continue
+            zj = atoms.get_atomic_numbers()[j]
+            d = atoms.get_distance(li, j)
+            r_bond = (covalent_radii[zi] + covalent_radii[zj]) * 1.3
+            if d < r_bond:
+                all_indices.add(j)
+
+    frag_indices = sorted(all_indices)
+    # Map global → fragment indices
+    global_to_frag = {g: f for f, g in enumerate(frag_indices)}
+
+    frag_symbols = [atoms.get_chemical_symbols()[i] for i in frag_indices]
+    frag_positions = atoms.get_positions()[frag_indices]
+
+    # Identify bond atom indices in fragment space
+    bond_pairs = {}  # {(aname1, aname2): (frag_idx1, frag_idx2, mode)}
+    for aname1, aname2, _, mode in bond_defs:
+        idx1 = np.where((st.res_name == ligand_name) & (st.atom_name == aname1))[0]
+        idx2 = np.where((st.res_name == ligand_name) & (st.atom_name == aname2))[0]
+        if len(idx1) == 1 and len(idx2) == 1:
+            gi1, gi2 = int(idx1[0]), int(idx2[0])
+            if gi1 in global_to_frag and gi2 in global_to_frag:
+                bond_pairs[(aname1, aname2)] = (
+                    global_to_frag[gi1], global_to_frag[gi2], mode
+                )
+
+    if not bond_pairs:
+        return None
+
+    # Estimate fragment charge (rough: use total charge, since ligand is the charged part)
+    frag_charge = total_charge
+
+    results = {}
+
+    # ── Intermediate: optimize current geometry as-is (pentacoordinate if applicable) ──
+    log.info("    Optimizing intermediate (current geometry) ...")
+    int_pos, int_e = _xtb_optimize_fragment(
+        frag_symbols, frag_positions, frag_charge, workdir, "intermediate"
+    )
+    if int_pos is not None:
+        results["intermediate"] = {}
+        for (a1, a2), (fi1, fi2, mode) in bond_pairs.items():
+            d = float(np.linalg.norm(int_pos[fi1] - int_pos[fi2]))
+            results["intermediate"][(a1, a2)] = round(d, 3)
+            log.info(f"      {a1}-{a2}: {d:.3f} A")
+    else:
+        results["intermediate"] = None
+
+    # ── Product: pull LG away, push nuc close, then optimize ──
+    log.info("    Building product geometry (nuc bonded, LG dissociated) ...")
+    prod_pos = frag_positions.copy()
+    for (a1, a2), (fi1, fi2, mode) in bond_pairs.items():
+        d_vec = prod_pos[fi2] - prod_pos[fi1]
+        d_cur = np.linalg.norm(d_vec)
+        uv = d_vec / d_cur
+        z1 = atoms.get_atomic_numbers()[frag_indices[fi1]]
+        z2 = atoms.get_atomic_numbers()[frag_indices[fi2]]
+        r_cov = covalent_radii[z1] + covalent_radii[z2]
+
+        if mode == "attractive":
+            # Nuc should be bonded in product — place at 0.95 * cov radii
+            target = r_cov * 0.95
+            if d_cur > target * 1.5:
+                prod_pos[fi2] = prod_pos[fi1] + uv * target
+        elif mode == "repulsive":
+            # LG should be far in product — place at 3.5 A
+            target = 3.5
+            if d_cur < target * 0.8:
+                prod_pos[fi2] = prod_pos[fi1] + uv * target
+
+    log.info("    Optimizing product ...")
+    prod_opt, prod_e = _xtb_optimize_fragment(
+        frag_symbols, prod_pos, frag_charge, workdir, "product"
+    )
+    if prod_opt is not None:
+        results["product"] = {}
+        for (a1, a2), (fi1, fi2, mode) in bond_pairs.items():
+            d = float(np.linalg.norm(prod_opt[fi1] - prod_opt[fi2]))
+            results["product"][(a1, a2)] = round(d, 3)
+            log.info(f"      {a1}-{a2}: {d:.3f} A")
+    else:
+        results["product"] = None
+
+    # ── Reactant: pull nuc away, keep LG bonded ──
+    log.info("    Building reactant geometry (nuc dissociated, LG bonded) ...")
+    react_pos = frag_positions.copy()
+    for (a1, a2), (fi1, fi2, mode) in bond_pairs.items():
+        d_vec = react_pos[fi2] - react_pos[fi1]
+        d_cur = np.linalg.norm(d_vec)
+        uv = d_vec / d_cur
+        z1 = atoms.get_atomic_numbers()[frag_indices[fi1]]
+        z2 = atoms.get_atomic_numbers()[frag_indices[fi2]]
+        r_cov = covalent_radii[z1] + covalent_radii[z2]
+
+        if mode == "attractive":
+            # Nuc should be far in reactant
+            target = 3.5
+            if d_cur < target * 0.8:
+                react_pos[fi2] = react_pos[fi1] + uv * target
+        elif mode == "repulsive":
+            # LG should be bonded in reactant — place at 0.95 * cov radii
+            target = r_cov * 0.95
+            if d_cur > target * 1.5:
+                react_pos[fi2] = react_pos[fi1] + uv * target
+
+    log.info("    Optimizing reactant ...")
+    react_opt, react_e = _xtb_optimize_fragment(
+        frag_symbols, react_pos, frag_charge, workdir, "reactant"
+    )
+    if react_opt is not None:
+        results["reactant"] = {}
+        for (a1, a2), (fi1, fi2, mode) in bond_pairs.items():
+            d = float(np.linalg.norm(react_opt[fi1] - react_opt[fi2]))
+            results["reactant"][(a1, a2)] = round(d, 3)
+            log.info(f"      {a1}-{a2}: {d:.3f} A")
+    else:
+        results["reactant"] = None
+
+    # ── Check if intermediate is a distinct minimum ──
+    int_is_min = False
+    if int_e is not None and prod_e is not None and react_e is not None:
+        # Intermediate is a real minimum if it's lower than both endpoints
+        # and geometrically distinct (nuc AND LG are bonded)
+        if results.get("intermediate"):
+            nuc_bonded = all(
+                results["intermediate"].get((a1, a2), 99) < 2.5
+                for (a1, a2), (_, _, mode) in bond_pairs.items()
+                if mode == "attractive"
+            )
+            lg_bonded = all(
+                results["intermediate"].get((a1, a2), 99) < 2.5
+                for (a1, a2), (_, _, mode) in bond_pairs.items()
+                if mode == "repulsive"
+            )
+            int_is_min = nuc_bonded and lg_bonded
+            if int_is_min:
+                log.info(f"    *** Intermediate is pentacoordinate (nuc+LG both bonded) ***")
+                log.info(f"    Energies (Ha): reactant={react_e:.6f}, "
+                         f"intermediate={int_e:.6f}, product={prod_e:.6f}")
+    results["intermediate_is_minimum"] = int_is_min
+
+    return results
+
+
+def get_smart_bond_targets(atoms, st, ligand_name, bond_defs, total_charge=0, workdir="/tmp"):
+    """Determine spring target distances from xTB reference optimizations.
+
+    Runs xTB GFN2 on isolated ligand fragments to get true equilibrium bond
+    lengths for reactant, product, and (optionally) intermediate states.
+    This captures resonance, hyperconjugation, and coordination effects that
+    covalent radii miss.
+
+    Falls back to covalent radii if xTB is unavailable or fails.
+
+    Returns (smart_defs, ref_info) where ref_info contains xTB results
+    for downstream use (e.g., deciding 1-step vs 2-step NEB).
+    """
+    from ase.data import covalent_radii
+
+    # Try xTB reference optimization
+    ref = _xtb_reference_bond_lengths(
+        atoms, st, ligand_name, bond_defs, total_charge, workdir
+    )
 
     smart_defs = []
     for atom_name1, atom_name2, default_target, mode in bond_defs:
@@ -321,18 +585,50 @@ def get_smart_bond_targets(atoms, st, ligand_name, bond_defs):
             r_cov = covalent_radii[z1] + covalent_radii[z2]
 
             if mode == "attractive":
-                target = round(r_cov, 2)  # natural bond length
-            else:
-                target = round(r_cov * 2.5, 2)  # well-dissociated
+                # Use xTB product reference if available
+                xtb_target = None
+                if ref and ref.get("product"):
+                    xtb_target = ref["product"].get((atom_name1, atom_name2))
 
-            log.info(f"  Smart target: {atom_name1}-{atom_name2} ({mode}): "
-                     f"cov_radii={r_cov:.2f} → target={target:.2f} A "
-                     f"(default was {default_target:.1f})")
+                if xtb_target is not None and xtb_target < r_cov * 1.2:
+                    target = xtb_target
+                    log.info(f"  Target: {atom_name1}-{atom_name2} ({mode}): "
+                             f"xTB_product={target:.3f} A "
+                             f"(cov_radii={r_cov:.2f}, default={default_target:.1f})")
+                else:
+                    target = round(r_cov, 2)
+                    log.info(f"  Target: {atom_name1}-{atom_name2} ({mode}): "
+                             f"cov_radii={r_cov:.2f} A (xTB ref unavailable, "
+                             f"default={default_target:.1f})")
+            else:
+                # Repulsive: use xTB reactant reference or 2.5x cov radii
+                xtb_target = None
+                if ref and ref.get("reactant"):
+                    xtb_target = ref["reactant"].get((atom_name1, atom_name2))
+
+                if xtb_target is not None and xtb_target > r_cov * 1.5:
+                    target = xtb_target
+                    log.info(f"  Target: {atom_name1}-{atom_name2} ({mode}): "
+                             f"xTB_reactant={target:.3f} A "
+                             f"(cov_radii×2.5={r_cov*2.5:.2f}, default={default_target:.1f})")
+                else:
+                    target = round(r_cov * 2.5, 2)
+                    log.info(f"  Target: {atom_name1}-{atom_name2} ({mode}): "
+                             f"cov_radii×2.5={target:.2f} A (xTB ref unavailable, "
+                             f"default={default_target:.1f})")
+
             smart_defs.append((atom_name1, atom_name2, target, mode))
         else:
             smart_defs.append((atom_name1, atom_name2, default_target, mode))
 
-    return smart_defs
+    # Log intermediate finding
+    if ref and ref.get("intermediate_is_minimum"):
+        log.info("  *** xTB predicts pentacoordinate INTERMEDIATE — consider 2-step NEB ***")
+        if ref.get("intermediate"):
+            for (a1, a2), d in ref["intermediate"].items():
+                log.info(f"    Intermediate {a1}-{a2}: {d:.3f} A")
+
+    return smart_defs, ref
 
 
 BOND_BREAKING_DEFS = {
@@ -978,6 +1274,7 @@ def run_neb(
     steps_noclimb=200,
     fmax_climb=0.045,
     steps_climb=250,
+    interpolation_method="geodesic",
 ):
     """Run NEB (regular → climbing-image) and return the optimised images."""
 
@@ -1008,13 +1305,23 @@ def run_neb(
     # NEB object
     neb = NEB(images, k=k_spring, allow_shared_calculator=False, method="improvedtangent")
 
-    # Interpolation – try geodesic (internal coords, better), fall back to IDPP
+    # Interpolation: use qcb.mlff.interpolation unified entry point
+    # (supports geodesic, idpp, linear with automatic fallback)
     try:
-        _do_geodesic_interpolation(images)
-        log.info("  Using geodesic interpolation (internal coordinates)")
+        from qcb.mlff.interpolation import interpolate as _qcb_interpolate
+        log.info(f"  Interpolating NEB images: method={interpolation_method}")
+        new_images = _qcb_interpolate(start_atoms, end_atoms, n_images, method=interpolation_method)
+        # Copy positions into our pre-allocated images (preserves calc + constraints)
+        for i, new_img in enumerate(new_images):
+            images[i].set_positions(new_img.get_positions())
     except Exception as e:
-        log.info(f"  Geodesic interpolation unavailable ({e}), using IDPP")
-        neb.interpolate(method="idpp", apply_constraint=True)
+        log.warning(f"  qcb interpolation failed ({e}), falling back to legacy")
+        try:
+            _do_geodesic_interpolation(images)
+            log.info("  Using legacy geodesic interpolation")
+        except Exception as e2:
+            log.info(f"  Legacy geodesic also failed ({e2}), using IDPP")
+            neb.interpolate(method="idpp", apply_constraint=True)
 
     write(os.path.join(outdir, "path-neb-init.xyz"), images)
 
@@ -1670,32 +1977,184 @@ def _compute_per_atom_charges(atoms, total_charge, outdir, method="auto", templa
     return charges
 
 
-def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto"):
-    """Write transition state as CIF with per-atom charges and energy.
+def _run_xtb_singlepoint(atoms, total_charge, workdir):
+    """Run xTB single-point, return (mulliken_charges, wiberg_bond_orders).
 
-    Computes Mulliken charges via xTB single-point, then writes a proper
-    CIF with _atom_site.charge column.
+    Returns (None, None) if xTB fails or is unavailable.
+    WBO dict is {(i,j): float} with i < j.
+    """
+    import shutil
+
+    XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
+    n_atoms = len(atoms)
+
+    if not os.path.isfile(XTB_BIN) or n_atoms >= 500:
+        return None, None
+
+    tmpdir = Path(workdir) / ".xtb_cif"
+    tmpdir.mkdir(exist_ok=True)
+
+    symbols = atoms.get_chemical_symbols()
+    positions = atoms.get_positions()
+    with open(tmpdir / "ts.xyz", "w") as f:
+        f.write(f"{n_atoms}\n\n")
+        for sym, (x, y, z) in zip(symbols, positions):
+            f.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
+
+    timeout_s = min(1800, max(120, n_atoms * 2))
+    try:
+        subprocess.run(
+            [XTB_BIN, "ts.xyz", "--gfn", "2", "--chrg", str(total_charge), "--sp"],
+            capture_output=True, text=True, timeout=timeout_s, cwd=str(tmpdir),
+        )
+    except subprocess.TimeoutExpired:
+        log.warning(f"  xTB timed out ({timeout_s}s) for {n_atoms} atoms")
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return None, None
+
+    charges_file = tmpdir / "charges"
+    wbo_file = tmpdir / "wbo"
+
+    mulliken = None
+    bond_orders = None
+
+    if charges_file.exists():
+        vals = [float(l) for l in charges_file.read_text().strip().split("\n")]
+        if len(vals) == n_atoms:
+            mulliken = np.array(vals)
+
+    if wbo_file.exists():
+        bond_orders = {}
+        for line in wbo_file.read_text().strip().split("\n"):
+            parts = line.split()
+            if len(parts) >= 3:
+                i, j = int(parts[0]) - 1, int(parts[1]) - 1
+                bo = float(parts[2])
+                if bo > 0.3:
+                    bond_orders[(min(i, j), max(i, j))] = bo
+
+    shutil.rmtree(tmpdir, ignore_errors=True)
+    return mulliken, bond_orders
+
+
+def _derive_formal_from_mulliken_wbo(atoms, mulliken, bond_orders, total_charge, template_st=None):
+    """Derive formal integer charges from Mulliken charges + Wiberg bond orders."""
+    n_atoms = len(atoms)
+    symbols = atoms.get_chemical_symbols()
+    formal = np.zeros(n_atoms)
+
+    for i in range(n_atoms):
+        q = mulliken[i]
+        z = atoms.get_atomic_numbers()[i]
+        total_bo = sum(bo for (a, b), bo in bond_orders.items() if a == i or b == i)
+
+        if z == 8:  # oxygen
+            if total_bo < 1.5 and q < -0.3:
+                formal[i] = -1
+            elif total_bo > 2.5:
+                formal[i] = +1
+        elif z == 7:  # nitrogen
+            if total_bo > 3.5 and q > 0.2:
+                formal[i] = +1
+            elif total_bo < 2.5 and q < -0.3:
+                formal[i] = -1
+
+    # Adjust to match total charge
+    fc_sum = int(formal.sum())
+    diff = total_charge - fc_sum
+    if diff != 0:
+        sorted_by_q = np.argsort(mulliken) if diff < 0 else np.argsort(-mulliken)
+        for idx in sorted_by_q:
+            if diff == 0:
+                break
+            if diff > 0 and formal[idx] == 0 and mulliken[idx] > 0.3:
+                formal[idx] = +1
+                diff -= 1
+            elif diff < 0 and formal[idx] == 0 and mulliken[idx] < -0.3:
+                formal[idx] = -1
+                diff += 1
+
+    n_charged = int(np.sum(formal != 0))
+    log.info(f"  Formal charges: sum={int(formal.sum()):+d}, "
+             f"{n_charged} charged atoms")
+
+    for i in range(n_atoms):
+        if formal[i] != 0:
+            resinfo = ""
+            if template_st is not None and i < len(template_st):
+                resinfo = (f" ({template_st.res_name[i]} "
+                           f"{template_st.chain_id[i]}:{template_st.res_id[i]} "
+                           f"{template_st.atom_name[i]})")
+            total_bo = sum(bo for (a, b), bo in bond_orders.items() if a == i or b == i)
+            log.info(f"    {symbols[i]}({i}){resinfo}: {int(formal[i]):+d} "
+                     f"(Mulliken={mulliken[i]:.2f}, BO={total_bo:.1f})")
+    return formal
+
+
+def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto",
+                  filename="transition_state.cif"):
+    """Write transition state as CIF with per-atom charges, bond types, and energy.
+
+    Runs xTB once to get both Mulliken charges and Wiberg bond orders.
+    Uses atomworks CIF writer (with proper bond types) if available,
+    falls back to simple text CIF otherwise.
     """
     try:
-        cif_path = os.path.join(outdir, "transition_state.cif")
+        cif_path = os.path.join(outdir, filename)
         charge = ts_atoms.info.get("charge", 0)
+        n_atoms = len(ts_atoms)
 
-        # Compute per-atom charges
-        log.info("  Computing per-atom charges (xTB Mulliken) ...")
-        per_atom_charges = _compute_per_atom_charges(
-            ts_atoms, charge, outdir, method=charge_method, template_st=template_st
-        )
+        # Single xTB run for both charges and bond orders
+        log.info("  Computing charges + bond orders (xTB single-point) ...")
+        mulliken, wbo = _run_xtb_singlepoint(ts_atoms, charge, outdir)
 
+        # Partial charges
+        if mulliken is not None:
+            per_atom_charges = mulliken
+            log.info(f"  xTB Mulliken charges: sum={mulliken.sum():.3f}, "
+                     f"range=[{mulliken.min():.3f}, {mulliken.max():.3f}]")
+        else:
+            log.info("  xTB unavailable, using fallback charges")
+            per_atom_charges = _compute_per_atom_charges(
+                ts_atoms, charge, outdir, method=charge_method, template_st=template_st
+            )
+
+        # Formal charges
+        if mulliken is not None and wbo is not None:
+            formal_charges = _derive_formal_from_mulliken_wbo(
+                ts_atoms, mulliken, wbo, charge, template_st=template_st
+            )
+        else:
+            formal_charges = _compute_formal_charges(
+                ts_atoms, template_st, charge, outdir=outdir
+            )
+
+        # Try atomworks CIF writer (proper bond types from WBO)
+        try:
+            from qcb.mlff.cif_writer import write_ts_cif
+            result = write_ts_cif(
+                ts_atoms, template_st, outdir,
+                total_charge=charge,
+                partial_charges=per_atom_charges,
+                formal_charges=formal_charges,
+                wiberg_bond_orders=wbo,
+                filename=filename,
+            )
+            if result:
+                log.info(f"  Wrote {result} (atomworks CIF with bonds + charges)")
+                return
+        except ImportError:
+            log.info("  atomworks not available, using simple CIF format")
+        except Exception as e:
+            log.warning(f"  atomworks CIF failed ({e}), using simple CIF format")
+
+        # Fallback: simple text CIF
         energy = None
         try:
             energy = ts_atoms.get_potential_energy()
         except Exception:
             pass
 
-        # Compute formal charges (xTB Mulliken+WBO → RDKit → Mulliken round)
-        formal_charges = _compute_formal_charges(ts_atoms, template_st, charge, outdir=outdir)
-
-        # Write CIF with both partial and formal charges
         symbols = ts_atoms.get_chemical_symbols()
         positions = ts_atoms.get_positions()
         has_template = template_st is not None
@@ -1723,7 +2182,7 @@ def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto"):
             f.write("_atom_site.partial_charge\n")
             f.write("_atom_site.pdbx_formal_charge\n")
 
-            for i in range(len(ts_atoms)):
+            for i in range(n_atoms):
                 parts = [str(i + 1), symbols[i]]
                 if has_template and i < len(template_st):
                     parts.extend([
@@ -1741,7 +2200,7 @@ def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto"):
                 ])
                 f.write(" ".join(parts) + "\n")
 
-        log.info(f"  Wrote {cif_path} (both partial + formal charges, {len(ts_atoms)} atoms)")
+        log.info(f"  Wrote {cif_path} (simple CIF with charges, {n_atoms} atoms)")
     except Exception as e:
         log.warning(f"  Could not write CIF: {e}")
 
@@ -1866,15 +2325,168 @@ def run_pipeline(args):
         fix_chains=args.fix_chains,
     )
 
-    # ── Override bond targets with smart covalent-radii-based values ──
+    # ── Override bond targets with xTB-optimized reference values ──
     endpoint_method = args.endpoint_method
+    xtb_ref = None
     if endpoint_method == "auto" and ligand in BOND_BREAKING_DEFS:
-        log.info("  Using smart bond targets (covalent radii) ...")
-        smart_defs = get_smart_bond_targets(ase_atoms, bt_struct, ligand, BOND_BREAKING_DEFS[ligand])
+        log.info("  Computing reference bond lengths (xTB fragment optimization) ...")
+        smart_defs, xtb_ref = get_smart_bond_targets(
+            ase_atoms, bt_struct, ligand, BOND_BREAKING_DEFS[ligand],
+            total_charge=charge, workdir=relax_dir,
+        )
         BOND_BREAKING_DEFS[ligand] = smart_defs
 
-    # ── Steps 1 & 2: Generate endpoints ──
-    if endpoint_method in ("spring", "auto"):
+    # ══════════════════════════════════════════════════════════════
+    # Strategy dispatcher: choose overall TS search approach
+    # ══════════════════════════════════════════════════════════════
+    strategy = getattr(args, "strategy", "legacy")
+    early_return_result = None  # for strategies that skip NEB entirely (e.g. IRC)
+    start = None
+    end = None
+
+    def _get_cv_atom_indices():
+        """Resolve (P, nuc, LG) atom indices from the ligand bond-breaking defs.
+        Returns (idx_p, idx_nuc, idx_lg) or raises if atoms can't be located."""
+        if ligand not in BOND_BREAKING_DEFS:
+            raise ValueError(f"Ligand '{ligand}' not in BOND_BREAKING_DEFS — "
+                             "cannot derive CV atom indices. Add the ligand "
+                             "definition to BOND_BREAKING_DEFS in run_neb_ts.py.")
+        defs = BOND_BREAKING_DEFS[ligand]
+        nuc_name = next((d[1] for d in defs if d[3] == "attractive"), None)
+        lg_name = next((d[1] for d in defs if d[3] == "repulsive"), None)
+        p_name = defs[0][0]
+        if not (nuc_name and lg_name):
+            raise ValueError(f"Ligand '{ligand}' bond defs missing attractive or repulsive entries")
+
+        def _find(aname):
+            match = np.where((bt_struct.res_name == ligand) & (bt_struct.atom_name == aname))[0]
+            if len(match) != 1:
+                raise ValueError(f"Atom '{aname}' not found uniquely in residue '{ligand}' "
+                                 f"(got {len(match)} matches)")
+            return int(match[0])
+
+        idx_p, idx_nuc, idx_lg = _find(p_name), _find(nuc_name), _find(lg_name)
+        # Basic sanity: distinct indices, geometry plausible
+        if len({idx_p, idx_nuc, idx_lg}) != 3:
+            raise ValueError("P, nucleophile, and leaving-group must be distinct atoms")
+        d_p_nuc = float(ase_atoms.get_distance(idx_p, idx_nuc))
+        d_p_lg = float(ase_atoms.get_distance(idx_p, idx_lg))
+        if d_p_nuc > 6.0 or d_p_lg > 6.0:
+            log.warning(f"  CV atoms far from P: d(P-nuc)={d_p_nuc:.2f}, d(P-LG)={d_p_lg:.2f} — "
+                        "check atom assignments")
+        return idx_p, idx_nuc, idx_lg, nuc_name, lg_name
+
+    # --- IRC-from-TS strategy: input is a TS guess, bypass endpoint generation ---
+    if strategy == "irc":
+        log.info("=" * 60)
+        log.info("STRATEGY: IRC-from-TS (Sella saddle + IRC descent)")
+        log.info("=" * 60)
+        from qcb.mlff.irc import irc_from_ts_guess
+
+        ase_atoms.calc = make_calc(for_neb=True)
+        ase_atoms.info["charge"] = charge
+
+        # Build bond-pattern hint so reactant/product side assignment is not arbitrary
+        hint_bonds = None
+        try:
+            idx_p, idx_nuc, idx_lg, _, _ = _get_cv_atom_indices()
+            hint_bonds = {
+                (idx_p, idx_nuc): "broken",   # nuc far in reactant
+                (idx_p, idx_lg): "bonded",    # LG intact in reactant
+            }
+        except Exception as e:
+            log.info(f"  No bond hints for IRC side assignment ({e})")
+
+        irc_result = irc_from_ts_guess(
+            ase_atoms, outdir=ts_dir, constraint=opt_c,
+            saddle_fmax=args.fmax_sella,
+            irc_step=args.irc_step,
+            irc_fmax=args.fmax_end_final,
+            reactant_hint_bonds=hint_bonds,
+        )
+
+        start = irc_result.get("reactant")
+        end = irc_result.get("product")
+        if start is None or end is None:
+            log.error("  IRC failed to produce both endpoints — falling back to legacy spring")
+            strategy = "legacy"
+            start = end = None
+        else:
+            early_return_result = {
+                "ts": irc_result["ts"],
+                "reactant": start,
+                "product": end,
+                "barrier_fwd_kcal": irc_result.get("barrier_fwd_kcal"),
+                "barrier_rev_kcal": irc_result.get("barrier_rev_kcal"),
+                "imag_freq_cm": irc_result.get("imag_freq_cm"),
+            }
+
+    # --- MTD-rescue strategy ---
+    if strategy == "mtd" and early_return_result is None:
+        log.info("=" * 60)
+        log.info("STRATEGY: Metadynamics rescue (WT-MTD on bond-difference CV)")
+        log.info("=" * 60)
+        try:
+            from qcb.mlff.metadynamics import run_metadynamics_rescue
+            ase_atoms.calc = make_calc(for_neb=True)
+            ase_atoms.info["charge"] = charge
+            idx_p, idx_nuc, idx_lg, _, _ = _get_cv_atom_indices()
+            mtd_result = run_metadynamics_rescue(
+                ase_atoms,
+                p_idx=idx_p, nuc_idx=idx_nuc, lg_idx=idx_lg,
+                calculator=ase_atoms.calc,
+                outdir=relax_dir,
+                constraint=opt_c,
+                total_time_ps=args.mtd_time_ps,
+            )
+            start = mtd_result.get("reactant")
+            end = mtd_result.get("product")
+        except Exception as e:
+            log.error(f"  MTD failed: {e} — falling back to legacy spring")
+            start = end = None
+
+        if start is None or end is None:
+            log.error("  MTD did not find both basins — falling back to legacy spring")
+            strategy = "legacy"
+            start = end = None
+
+    # --- CV-spring strategy ---
+    if strategy == "cv-spring" and early_return_result is None:
+        log.info("=" * 60)
+        log.info("STRATEGY: Bond-difference CV spring (More O'Ferrall-Jencks coord)")
+        log.info("=" * 60)
+        try:
+            from qcb.mlff.cv_spring import BondDifferenceCVSpring
+            idx_p, idx_nuc, idx_lg, _, _ = _get_cv_atom_indices()
+
+            def _cv_drive(s_target, label):
+                a = ase_atoms.copy()
+                a.calc = make_calc(for_neb=False)
+                a.info["charge"] = charge
+                cv_spring = BondDifferenceCVSpring(
+                    p_idx=idx_p, nuc_idx=idx_nuc, lg_idx=idx_lg,
+                    k=args.spring_k, s_target=s_target, fmax=args.spring_fmax,
+                )
+                a.set_constraint([opt_c, cv_spring] if opt_c else [cv_spring])
+                from ase.optimize import LBFGS as _LBFGS
+                log.info(f"  CV-drive ({label}, s_target={s_target:+.1f}) ...")
+                opt = _LBFGS(a, logfile=os.path.join(relax_dir, f"cv-drive-{label}.log"))
+                opt.run(fmax=args.fmax_end_spring, steps=300)
+                a.set_constraint([opt_c] if opt_c else [])
+                opt2 = _LBFGS(a, logfile=os.path.join(relax_dir, f"cv-polish-{label}.log"))
+                opt2.run(fmax=args.fmax_end_final, steps=200)
+                return a
+
+            start = _cv_drive(args.cv_s_reactant, "reactant")
+            end = _cv_drive(args.cv_s_product, "product")
+        except Exception as e:
+            log.error(f"  CV-spring strategy failed: {e} — falling back to legacy spring")
+            strategy = "legacy"
+            start = end = None
+
+    # --- Legacy: spring-driven endpoints (explicit guard: only run if no other strategy set start/end) ---
+    legacy_needed = early_return_result is None and (start is None or end is None)
+    if legacy_needed and endpoint_method in ("spring", "auto"):
         start, end = generate_endpoints(
             ase_atoms, bt_struct, ligand, opt_c, md_c, relax_dir,
             spring_k=args.spring_k, spring_fmax=args.spring_fmax,
@@ -1886,7 +2498,8 @@ def run_pipeline(args):
             n_md_seeds=args.n_md_seeds,
             anneal_peak=args.anneal_peak,
         )
-    elif endpoint_method == "constrained-scan":
+        legacy_needed = False
+    elif legacy_needed and endpoint_method == "constrained-scan":
         try:
             from qcb.mlff.endpoint_generation import constrained_endpoint
             log.info("  Using constrained-scan endpoint generation ...")
@@ -1906,7 +2519,7 @@ def run_pipeline(args):
                 fmax_spring=args.fmax_end_spring, fmax_final=args.fmax_end_final,
                 md_steps=args.md_steps, md_temp=args.md_temp,
             )
-    elif endpoint_method == "incremental-stretch":
+    elif legacy_needed and endpoint_method == "incremental-stretch":
         try:
             from qcb.mlff.endpoint_generation import incremental_stretch_endpoints
             log.info("  Using incremental-stretch endpoint generation ...")
@@ -1922,21 +2535,59 @@ def run_pipeline(args):
                 fmax_spring=args.fmax_end_spring, fmax_final=args.fmax_end_final,
                 md_steps=args.md_steps, md_temp=args.md_temp,
             )
+    # Safety check: if we're not in early-return (IRC) mode, we must have endpoints
+    if early_return_result is None and (start is None or end is None):
+        raise RuntimeError(
+            f"Endpoint generation failed: start={start is not None}, end={end is not None}. "
+            f"Strategy={strategy}, endpoint_method={endpoint_method}. "
+            "Check logs above for the failing step."
+        )
+
     # Switch to primary model (--model) for energy evaluation and NEB/TS
-    start.calc = make_calc(for_neb=True)
-    start.info["charge"] = charge
-    end.calc = make_calc(for_neb=True)
-    end.info["charge"] = charge
+    if early_return_result is None:
+        start.calc = make_calc(for_neb=True)
+        start.info["charge"] = charge
+        end.calc = make_calc(for_neb=True)
+        end.info["charge"] = charge
+
+        # ── Optional: xTB endpoint refinement (validates MACE endpoints with semi-empirical QM) ──
+        if getattr(args, "refine_xtb", False):
+            from qcb.mlff.xtb_refine import validate_endpoint_pair
+            log.info("  Running xTB endpoint refinement ...")
+            p_name = BOND_BREAKING_DEFS[ligand][0][0] if ligand in BOND_BREAKING_DEFS else None
+            nuc_name = next((d[1] for d in BOND_BREAKING_DEFS.get(ligand, []) if d[3] == "attractive"), None)
+            lg_name = next((d[1] for d in BOND_BREAKING_DEFS.get(ligand, []) if d[3] == "repulsive"), None)
+
+            idx_p = idx_nuc = idx_lg = None
+            if p_name and nuc_name and lg_name:
+                idx_p = int(np.where((bt_struct.res_name == ligand) & (bt_struct.atom_name == p_name))[0][0])
+                idx_nuc = int(np.where((bt_struct.res_name == ligand) & (bt_struct.atom_name == nuc_name))[0][0])
+                idx_lg = int(np.where((bt_struct.res_name == ligand) & (bt_struct.atom_name == lg_name))[0][0])
+
+            xtb_check = validate_endpoint_pair(
+                start, end, charge, outdir=os.path.join(relax_dir, "xtb_refine"),
+                constraint=opt_c, p_idx=idx_p, nuc_idx=idx_nuc, lg_idx=idx_lg,
+            )
+            if xtb_check["inconsistent"]:
+                log.warning("  *** xTB disagrees with MACE endpoints — geometries may be artifacts ***")
+            # Replace with xTB-refined geometries if user opted into update
+            if getattr(args, "refine_xtb_replace", False):
+                if xtb_check["reactant"]["atoms"] is not None:
+                    start.set_positions(xtb_check["reactant"]["atoms"].get_positions())
+                if xtb_check["product"]["atoms"] is not None:
+                    end.set_positions(xtb_check["product"]["atoms"].get_positions())
+                log.info("  Endpoints replaced with xTB-refined geometries")
 
     # ── Energy check ──
-    e_start = start.get_potential_energy()
-    e_end = end.get_potential_energy()
-    log.info(f"  E(start) = {e_start:.4f} eV ({e_start * EV_TO_KCAL:.1f} kcal/mol)")
-    log.info(f"  E(end)   = {e_end:.4f} eV ({e_end * EV_TO_KCAL:.1f} kcal/mol)")
-    log.info(f"  ΔE(rxn)  = {(e_end - e_start) * EV_TO_KCAL:.1f} kcal/mol")
+    if early_return_result is None:
+        e_start = start.get_potential_energy()
+        e_end = end.get_potential_energy()
+        log.info(f"  E(start) = {e_start:.4f} eV ({e_start * EV_TO_KCAL:.1f} kcal/mol)")
+        log.info(f"  E(end)   = {e_end:.4f} eV ({e_end * EV_TO_KCAL:.1f} kcal/mol)")
+        log.info(f"  ΔE(rxn)  = {(e_end - e_start) * EV_TO_KCAL:.1f} kcal/mol")
 
     # ── Endpoint geometry validation ──
-    if ligand in BOND_BREAKING_DEFS:
+    if early_return_result is None and ligand in BOND_BREAKING_DEFS:
         defs = BOND_BREAKING_DEFS[ligand]
         log.info("  Endpoint bond distance validation:")
         valid = True
@@ -1962,16 +2613,27 @@ def run_pipeline(args):
     def make_neb_calc():
         return make_calc(for_neb=True)
 
-    images = run_neb(
-        ase_atoms, start, end, opt_c, make_neb_calc, charge, ts_dir,
-        n_images=args.n_images, k_spring=args.k_spring,
-        fmax_noclimb=args.fmax_neb_noclimb, steps_noclimb=args.steps_noclimb,
-        fmax_climb=args.fmax_neb_climb if do_climb else 999,
-        steps_climb=args.steps_climb if do_climb else 0,
-    )
+    if early_return_result is not None:
+        # IRC strategy: skip NEB, use IRC result directly
+        log.info("  NEB skipped — using IRC-from-TS result")
+        ts = early_return_result["ts"]
+        images = [start, ts, end]  # minimal 3-image path for output compatibility
+    else:
+        images = run_neb(
+            ase_atoms, start, end, opt_c, make_neb_calc, charge, ts_dir,
+            n_images=args.n_images, k_spring=args.k_spring,
+            fmax_noclimb=args.fmax_neb_noclimb, steps_noclimb=args.steps_noclimb,
+            fmax_climb=args.fmax_neb_climb if do_climb else 999,
+            steps_climb=args.steps_climb if do_climb else 0,
+            interpolation_method=args.interpolation,
+        )
 
     # ── Step 4: Sella TS (optional) ──
-    if do_sella:
+    if early_return_result is not None:
+        # IRC strategy already refined TS with Sella saddle search
+        ts = early_return_result["ts"]
+        log.info("  Sella already completed in IRC-from-TS strategy")
+    elif do_sella:
         ts = refine_ts_sella(
             images, make_neb_calc, charge, opt_c, ts_dir,
             fmax=args.fmax_sella, max_steps=args.steps_sella,
@@ -2192,6 +2854,55 @@ Examples:
                         "reactant instead of reverse-driving. Best for inputs that are "
                         "already near reactant geometry or chimeric structures where "
                         "reverse driving creates bad states.")
+
+    # ── New strategy-level flags (see docs/strategies.md) ──
+    p.add_argument(
+        "--strategy", default="legacy",
+        choices=["legacy", "irc", "cv-spring", "mtd"],
+        help="Overall TS search strategy (default: legacy). "
+             "legacy = spring-driven endpoints + NEB (original pipeline); "
+             "irc = Sella saddle + IRC descent both ways (gold standard when input is TS guess); "
+             "cv-spring = bond-difference CV spring (More O'Ferrall-Jencks coord); "
+             "mtd = well-tempered metadynamics rescue (when all else fails, 1-4 GPU-hours)"
+    )
+    p.add_argument(
+        "--interpolation", default="geodesic",
+        choices=["geodesic", "idpp", "linear"],
+        help="NEB image interpolation method (default: geodesic). "
+             "geodesic = Zhu et al. JCP 2019 (recommended, avoids atom clashes); "
+             "idpp = image-dependent pair potential (ASE built-in); "
+             "linear = Cartesian linear (fast but breaks for bond-forming reactions)"
+    )
+    p.add_argument(
+        "--refine-xtb", action="store_true",
+        help="After endpoint generation, run xTB GFN2 optimization on both endpoints "
+             "as an independent QM sanity check. Detects MACE hallucinations and "
+             "collapsed product basins. Cost: minutes. Default: off."
+    )
+    p.add_argument(
+        "--refine-xtb-replace", action="store_true",
+        help="If --refine-xtb is set, replace MACE endpoints with xTB-refined "
+             "geometries (rather than just reporting the comparison). Default: off."
+    )
+    p.add_argument(
+        "--irc-step", type=float, default=0.1,
+        help="Displacement along imaginary mode for IRC (Å, default: 0.1). "
+             "Larger = faster convergence but may miss shallow intermediates."
+    )
+    p.add_argument(
+        "--cv-s-reactant", type=float, default=-2.0,
+        help="CV-spring: target s = d(P-LG) - d(P-nuc) for reactant (Å). "
+             "Default: -2.0 (strong nuc dissociation, LG intact)"
+    )
+    p.add_argument(
+        "--cv-s-product", type=float, default=2.5,
+        help="CV-spring: target s for product (Å). "
+             "Default: +2.5 (nuc bonded, LG dissociated)"
+    )
+    p.add_argument(
+        "--mtd-time-ps", type=float, default=100.0,
+        help="Metadynamics total simulation time (ps). Default: 100 ps (1-4 GPU-hours)"
+    )
 
     return p.parse_args()
 

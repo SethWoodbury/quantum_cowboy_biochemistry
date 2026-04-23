@@ -2,12 +2,34 @@
 
 One-stop shop for enzyme computational chemistry: from raw PDB to reaction barrier.
 
-## What this does
+## Top-level CLI: `qcb`
+
+```bash
+qcb sp       input.pdb                             # single-point energy
+qcb opt      input.pdb --fmax 0.01                 # energy minimization
+qcb md       input.pdb --time 10 --temp 300        # molecular dynamics
+qcb freq     input.pdb                             # vibrational frequencies
+qcb scan     input.pdb --coord bond --indices 5 12 --start 1.5 --end 3.5 --n-steps 20
+qcb saddle   ts_guess.pdb                          # Sella saddle search
+qcb irc      ts.pdb --step 0.1                     # IRC from a TS
+qcb neb      reactant.pdb product.pdb              # NEB + CI-NEB
+qcb mtd      input.pdb --p-idx 133 --nuc-idx 120 --lg-idx 135 --time 100
+qcb ts       input.pdb --strategy irc              # full TS pipeline
+```
+
+All ops share `--model`, `--charge`, `--fix`/`--free`, `--fix-preset`, `--outdir` flags.
+See [`docs/architecture.md`](docs/architecture.md) for the module layout and Python API,
+and [`docs/strategies.md`](docs/strategies.md) for TS search strategies.
+
+## Module structure
 
 | Module | Purpose |
 |--------|---------|
+| **`qcb.calc`** | MACE calculator factory |
+| **`qcb.io`** | Structure I/O + constraint spec grammar |
+| **`qcb.ops`** | Gaussian-style ops: sp, opt, md, freq, scan, saddle, irc, neb, mtd, ts |
+| **`qcb.mlff`** | Low-level ML-FF primitives: Sella/IRC, geodesic interp, xTB refine, CV spring, metadynamics |
 | **`qcb.prep`** | Active site extraction, protonation (pdbfixer + reduce + propka), charge calculation |
-| **`qcb.mlff`** | MACE ML force field NEB/TS searches, Sella refinement, dimer method |
 | **`qcb.qm`** | Gaussian/ORCA/xTB input generation, SLURM submission |
 | **`qcb.analysis`** | Barrier comparison, Eyring equation, geometry/bond analysis |
 
@@ -21,13 +43,19 @@ apptainer exec --nv --bind /home:/home --bind /mnt:/mnt --bind /net:/net \
     python scripts/protonate_active_site.py input.pdb \
         -o protonated.pdb --ligand-charge 0 --pH 7.0 --relax-h
 
-# NEB transition state search
+# Minimize with MACE-OMOL, freeze CAs, write PDB
 apptainer exec --nv --bind /home:/home --bind /mnt:/mnt --bind /net:/net \
-    --env "PYTHONPATH=deps/.local_pkgs" \
+    --env "PYTHONPATH=deps/.local_pkgs:/path/to/quantum_cowboy_biochemistry" \
     /net/software/containers/universal.sif \
-    python scripts/run_neb_ts.py protonated.pdb \
-        --model mace-mp --mode standard --constraint-mode ca-only \
-        --n-images 15 --md-steps 200 --spring-k 3.0 --spring-fmax 3.0
+    python scripts/qcb opt protonated.pdb --fix-preset ca-only --fmax 0.01 \
+        --output-pdb relaxed.pdb
+
+# Full NEB-TS pipeline with IRC strategy
+apptainer exec --nv --bind /home:/home --bind /mnt:/mnt --bind /net:/net \
+    --env "PYTHONPATH=deps/.local_pkgs:/path/to/quantum_cowboy_biochemistry" \
+    /net/software/containers/universal.sif \
+    python scripts/qcb ts protonated.pdb --strategy irc \
+        --passthrough --n-images 15 --fix-preset ca-only
 ```
 
 ## Documentation
