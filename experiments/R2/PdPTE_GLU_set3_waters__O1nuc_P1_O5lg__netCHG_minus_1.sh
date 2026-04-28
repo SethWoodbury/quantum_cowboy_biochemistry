@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=R2_PdPTE_GLU_set3_water
 #SBATCH --partition=gpu-bf
-#SBATCH --gres=gpu:a4000:1
+#SBATCH --gres=gpu:l40:1
 #SBATCH --mem=16g
 #SBATCH --cpus-per-task=8
 #SBATCH --time=11:59:00
