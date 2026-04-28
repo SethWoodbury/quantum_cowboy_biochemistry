@@ -271,6 +271,23 @@ def _cmd_run(args):
     return run_config(args.config)
 
 
+def _cmd_refine(args):
+    """High-throughput theozyme active-site refinement (xTB GFN-FF + backbone-frozen)."""
+    from qcb.pipelines.refine_active_site import refine
+    ptm_map = {}
+    for p in (args.ptm or []):
+        if "=" not in p:
+            raise SystemExit(f"--ptm must be 'CHAIN:RESNUM=NEWNAME', got {p!r}")
+        k, v = p.split("=", 1)
+        ptm_map[k.strip()] = v.strip()
+    return refine(
+        args.design, args.af3, args.output,
+        radius=args.radius, gfn=args.gfn, rigidity=args.rigidity,
+        charge=args.charge, ptm_map=ptm_map or None,
+        keep_workdir=args.keep_workdir,
+    )
+
+
 def _cmd_protonate(args):
     """Consensus protonation: ChimeraX + propka + pdbfixer + hardcoded rules."""
     from qcb.prep import consensus_protonate
@@ -558,6 +575,24 @@ def main(argv=None):
     p_run.add_argument("config", help="Path to a qcb YAML config file")
     p_run.add_argument("--log-level", default="INFO")
 
+    # refine — high-throughput active-site refinement (theozyme designs)
+    p_ref = sub.add_parser("refine", help="Refine an AF3 prediction's active site to fit a design template")
+    p_ref.add_argument("design", help="Designed PDB (must have REMARK 666 + ligand)")
+    p_ref.add_argument("af3", help="AlphaFold3 prediction PDB (no ligand)")
+    p_ref.add_argument("-o", "--output", required=True, help="Refined output PDB")
+    p_ref.add_argument("--radius", type=float, default=6.0,
+                       help="Cluster cutoff radius around ligand (Å, default: 6.0)")
+    p_ref.add_argument("--gfn", type=int, default=0, choices=[0, 1, 2],
+                       help="0=GFN-FF (fastest, default), 1=GFN1-xTB, 2=GFN2-xTB")
+    p_ref.add_argument("--rigidity", default="backbone",
+                       choices=["backbone", "backbone-cb"],
+                       help="backbone: fix N/C/O/CA; backbone-cb: also fix CB (more rigid)")
+    p_ref.add_argument("--charge", type=int, default=0, help="Cluster total charge")
+    p_ref.add_argument("--ptm", action="append", default=[],
+                       help="PTM relabel: 'CHAIN:RESNUM=NEWNAME' (e.g., A:64=KCX). Repeatable.")
+    p_ref.add_argument("--keep-workdir", action="store_true")
+    p_ref.add_argument("--log-level", default="INFO")
+
     # protonate — consensus protonation (ChimeraX + propka + pdbfixer + rules)
     p_pro = sub.add_parser("protonate", help="Consensus protonation (ChimeraX + propka + pdbfixer + rules)")
     p_pro.add_argument("input", help="Input PDB")
@@ -637,6 +672,7 @@ def main(argv=None):
         "gsm": _cmd_gsm, "ts": _cmd_ts,
         "run": _cmd_run,
         "protonate": _cmd_protonate,
+        "refine": _cmd_refine,
     }
     handler = dispatch[args.op]
     result = handler(args)
