@@ -265,6 +265,12 @@ def _cmd_gsm(args):
                    charge=charge, n_images=args.n_images, fmax=args.fmax)
 
 
+def _cmd_run(args):
+    """Load a YAML config and dispatch to the right operation."""
+    from qcb.ops.run_config import run as run_config
+    return run_config(args.config)
+
+
 def _cmd_ts(args):
     """Native qcb ts pipeline: loads structure + calc + constraint and calls ts.run()."""
     from qcb.ops import ts as ts_op
@@ -487,6 +493,11 @@ def main(argv=None):
     p_gsm.add_argument("--fmax", type=float, default=0.05)
     p_gsm.add_argument("--log-level", default="INFO")
 
+    # run — config-driven dispatch
+    p_run = sub.add_parser("run", help="Run any operation from a YAML config (recommended)")
+    p_run.add_argument("config", help="Path to a qcb YAML config file")
+    p_run.add_argument("--log-level", default="INFO")
+
     # ts
     p_ts = sub.add_parser("ts", help="Native TS pipeline (composes saddle/irc/neb/mtd)")
     p_ts.add_argument("input")
@@ -533,6 +544,7 @@ def main(argv=None):
         "saddle": _cmd_saddle, "irc": _cmd_irc,
         "neb": _cmd_neb, "mtd": _cmd_mtd,
         "gsm": _cmd_gsm, "ts": _cmd_ts,
+        "run": _cmd_run,
     }
     handler = dispatch[args.op]
     result = handler(args)
