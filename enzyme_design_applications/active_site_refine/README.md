@@ -43,22 +43,59 @@ This application:
       --winner_threshold 0.1 --verbose
   ```
 
-## Run
+## Recommended command (from the YYE/Zn₂ benchmark)
 
 ```bash
 python enzyme_design_applications/active_site_refine/refine.py \
     design.pdb aligned/af3_pred_aligned.pdb \
     -o refined.pdb \
     --ptm A/LYS/3:KCX \
-    --gfn 0 \
+    --ligand-charge "YYE:1" \
+    --backend xtb --gfn 0 \
     --radius 6.0 \
     --unfreeze-shell 1
+    # angle-restraints are ON by default; --no-angle-restraints to disable
+    # k-scale = 1.0 default
 ```
+
+This combination — **xtb-FF (GFN-FF) + design-contact distance restraints +
+sidechain pivot-angle restraints + closed-shell auto-charge** — gave the
+best composite score on the test case (YYE/Zn₂/KCX):
+
+  contact_mae 0.035 Å · metal_mae 0.020 Å · angle_mae 1.7° · ligand_rmsd 0 Å
+
+Catalytic geometry recapitulation:
+  HIS41 NE2-Zn2: design 2.023, AF3 3.218, **refined 2.067** Å
+  HIS41 CA-CB-CG: design 115.2°, AF3 112.9°, **refined 116.3°**
+  LYS64 NZ-C1 (KCX): design 1.382, AF3 1.427, **refined 1.402** Å
 
 `--ptm CHAIN/RES/CAT_IDX:NCAA` follows the same syntax as the alignment
 script: `A/LYS/3:KCX` means "the catalytic residue in REMARK 666 slot 3
 (`A LYS 64`) is post-translationally modified to KCX". Multiple `--ptm`
 flags allowed.
+
+`--ligand-charge RESNAME:N` declares HETATM net charges. Defaults: ZN +2,
+MG +2, etc. Ambiguous metals (Fe/Mn/Cu/Ni/Co/Mo/W) emit a warning and use
+their most-common state — pass an explicit value to be safe.
+
+## Backend choice
+
+| backend | best for | speed (278 atoms / CPU) |
+|---|---|---|
+| `xtb --gfn 0` (GFN-FF) | **default** — best angle preservation, very fast | ~3 s |
+| `xtb --gfn 2` (GFN2-xTB) | better electronic structure (charges, polarisation) | ~5–10 min |
+| `g-xtb` | Grimme's wB97M-V approximator (pre-release) | similar to GFN2 |
+| `mace-mp` | r2SCAN-trained MLFF, all elements | ~3–4 min |
+| `mace-omol` | charge-aware, TS-trained | ~5–8 min |
+| `mace-polar-m` | polarisable (Seth's gold standard for ionic systems) | ~5 min |
+
+xtb-FF wins on this Zn₂ test because force-field bond/angle terms hold
+sidechain valence in place better than MLFFs without explicit angle terms;
+combine that with our angle restraints from design and you preserve both
+the design's Zn-coordination AND realistic sp3 geometry.
+
+For systems where electronic effects dominate (e.g., redox cofactors, very
+ionic complexes) try `--backend mace-polar-m` or `--backend xtb --gfn 2`.
 
 ## Outputs
 

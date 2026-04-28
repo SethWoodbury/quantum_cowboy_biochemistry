@@ -801,9 +801,14 @@ def run_xtb_opt(
 # ──────────────────────────────────────────────────────────────────
 
 MACE_MODELS = {
-    "mace-mp":   "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
-    "mace-omol": "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
-    "mace-off":  "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
+    "mace-mp":      "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
+    "mace-omol":    "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
+    "mace-off":     "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
+    "mace-polar-s": "/home/gbg222/projects/mace_models/MACE-POLAR-1-S.model",
+    "mace-polar-m": "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
+    "mace-polar-l": "/home/gbg222/projects/mace_models/MACE-POLAR-1-L.model",
+    "mace-polar":   "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",  # alias
+    "mace-mh":      "/home/gbg222/projects/mace_models/mace-mh-0.model",
 }
 
 
@@ -1124,13 +1129,15 @@ def run_mace_opt(
     atoms.calc = calc
 
     log.info(f"  Running BFGS opt: fmax={fmax} eV/Å, max_steps={max_steps}")
-    traj = workdir / "opt.traj"
     log_path = workdir / "opt.log"
-    opt = BFGS(atoms, trajectory=str(traj), logfile=str(log_path))
+    # No trajectory file: newer ASE versions try to re-read it on init and
+    # fail to deserialise our custom HarmonicDistance/Angle constraints.
+    opt = BFGS(atoms, logfile=str(log_path))
     try:
         converged = opt.run(fmax=fmax, steps=max_steps)
     except Exception as e:
-        return None, f"BFGS failed: {e}"
+        import traceback as _tb
+        return None, f"BFGS failed: {type(e).__name__}: {e}\n{_tb.format_exc()[-2000:]}"
 
     log.info(f"  BFGS converged={converged} after {opt.nsteps} steps "
              f"(final fmax={float(np.linalg.norm(atoms.get_forces(), axis=1).max()):.3f} eV/Å)")
@@ -1142,10 +1149,9 @@ def run_mace_opt(
     if polish_steps > 0:
         atoms.set_constraint([FixAtoms(indices=fix_idx)] if fix_idx else [])
         polish_log = workdir / "polish.log"
-        polish_traj = workdir / "polish.traj"
         log.info(f"  Polish pass: {polish_steps} unrestrained BFGS steps "
                  f"(restraints removed, {len(fix_idx)} atoms still frozen)")
-        opt2 = BFGS(atoms, trajectory=str(polish_traj), logfile=str(polish_log))
+        opt2 = BFGS(atoms, logfile=str(polish_log))
         try:
             polish_converged = opt2.run(fmax=fmax, steps=polish_steps)
         except Exception as e:
