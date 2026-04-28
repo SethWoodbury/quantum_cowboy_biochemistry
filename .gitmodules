@@ -7,3 +7,9 @@
 [submodule "deps/plumed2"]
 	path = deps/plumed2
 	url = https://github.com/plumed/plumed2.git
+[submodule "deps/xtb"]
+	path = deps/xtb
+	url = https://github.com/grimme-lab/xtb.git
+[submodule "deps/g-xtb"]
+	path = deps/g-xtb
+	url = https://github.com/grimme-lab/g-xtb.git

@@ -55,7 +55,27 @@ NEEDS_GBG_VENV = {"mace-polar-s", "mace-polar-m", "mace-polar-l", "mace-polar"}
 
 # QM software
 GAUSSIAN_ROOT = "/net/software/gaussian/g16"
-XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
+
+# xtb is vendored as a git submodule at deps/xtb (see deps/README.md). The
+# build script writes the binary + libxtb.so under deps/xtb/install/.
+_QCB_ROOT_FOR_XTB = Path(__file__).resolve().parent.parent
+XTB_BIN = str(_QCB_ROOT_FOR_XTB / "deps" / "xtb" / "install" / "bin" / "xtb")
+# Shared libs that the vendored xtb needs at runtime (libxtb, libquadmath).
+# Tools that subprocess xtb should put these on LD_LIBRARY_PATH; they're
+# also needed by xtb-python's ASE wrapper if that's installed alongside.
+XTB_LIB_DIRS = [
+    str(_QCB_ROOT_FOR_XTB / "deps" / "xtb" / "install" / "lib" / "x86_64-linux-gnu"),
+    "/home/woodbuse/conda/envs/qcb-xtb/lib",
+]
+
+# g-xTB is a *separate* binary that supports an extra `--gxtb` flag for
+# Grimme's ωB97M-V/def2-TZVPPD-trained method. Vendored from
+# https://github.com/grimme-lab/g-xtb (the repo ships a static linux tarball).
+# Distinct from XTB_BIN — that one supports GFN-FF / GFN1 / GFN2 only.
+GXTB_BIN = str(_QCB_ROOT_FOR_XTB / "deps" / "g-xtb" / "install"
+               / "xtb-6.7.1" / "bin" / "xtb")
+GXTB_LIB_DIRS: list[str] = []  # static binary — no extra LD_LIBRARY_PATH needed
+
 OPENBABEL_BIN = "/home/dme5188/bin/openbabel/bin/obabel"
 
 # ChimeraX — for empirical H placement + Gasteiger charges

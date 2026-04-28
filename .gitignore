@@ -41,5 +41,11 @@ deps/pyGSM/
 deps/mace_polar_src/
 deps/graph_longrange_src/
 
+# Vendored-submodule build artefacts (xtb, plumed2, etc.) — submodule pin is
+# tracked, build outputs shouldn't be.
+deps/*/install/
+deps/*/build/
+deps/*/subprojects/.wraplock
+
 # pymbar / mace-polar may install local files; skip
 deps/.local_pkgs/__pycache__/
