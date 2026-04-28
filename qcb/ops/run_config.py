@@ -118,13 +118,27 @@ def run(config_path: str | Path, override: dict | None = None) -> dict:
                 mask = parse_constraints(atoms, bt_struct, [spec_str])
                 fix_mask |= mask
             elif c.kind == "harmonic_init":
+                # Per-atom soft anchor at initial positions (matches enz-ts spring_init).
+                # Each selected atom gets a Hookean restraint to a virtual fixed point
+                # at its INITIAL position, with stiffness c.k (eV/Å²) and force cap c.fmax.
+                # This lets atoms wiggle locally but prevents large drifts during MD/opt.
+                from ase.constraints import Hookean
                 spec = cfg.selectors[c.selector]
                 spec_str = spec.spec if hasattr(spec, "spec") else spec
                 mask = parse_constraints(atoms, bt_struct, [spec_str])
-                # Per-atom soft anchor → use Hookean if available, else FixAtoms
-                # For simplicity treat as fix_atoms (ASE Hookean per atom is messy)
-                fix_mask |= mask
-                log.warning(f"  harmonic_init '{c.name}' applied as fix_atoms (soft anchor not yet wired)")
+                init_pos = atoms.get_positions()
+                n_anchored = 0
+                for i in np.where(mask)[0]:
+                    # Hookean(a1=int, a2=Sequence_of_3_floats, rt=0, k=...) anchors
+                    # atom a1 to a fixed 3D point (a2). rt = equilibrium distance from
+                    # the anchor (use 0 for "stay where you started").
+                    # Note: ASE's Hookean anchor uses (A·r + B = 0) plane form when
+                    # a2 is a 4-tuple, or 3D point when 3-tuple. We use 3-tuple.
+                    anchor = tuple(float(x) for x in init_pos[int(i)])
+                    ase_constraints.append(Hookean(a1=int(i), a2=anchor, rt=0.0, k=c.k))
+                    n_anchored += 1
+                log.info(f"  harmonic_init '{c.name}': anchored {n_anchored} atoms "
+                         f"with k={c.k} eV/Å² to initial positions")
             elif c.kind == "harmonic_restraint":
                 # Build an ASE constraint that restrains a geometry
                 idx = _resolve_geometry_atoms(c.geom, cfg.geometry, cfg.selectors, atoms, bt_struct)

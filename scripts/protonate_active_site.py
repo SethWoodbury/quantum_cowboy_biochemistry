@@ -1246,6 +1246,23 @@ Examples:
                    help="Relax hydrogen positions with xTB (fixes sp2/sp3 geometry, ~seconds)")
     p.add_argument("--summary-json", default=None,
                    help="Write summary JSON to this path")
+    # ─── Consensus protonation flags (default: ENABLED, --legacy to opt out) ──
+    p.add_argument("--legacy", action="store_true",
+                   help="Use the original reduce+pdbfixer+propka pipeline only "
+                        "(skip the new consensus arbiter). Not recommended for "
+                        "new work.")
+    p.add_argument("--use-consensus", action="store_true", default=True,
+                   help="(default) Run consensus protonation: ChimeraX + propka + "
+                        "pdbfixer + hardcoded rules, with arbitrated voting. "
+                        "Pass --legacy to disable.")
+    p.add_argument("--skip-chimera", action="store_true",
+                   help="Disable ChimeraX in the consensus arbiter")
+    p.add_argument("--skip-propka", action="store_true",
+                   help="Disable propka in the consensus arbiter")
+    p.add_argument("--rule", action="append", default=[],
+                   help="Hardcoded protonation rule for consensus arbiter, "
+                        "format 'RES:ID=state'. Repeatable. Examples: "
+                        "HIS:254=neutral, LYS:139=carbamylated.")
 
     args = p.parse_args()
 
@@ -1259,6 +1276,82 @@ Examples:
         chain, resnum, charge = parts[0], int(parts[1]), int(parts[2])
         user_overrides[(chain, resnum)] = charge
 
+    # ─── Consensus path (new default) ─────────────────────────────────────
+    use_consensus = args.use_consensus and not args.legacy
+    if use_consensus:
+        # Make project root importable so qcb.* resolves regardless of cwd
+        _root = Path(__file__).resolve().parent.parent
+        if str(_root) not in sys.path:
+            sys.path.insert(0, str(_root))
+        try:
+            from qcb.prep import consensus_protonate
+        except ImportError as e:
+            log.warning(f"consensus_protonate import failed ({e}); falling back to legacy")
+            use_consensus = False
+
+    if use_consensus:
+        log.info("=" * 60)
+        log.info("Using NEW consensus protonation arbiter (--legacy to opt out)")
+        log.info("=" * 60)
+
+        # Parse hardcoded rules
+        rules = {}
+        for r in args.rule:
+            if "=" not in r:
+                print(f"ERROR: --rule must be 'RES:ID=state', got: {r}")
+                sys.exit(1)
+            spec, state = r.split("=", 1)
+            rules[spec.strip()] = state.strip()
+
+        methods = ["chimera", "propka", "pdbfixer"]
+        if args.skip_chimera:
+            methods.remove("chimera")
+        if args.skip_propka:
+            methods.remove("propka")
+        if rules:
+            methods.append("rules")
+
+        # Map ligand-charge int → consensus dict (best-effort: try to find ligand resname)
+        ligand_charges = None
+        if args.ligand_charge != 0:
+            # Detect ligand residue from input PDB (first non-protein, non-water HETATM)
+            import re as _re
+            protein_set = {"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE",
+                           "LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL",
+                           "KCX","HOH","WAT","ZN","MG","CA","FE","CU","MN"}
+            with open(args.input_pdb) as f:
+                for line in f:
+                    if line.startswith("HETATM"):
+                        rn = line[17:20].strip()
+                        if rn not in protein_set:
+                            ligand_charges = {rn: args.ligand_charge}
+                            break
+
+        result = consensus_protonate(
+            args.input_pdb, output_pdb=args.output,
+            pH=args.pH, methods=methods,
+            ligand_charges=ligand_charges, rules=rules or None,
+        )
+
+        log.info(f"  Consensus done: {len(result.consensus_states)} ionizable residues, "
+                 f"{len(result.disagreements)} disagreements")
+
+        if args.summary_json:
+            summary = {
+                "consensus_states": {f"{c}:{r}:{n}": s
+                                     for (c, r, n), s in result.consensus_states.items()},
+                "disagreements": result.disagreements,
+                "audit_log": result.audit_log,
+                "methods_run": [m for m, mr in result.method_results.items() if mr.success],
+                "methods_failed": [m for m, mr in result.method_results.items() if not mr.success],
+                "output_pdb": str(result.protonated_pdb),
+            }
+            with open(args.summary_json, "w") as f:
+                json.dump(summary, f, indent=2)
+            log.info(f"Summary written to {args.summary_json}")
+        return
+
+    # ─── Legacy path (--legacy or consensus import failed) ────────────────
     summary = protonate_active_site(
         args.input_pdb,
         args.output,

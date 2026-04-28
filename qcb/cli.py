@@ -290,8 +290,27 @@ def _cmd_protonate(args):
                 raise SystemExit(f"--ligand-charge must be 'RES=charge', got {lc!r}")
             name, q = lc.split("=", 1)
             ligand_charges[name.strip()] = int(q.strip())
-    methods = args.methods.split(",") if args.methods else \
-              ("chimera", "propka", "pdbfixer", "rules")
+
+    # Resolve method list. Priority order:
+    #   1. explicit --methods overrides everything
+    #   2. otherwise: defaults minus --skip-chimera / --skip-propka,
+    #      auto-include "rules" if user supplied any rules
+    if args.methods:
+        methods = [m.strip() for m in args.methods.split(",")]
+    else:
+        methods = ["chimera", "propka", "pdbfixer", "rules"]
+    if args.skip_chimera and "chimera" in methods:
+        methods.remove("chimera")
+    if args.skip_propka and "propka" in methods:
+        methods.remove("propka")
+    if args.skip_pdbfixer and "pdbfixer" in methods:
+        methods.remove("pdbfixer")
+    # Auto-include "rules" if rules are supplied and not explicitly excluded
+    if rules and "rules" not in methods and not args.no_rules:
+        methods.append("rules")
+        logging.getLogger("qcb.cli").info(
+            f"  --rule provided; auto-including 'rules' in methods → {methods}"
+        )
 
     result = consensus_protonate(
         args.input,
@@ -307,6 +326,8 @@ def _cmd_protonate(args):
         "outputs": {"protonated": str(result.protonated_pdb)},
         "n_residues": len(result.consensus_states),
         "n_disagreements": len(result.disagreements),
+        "methods_run": [m for m, r in result.method_results.items() if r.success],
+        "methods_failed": [m for m, r in result.method_results.items() if not r.success],
     }
 
 
@@ -544,13 +565,23 @@ def main(argv=None):
                        help="Output PDB (default: <input>.consensus.pdb)")
     p_pro.add_argument("--pH", type=float, default=7.0)
     p_pro.add_argument("--methods", default=None,
-                       help="Comma-separated subset of {chimera,propka,pdbfixer,rules} "
-                            "(default: all four)")
+                       help="Comma-separated explicit method list "
+                            "(overrides --skip-* flags). "
+                            "Subset of {chimera, propka, pdbfixer, rules}. "
+                            "Default: all four (rules auto-included if --rule given).")
+    p_pro.add_argument("--skip-chimera", action="store_true",
+                       help="Disable ChimeraX (e.g., kernel unavailable or too slow)")
+    p_pro.add_argument("--skip-propka", action="store_true",
+                       help="Disable propka (e.g., on systems with non-standard residues)")
+    p_pro.add_argument("--skip-pdbfixer", action="store_true",
+                       help="Disable pdbfixer")
+    p_pro.add_argument("--no-rules", action="store_true",
+                       help="Don't auto-include 'rules' even when --rule is provided")
     p_pro.add_argument("--rule", action="append", default=[],
                        help="Hardcoded rule, format 'RES:ID=state' or "
-                            "'RES:CHAIN:ID=state'. Repeatable. "
-                            "States: protonated, deprotonated, neutral, doubly_protonated, "
-                            "carbamylated, etc.")
+                            "'RES:CHAIN:ID=state'. Repeatable. Always wins over "
+                            "automated methods. Examples: HIS:254=neutral, "
+                            "LYS:139=carbamylated, ASP:233=neutral.")
     p_pro.add_argument("--ligand-charge", action="append", default=[],
                        help="Ligand charge hint, format 'RESNAME=charge'. Repeatable. "
                             "Used by ChimeraX addcharge. E.g., --ligand-charge YYL=-1")

@@ -116,12 +116,23 @@ def add_hydrogens_chimera(
         log.error(f"  ChimeraX kernel not executable: {e}")
         return ChimeraResult(success=False, log=str(e))
 
+    # Always log return code and any stderr — silent failures are the worst
+    combined_log = (
+        f"returncode={proc.returncode}\n"
+        f"--- stdout (last 1500 chars) ---\n{(proc.stdout or '')[-1500:]}\n"
+        f"--- stderr (last 1500 chars) ---\n{(proc.stderr or '')[-1500:]}"
+    )
+
+    if proc.returncode != 0:
+        log.error(f"  ChimeraX returned {proc.returncode}")
+        log.error(f"  stderr (last 500 chars): {(proc.stderr or '').strip()[-500:]}")
+        log.error(f"  stdout (last 500 chars): {(proc.stdout or '').strip()[-500:]}")
+
     if not output_pdb.is_file() or output_pdb.stat().st_size == 0:
         log.error(f"  ChimeraX did not produce {output_pdb}")
-        return ChimeraResult(
-            success=False,
-            log=(proc.stderr or proc.stdout or "")[-1500:],
-        )
+        log.error(f"  stderr (last 500 chars): {(proc.stderr or '').strip()[-500:]}")
+        log.error(f"  stdout (last 500 chars): {(proc.stdout or '').strip()[-500:]}")
+        return ChimeraResult(success=False, log=combined_log)
 
     # Count H atoms added (rough heuristic)
     n_h_in = _count_h_atoms(input_pdb)
@@ -133,7 +144,7 @@ def add_hydrogens_chimera(
         success=True,
         protonated_pdb=output_pdb,
         n_h_added=n_h_added,
-        log=(proc.stdout or "")[-1000:],
+        log=combined_log,
     )
 
 
@@ -201,15 +212,28 @@ def add_hydrogens_with_charges(
             capture_output=True, text=True, timeout=timeout_s,
         )
     except subprocess.TimeoutExpired:
+        log.error(f"  ChimeraX timed out after {timeout_s}s")
         return ChimeraResult(success=False, log=f"timeout after {timeout_s}s")
     except FileNotFoundError as e:
+        log.error(f"  ChimeraX kernel not executable: {e}")
         return ChimeraResult(success=False, log=str(e))
 
+    combined_log = (
+        f"returncode={proc.returncode}\n"
+        f"--- stdout (last 1500 chars) ---\n{(proc.stdout or '')[-1500:]}\n"
+        f"--- stderr (last 1500 chars) ---\n{(proc.stderr or '')[-1500:]}"
+    )
+
+    if proc.returncode != 0:
+        log.error(f"  ChimeraX returned {proc.returncode}")
+        log.error(f"  stderr (last 500 chars): {(proc.stderr or '').strip()[-500:]}")
+        log.error(f"  stdout (last 500 chars): {(proc.stdout or '').strip()[-500:]}")
+
     if not output_pdb.is_file():
-        return ChimeraResult(
-            success=False,
-            log=(proc.stderr or proc.stdout or "")[-1500:],
-        )
+        log.error(f"  ChimeraX did not produce {output_pdb}")
+        log.error(f"  stderr (last 500 chars): {(proc.stderr or '').strip()[-500:]}")
+        log.error(f"  stdout (last 500 chars): {(proc.stdout or '').strip()[-500:]}")
+        return ChimeraResult(success=False, log=combined_log)
 
     partial_charges = parse_pqr_charges(pqr_path) if pqr_path.is_file() else {}
     n_h_added = _count_h_atoms(output_pdb) - _count_h_atoms(input_pdb)
@@ -221,7 +245,7 @@ def add_hydrogens_with_charges(
         pqr_path=pqr_path if pqr_path.is_file() else None,
         partial_charges=partial_charges,
         n_h_added=n_h_added,
-        log=(proc.stdout or "")[-1000:],
+        log=combined_log,
     )
 
 

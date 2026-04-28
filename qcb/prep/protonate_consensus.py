@@ -386,10 +386,15 @@ def consensus_protonate(
     audit: list[str] = []
     disagreements: list[dict] = []
 
-    for key in sorted(all_keys):
+    # Drop wildcard "*" keys from the iteration set (they're rule-only entries
+    # whose intent is to apply across any chain). They get merged into per-chain
+    # decisions via the wildcard lookup below.
+    iter_keys = {k for k in all_keys if k[0] != "*"}
+
+    for key in sorted(iter_keys):
         votes = {m: r.states.get(key, "unknown") for m, r in method_results.items()
                  if r.success}
-        # rules votes via the (chain, resid, resname) and the wildcard ("*", resid, resname)
+        # Rules votes: lookup with both exact and wildcard chain
         if "rules" in method_results and method_results["rules"].success:
             rs = method_results["rules"].states
             wildcard_key = ("*", key[1], key[2])
