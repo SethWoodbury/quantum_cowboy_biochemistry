@@ -279,30 +279,70 @@ def _classify(d: float, atom_a: Atom, atom_b: Atom) -> tuple[str, float]:
     return "none", 0.0
 
 
+_HIS_RING_ATOMS = {"CG", "ND1", "CE1", "NE2", "CD2"}
+
+
 def build_design_contact_map(
     design_atoms: list[Atom],
     catalytic: list[CatRes],
     radius: float = 4.5,
 ) -> list[DesignContact]:
     """Walk every catres sidechain heavy atom; record distances to ligand
-    heavy atoms within `radius`, classified for restraint strength."""
+    heavy atoms within `radius`, classified for restraint strength.
+
+    HIS ring-orientation lock: for any HIS catres whose NE2 or ND1 directly
+    coordinates a metal in design (≤2.5 Å), upgrade the entire ring's other
+    atoms (CG/ND1/CE1/NE2/CD2) to a stronger restraint (force ≥ 0.15),
+    so MLFF/xtb backends can't rotate the imidazole around the metal-N axis
+    while still satisfying the metal-N distance.
+    """
     lig = [a for a in design_atoms if a.is_hetatm and a.is_heavy]
     if not lig:
         log.warning("No ligand HETATM atoms found in design")
         return []
     lig_pos = np.array([a.pos for a in lig])
 
+    # 1st pass: detect which HIS catres coordinate a metal, and to which
+    metal_for_his: dict[tuple[str, int], Atom] = {}
+    for c in catalytic:
+        if c.rname != "HIS":
+            continue
+        for an in ("NE2", "ND1"):
+            ar = next((a for a in design_atoms
+                       if a.chain == c.chain and a.rnum == c.rnum
+                       and a.aname == an), None)
+            if ar is None:
+                continue
+            for L in lig:
+                if L.element.upper() not in _METALS:
+                    continue
+                if np.linalg.norm(L.pos - ar.pos) <= 2.5:
+                    metal_for_his[(c.chain, c.rnum)] = L
+                    break
+            if (c.chain, c.rnum) in metal_for_his:
+                break
+
     contacts: list[DesignContact] = []
     for c in catalytic:
         sc_atoms = [a for a in design_atoms
                     if a.chain == c.chain and a.rnum == c.rnum
                     and a.is_heavy and a.aname not in BACKBONE_ATOMS]
+        metal_anchor = metal_for_his.get((c.chain, c.rnum))
         for a in sc_atoms:
             d = np.linalg.norm(lig_pos - a.pos, axis=1)
             for j, dj in enumerate(d):
                 if dj > radius:
                     continue
                 kind, force = _classify(dj, a, lig[j])
+                # Promote ring-atom→coord-metal contacts so they're strong
+                # enough to lock the imidazole orientation. Without this, MLFF
+                # backends can rotate the ring 180° about the N-metal axis
+                # and still satisfy the metal-N distance.
+                if (metal_anchor is not None
+                        and a.aname in _HIS_RING_ATOMS
+                        and lig[j].aname == metal_anchor.aname
+                        and kind in ("close", "hbond")):
+                    kind, force = "metal_ring_lock", 0.15
                 if kind == "none":
                     continue
                 contacts.append(DesignContact(
@@ -319,7 +359,8 @@ def filter_top_contacts(
 ) -> list[DesignContact]:
     """Keep at most N restraints per residue, prioritizing tight (covalent >
     metal_coord > hbond > close) and shortest first."""
-    rank = {"covalent": 0, "metal_coord": 1, "hbond": 2, "close": 3}
+    rank = {"covalent": 0, "metal_coord": 1, "metal_ring_lock": 2,
+            "hbond": 3, "close": 4}
     by_res: dict[tuple[str, int], list[DesignContact]] = {}
     for c in contacts:
         by_res.setdefault((c.res_chain, c.res_num), []).append(c)
