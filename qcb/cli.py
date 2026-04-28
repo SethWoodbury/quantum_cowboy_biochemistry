@@ -271,6 +271,45 @@ def _cmd_run(args):
     return run_config(args.config)
 
 
+def _cmd_protonate(args):
+    """Consensus protonation: ChimeraX + propka + pdbfixer + hardcoded rules."""
+    from qcb.prep import consensus_protonate
+    rules = None
+    if args.rule:
+        rules = {}
+        for r in args.rule:
+            if "=" not in r:
+                raise SystemExit(f"--rule must be 'RES:ID=state', got {r!r}")
+            spec, state = r.split("=", 1)
+            rules[spec.strip()] = state.strip()
+    ligand_charges = None
+    if args.ligand_charge:
+        ligand_charges = {}
+        for lc in args.ligand_charge:
+            if "=" not in lc:
+                raise SystemExit(f"--ligand-charge must be 'RES=charge', got {lc!r}")
+            name, q = lc.split("=", 1)
+            ligand_charges[name.strip()] = int(q.strip())
+    methods = args.methods.split(",") if args.methods else \
+              ("chimera", "propka", "pdbfixer", "rules")
+
+    result = consensus_protonate(
+        args.input,
+        output_pdb=args.output,
+        pH=args.pH,
+        methods=methods,
+        ligand_charges=ligand_charges,
+        rules=rules,
+        parallel=not args.serial,
+    )
+    return {
+        "status": "completed",
+        "outputs": {"protonated": str(result.protonated_pdb)},
+        "n_residues": len(result.consensus_states),
+        "n_disagreements": len(result.disagreements),
+    }
+
+
 def _cmd_ts(args):
     """Native qcb ts pipeline: loads structure + calc + constraint and calls ts.run()."""
     from qcb.ops import ts as ts_op
@@ -498,6 +537,27 @@ def main(argv=None):
     p_run.add_argument("config", help="Path to a qcb YAML config file")
     p_run.add_argument("--log-level", default="INFO")
 
+    # protonate — consensus protonation (ChimeraX + propka + pdbfixer + rules)
+    p_pro = sub.add_parser("protonate", help="Consensus protonation (ChimeraX + propka + pdbfixer + rules)")
+    p_pro.add_argument("input", help="Input PDB")
+    p_pro.add_argument("-o", "--output", default=None,
+                       help="Output PDB (default: <input>.consensus.pdb)")
+    p_pro.add_argument("--pH", type=float, default=7.0)
+    p_pro.add_argument("--methods", default=None,
+                       help="Comma-separated subset of {chimera,propka,pdbfixer,rules} "
+                            "(default: all four)")
+    p_pro.add_argument("--rule", action="append", default=[],
+                       help="Hardcoded rule, format 'RES:ID=state' or "
+                            "'RES:CHAIN:ID=state'. Repeatable. "
+                            "States: protonated, deprotonated, neutral, doubly_protonated, "
+                            "carbamylated, etc.")
+    p_pro.add_argument("--ligand-charge", action="append", default=[],
+                       help="Ligand charge hint, format 'RESNAME=charge'. Repeatable. "
+                            "Used by ChimeraX addcharge. E.g., --ligand-charge YYL=-1")
+    p_pro.add_argument("--serial", action="store_true",
+                       help="Run methods sequentially instead of in parallel")
+    p_pro.add_argument("--log-level", default="INFO")
+
     # ts
     p_ts = sub.add_parser("ts", help="Native TS pipeline (composes saddle/irc/neb/mtd)")
     p_ts.add_argument("input")
@@ -545,6 +605,7 @@ def main(argv=None):
         "neb": _cmd_neb, "mtd": _cmd_mtd,
         "gsm": _cmd_gsm, "ts": _cmd_ts,
         "run": _cmd_run,
+        "protonate": _cmd_protonate,
     }
     handler = dispatch[args.op]
     result = handler(args)

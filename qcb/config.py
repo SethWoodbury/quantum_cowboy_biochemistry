@@ -58,6 +58,22 @@ GAUSSIAN_ROOT = "/net/software/gaussian/g16"
 XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
 OPENBABEL_BIN = "/home/dme5188/bin/openbabel/bin/obabel"
 
+# ChimeraX — for empirical H placement + Gasteiger charges
+# Falls back to None if not found; consensus protonation will skip ChimeraX.
+def _find_chimera() -> str | None:
+    import os as __os
+    candidates = [
+        "/projects/ml/enzyme_filtering/enz-ts/kernels/chimerax/usr/lib/ucsf-chimerax/bin/ChimeraX",
+        "/net/software/chimerax/bin/ChimeraX",
+    ]
+    for p in candidates:
+        if __os.path.isfile(p):
+            return p
+    from shutil import which
+    return which("ChimeraX") or which("chimerax")
+
+CHIMERA_KERNEL = _find_chimera()
+
 # PLUMED 2 — for advanced sampling (MTD, OPES, umbrella, multi-walker)
 # Prefer the submodule build at deps/plumed2/install/lib/libplumedKernel.so when
 # available; fall back to the cluster-shared prebuilt at /net/scratch/woodbuse.
