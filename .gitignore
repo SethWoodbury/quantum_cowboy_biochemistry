@@ -36,3 +36,10 @@ Thumbs.db
 .vscode/
 .idea/
 deps/pyGSM/
+
+# Source-only copies installed into deps/.local_pkgs (do not commit large source trees)
+deps/mace_polar_src/
+deps/graph_longrange_src/
+
+# pymbar / mace-polar may install local files; skip
+deps/.local_pkgs/__pycache__/

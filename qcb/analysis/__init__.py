@@ -1,5 +1,5 @@
 """
-Post-processing: barrier comparison, geometry analysis, energy profiles.
+Post-processing: barriers, geometry analysis, FES from MTD/OPES/umbrella.
 """
 
 from qcb.analysis.barriers import (
@@ -15,17 +15,15 @@ from qcb.analysis.geometry import (
     plot_bond_evolution,
     track_bonds_along_path,
 )
+from qcb.analysis import fes  # FES analysis module (PLUMED HILLS / COLVAR / MBAR)
 
 __all__ = [
     # barriers
-    "load_neb_summary",
-    "compare_barriers",
-    "barrier_to_kcat",
-    "kcat_to_barrier",
-    "print_barrier_report",
+    "load_neb_summary", "compare_barriers", "barrier_to_kcat",
+    "kcat_to_barrier", "print_barrier_report",
     # geometry
-    "measure_bond_distances",
-    "compare_structures",
-    "track_bonds_along_path",
-    "plot_bond_evolution",
+    "measure_bond_distances", "compare_structures",
+    "track_bonds_along_path", "plot_bond_evolution",
+    # FES analysis
+    "fes",
 ]

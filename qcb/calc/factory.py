@@ -26,13 +26,23 @@ except Exception:
 
 
 DEFAULT_MODEL_PATHS = {
-    "mace-mp": "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
-    "mace-omol": "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
-    "mace-mh": "/home/gbg222/projects/mace_models/mace-mh-0.model",
-    "mace-off-small": "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_small.model",
-    "mace-off-medium": "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_medium.model",
-    "mace-off": "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
-    "mace-off-large": "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
+    # ── General-purpose foundation models ──
+    "mace-mp":           "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
+    "mace-omol":         "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
+    "mace-mh":           "/home/gbg222/projects/mace_models/mace-mh-0.model",
+    # ── MACE-OFF (organic only, no metals) ──
+    "mace-off-small":    "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_small.model",
+    "mace-off-medium":   "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_medium.model",
+    "mace-off":          "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
+    "mace-off-large":    "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
+    # ── MACE-POLAR-1 (charge/electrostatics-aware, recommended for ionic systems) ──
+    # See: arXiv:2602.19411 — long-range electrostatics in MACE
+    "mace-polar-s":      "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/MACE-POLAR-1-S.model",
+    "mace-polar-m":      "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/MACE-POLAR-1-M.model",
+    "mace-polar":        "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/MACE-POLAR-1-M.model",  # default = M
+    "mace-polar-l":      "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/MACE-POLAR-1-L.model",
+    # ── Legacy ──
+    "mace-128":          "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/2023-12-10-mace-128-L0_energy_epoch-249.model",
 }
 
 

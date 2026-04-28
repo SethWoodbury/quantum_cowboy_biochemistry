@@ -4,3 +4,6 @@
 [submodule "deps/pysisyphus"]
 	path = deps/pysisyphus
 	url = https://github.com/eljost/pysisyphus.git
+[submodule "deps/plumed2"]
+	path = deps/plumed2
+	url = https://github.com/plumed/plumed2.git

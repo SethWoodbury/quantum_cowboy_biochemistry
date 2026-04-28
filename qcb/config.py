@@ -58,9 +58,23 @@ GAUSSIAN_ROOT = "/net/software/gaussian/g16"
 XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
 OPENBABEL_BIN = "/home/dme5188/bin/openbabel/bin/obabel"
 
-# Reference scripts from collaborators
+# PLUMED 2 — for advanced sampling (MTD, OPES, umbrella, multi-walker)
+# Prefer the submodule build at deps/plumed2/install/lib/libplumedKernel.so when
+# available; fall back to the cluster-shared prebuilt at /net/scratch/woodbuse.
+# Set with: export PLUMED_KERNEL=/path/to/libplumedKernel.so
+import os as _os
+_qcb_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+_submodule_kernel = _os.path.join(_qcb_root, "deps", "plumed2", "install", "lib", "libplumedKernel.so")
+_shared_kernel = "/net/scratch/woodbuse/metad/plumed/lib/libplumedKernel.so"
+PLUMED_KERNEL = (
+    _submodule_kernel if _os.path.isfile(_submodule_kernel)
+    else (_shared_kernel if _os.path.isfile(_shared_kernel) else None)
+)
+
+# Reference codebases (read-only, for migration/comparison)
 GBG_ENZTS_VENV = "/home/gbg222/projects/enz-ts/.venv/bin/python"
 GBG_ENZTS_SRC = "/home/gbg222/projects/enz-ts/src"
+ENZTS_PROD = "/projects/ml/enzyme_filtering/enz-ts"  # production enz-ts (gbg222/Lars)
 
 # Python environments
 UNIVERSAL_PYTHON = f"apptainer exec --nv --bind /home:/home --bind /mnt:/mnt --bind /net:/net {CONTAINERS['universal']} python"
