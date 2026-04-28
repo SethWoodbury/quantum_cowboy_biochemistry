@@ -71,6 +71,7 @@ XTB_LIB_DIRS = [
     str(_QCB_ROOT / "deps" / "xtb" / "install" / "lib" / "x86_64-linux-gnu"),
     "/home/woodbuse/conda/envs/qcb-xtb/lib",
 ]
+GXTB_BIN = str(_QCB_ROOT / "deps" / "g-xtb" / "install" / "xtb-6.7.1" / "bin" / "xtb")
 
 # ── Formal charges (pH 7, no PROPKA — simple, deterministic) ────────────
 # Residues not listed are treated as neutral (charge 0).
@@ -87,16 +88,28 @@ PTM_CHARGE: dict[str, int] = {
 }
 
 # Default formal charges of common HETATM residues. Per the user's spec,
-# Zn is always Zn(II); future metals can be added here. The actual ligand
-# charge is supplied at the CLI via --ligand-charge (one entry per HETATM
-# residue name); these are only used as defaults if the user omits them.
+# Zn is always Zn(II); for the ambiguous transition metals listed in
+# AMBIGUOUS_METALS the user is expected to pass --ligand-charge or we'll
+# just use the most common oxidation state and warn loudly.
 DEFAULT_HETATM_CHARGE: dict[str, int] = {
-    "ZN":  +2, "MG": +2, "CA": +2, "MN": +2,
-    "FE":  +3,  # ambiguous; user should override if Fe(II)
+    # unambiguous (use defaults silently)
+    "ZN":  +2, "MG": +2, "CA": +2,
     "K":   +1, "NA": +1,
     "CL":  -1,
     "HOH":  0, "WAT": 0,
+    # ambiguous — defaults to most common state, warn user
+    "FE":  +3,  # could be +2 (ferrous) or +3 (ferric)
+    "MN":  +2,  # could be +2/+3/+4/+7
+    "CU":  +2,  # could be +1 (cuprous) or +2 (cupric)
+    "NI":  +2,  # +2 most common, also +1/+3 in some enzymes
+    "CO":  +2,  # +2 or +3
+    "MO":  +6,  # +4/+5/+6
+    "W":   +6,  # +4/+5/+6
 }
+
+# Metals where the +charge depends on the chemistry — caller must specify.
+# We emit a warning if any of these are present without an explicit override.
+AMBIGUOUS_METALS = {"FE", "MN", "CU", "NI", "CO", "MO", "W"}
 
 PROTEIN_RES = {"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE",
                "LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL"}
@@ -509,7 +522,14 @@ def compute_cluster_charge(
                 audit.append(f"  HET   {ch}{rn} {rname} = {q:+d} (user)")
             elif rname in DEFAULT_HETATM_CHARGE:
                 q = DEFAULT_HETATM_CHARGE[rname]
-                audit.append(f"  HET   {ch}{rn} {rname} = {q:+d} (default)")
+                tag = "default"
+                if rname in AMBIGUOUS_METALS:
+                    audit.append(f"  WARN  metal {rname} has variable oxidation "
+                                 f"states; using +{q} but pass --ligand-charge "
+                                 f"{rname}:N to be explicit (Fe: +2/+3, "
+                                 f"Mn: +2/+3/+4/+7, Cu: +1/+2, etc.)")
+                    tag = "ambiguous default"
+                audit.append(f"  HET   {ch}{rn} {rname} = {q:+d} ({tag})")
             else:
                 q = 0
                 audit.append(f"  WARN  HETATM {rname} has no charge entry "
@@ -593,6 +613,8 @@ def write_xtb_input(
     contacts: list[DesignContact],
     unfreeze_shell: int = 0,
     rigidity: str = "backbone",
+    angle_restraints: list | None = None,  # tuples (i, j, k, theta_rad, k_ev, label)
+    k_scale: float = 1.0,
 ):
     """Write the xTB control file containing $fix (rigid ligand + frozen
     backbone) and one $constrain block per restraint tier."""
@@ -619,7 +641,7 @@ def write_xtb_input(
             else:
                 fix_indices.append(i); n_bb += 1
 
-    # Group contacts by force constant for separate $constrain blocks
+    # Group contacts by (scaled) force constant for separate $constrain blocks
     by_force: dict[float, list[tuple[int, int, float, str]]] = {}
     n_skipped = 0
     for ct in contacts:
@@ -630,14 +652,35 @@ def write_xtb_input(
         if i is None or j is None:
             n_skipped += 1
             continue
-        by_force.setdefault(ct.force, []).append(
+        scaled = ct.force * k_scale
+        by_force.setdefault(scaled, []).append(
             (i, j, ct.distance, f"{ct.res_name}{ct.res_num}.{ct.res_atom}-{ct.lig_atom}({ct.kind})"))
+
+    # Internal-angle restraints (sidechain valence) — convert (i_0based, j_0based,
+    # k_0based, theta_rad, ...) → 1-based + degrees, then group by k_ang/100 since
+    # xtb uses Eh/Bohr² but our angle k is eV/rad²; small unit dance.
+    # xtb angle force constant: same $constrain "force constant=X" applies in
+    # Eh/(rad²) for angle constraints. Use 0.5 by default which is moderate.
+    ang_lines: list[tuple[int, int, int, float, str]] = []
+    for r in (angle_restraints or []):
+        i0, j0, k0, theta_rad, k_ev, label = r
+        # adjust to 1-based
+        i1, j1, k1 = i0 + 1, j0 + 1, k0 + 1
+        # only emit if all three indices are non-fixed (i.e., not in fix_indices);
+        # xtb may complain if any constrained atom is fixed
+        # Actually xtb does allow constraints involving fixed atoms — leave as is
+        ang_lines.append((i1, j1, k1, np.degrees(theta_rad), label))
 
     with open(inp_path, "w") as f:
         for force, entries in sorted(by_force.items(), reverse=True):
             f.write(f"$constrain\n   force constant={force}\n")
             for i, j, d, label in entries:
                 f.write(f"   distance: {i}, {j}, {d:.4f}    # {label}\n")
+            f.write("$end\n")
+        if ang_lines:
+            f.write(f"$constrain\n   force constant={0.5 * k_scale}\n")
+            for i, j, k, deg, label in ang_lines:
+                f.write(f"   angle: {i}, {j}, {k}, {deg:.3f}    # {label}\n")
             f.write("$end\n")
         if fix_indices:
             f.write("$fix\n")
@@ -647,8 +690,8 @@ def write_xtb_input(
 
     log.info(f"  Constraints: {len(fix_indices)}/{len(cluster)} fixed "
              f"(ligand={n_lig}, bb={n_bb}, caps={n_cap}, unfrozen-bb={n_unfrozen})")
-    log.info(f"  Restraints: {sum(len(v) for v in by_force.values())} contact distances "
-             f"in {len(by_force)} tiers, skipped={n_skipped}")
+    log.info(f"  Restraints: {sum(len(v) for v in by_force.values())} distance, "
+             f"{len(ang_lines)} angle (k_scale={k_scale}), skipped={n_skipped}")
 
 
 def run_xtb_opt(
@@ -661,9 +704,15 @@ def run_xtb_opt(
     rigidity: str = "backbone",
     unfreeze_shell: int = 0,
     timeout_s: int = 600,
+    angle_restraints: list | None = None,
+    k_scale: float = 1.0,
+    binary: str | None = None,            # path to xtb (default vendored XTB_BIN)
+    extra_method_args: list | None = None,  # e.g. ["--gxtb"] for g-xTB
+    polish_steps: int = 0,                 # if >0, run an unrestrained 2nd pass
 ) -> tuple[list[Atom] | None, str]:
-    if not os.path.isfile(XTB_BIN):
-        return None, f"xTB binary not found at {XTB_BIN}"
+    bin_path = binary or XTB_BIN
+    if not os.path.isfile(bin_path):
+        return None, f"xtb binary not found at {bin_path}"
 
     workdir.mkdir(parents=True, exist_ok=True)
     xyz_path = workdir / "input.xyz"
@@ -675,18 +724,23 @@ def run_xtb_opt(
             f.write(f"{a.element:<2} {a.x:.6f} {a.y:.6f} {a.z:.6f}\n")
 
     write_xtb_input(cluster, inp_path, catalytic, contacts,
-                    unfreeze_shell=unfreeze_shell, rigidity=rigidity)
+                    unfreeze_shell=unfreeze_shell, rigidity=rigidity,
+                    angle_restraints=angle_restraints, k_scale=k_scale)
 
-    method_args = ["--gfnff"] if gfn == 0 else ["--gfn", str(gfn)]
-    cmd = [XTB_BIN, xyz_path.name] + method_args + [
+    if extra_method_args:
+        method_args = list(extra_method_args)
+    else:
+        method_args = ["--gfnff"] if gfn == 0 else ["--gfn", str(gfn)]
+    cmd = [bin_path, xyz_path.name] + method_args + [
         "--chrg", str(charge), "--opt", "normal", "--input", inp_path.name,
     ]
-    # Vendored xtb needs libxtb.so + libquadmath on LD_LIBRARY_PATH
+    # Vendored xtb needs libxtb.so + libquadmath on LD_LIBRARY_PATH (g-xtb is
+    # statically linked so it doesn't strictly need it, but harmless).
     env = os.environ.copy()
     env["LD_LIBRARY_PATH"] = ":".join(
         XTB_LIB_DIRS + [env.get("LD_LIBRARY_PATH", "")]).rstrip(":")
-    env.setdefault("OMP_NUM_THREADS", "1")  # avoid thread races on metallic SCF
-    log.info(f"  xTB {' '.join(method_args)} on {len(cluster)} atoms (charge={charge:+d})")
+    env.setdefault("OMP_NUM_THREADS", "1")
+    log.info(f"  {Path(bin_path).name} {' '.join(method_args)} on {len(cluster)} atoms (charge={charge:+d})")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
                               timeout=timeout_s, cwd=str(workdir), env=env)
@@ -703,6 +757,42 @@ def run_xtb_opt(
     for i, a in enumerate(cluster):
         parts = lines[2 + i].split()
         relaxed.append(a.with_pos(np.array([float(parts[1]), float(parts[2]), float(parts[3])])))
+
+    # Polish stage: rewrite xcontrol.inp with $fix only (no $constrain blocks),
+    # then re-optimise from the restrained geometry. xtb-side polish.
+    if polish_steps > 0:
+        polish_inp = workdir / "polish.inp"
+        # Write only $fix block
+        with open(polish_inp, "w") as f:
+            f.write("$opt\n   maxcycle=" + str(polish_steps) + "\n$end\n")
+            # Rebuild fix block by re-parsing original xcontrol.inp $fix line
+            for line in open(inp_path):
+                if line.strip().startswith("atoms:") and "$fix" in inp_path.read_text():
+                    f.write("$fix\n   " + line.strip() + "\n$end\n")
+                    break
+        # Restart from the relaxed coords
+        polish_xyz = workdir / "polish.xyz"
+        with open(polish_xyz, "w") as f:
+            f.write(f"{len(cluster)}\n\n")
+            for a in relaxed:
+                f.write(f"{a.element:<2} {a.x:.6f} {a.y:.6f} {a.z:.6f}\n")
+        polish_cmd = [bin_path, polish_xyz.name] + method_args + [
+            "--chrg", str(charge), "--opt", "normal", "--input", polish_inp.name,
+        ]
+        log.info(f"  xtb polish: {polish_steps} unrestrained steps")
+        polish_proc = subprocess.run(polish_cmd, capture_output=True, text=True,
+                                     timeout=timeout_s, cwd=str(workdir), env=env)
+        polish_out = workdir / "xtbopt.xyz"
+        if polish_out.exists() and polish_proc.returncode == 0:
+            ll = polish_out.read_text().strip().split("\n")
+            if len(ll) >= len(cluster) + 2:
+                relaxed = [a.with_pos(np.array([float(p[1]), float(p[2]), float(p[3])]))
+                           for a, p in zip(cluster,
+                                           [ll[2 + i].split() for i in range(len(cluster))])]
+                log.info(f"  xtb polish: OK")
+        else:
+            log.warning(f"  xtb polish failed; keeping restrained result")
+
     return relaxed, "OK"
 
 
@@ -788,6 +878,77 @@ def _build_distance_restraints(
     return pairs, n_skipped
 
 
+def build_internal_angle_restraints(
+    cluster: list[Atom],
+    design_atoms: list[Atom],
+    catalytic: list[CatRes],
+    k_ev_per_rad2: float = 8.0,
+) -> list[tuple[int, int, int, float, float, str]]:
+    """For each catalytic-residue sidechain, extract the *design's*
+    internal angles (CA-CB-CG, CB-CG-CD, etc.) and return them as
+    cluster-indexed (i, j, k, target_rad, k_eV/rad², label) tuples
+    suitable for ASE HarmonicAngle restraints.
+
+    This is what fixes the "CA-CB-CG drifts to 130°" failure mode: the
+    contact-map distance restraints alone don't penalise sidechain
+    bending; an explicit angle restraint anchored to design's value
+    does.
+    """
+    # Only restrain SIDECHAIN PIVOT angles (CA-CB-CG and onward through chi
+    # rotations) — never aromatic-ring or sp2-carboxylate angles, since those
+    # are fixed by chemistry and MLFF handles them well. Restraining a ring
+    # angle to design's value can fight aromaticity and force unphysical
+    # geometry.
+    SC_ANG = {
+        "ALA": [], "GLY": [], "PRO": [], "SER": [], "CYS": [], "THR": [],
+        "ARG": [("CA","CB","CG"),("CB","CG","CD"),("CG","CD","NE")],
+        "ASN": [("CA","CB","CG")],
+        "ASP": [("CA","CB","CG")],
+        "GLN": [("CA","CB","CG"),("CB","CG","CD")],
+        "GLU": [("CA","CB","CG"),("CB","CG","CD")],
+        "HIS": [("CA","CB","CG")],
+        "ILE": [("CA","CB","CG1"),("CB","CG1","CD1")],
+        "LEU": [("CA","CB","CG")],
+        "LYS": [("CA","CB","CG"),("CB","CG","CD"),("CG","CD","CE"),("CD","CE","NZ")],
+        "MET": [("CA","CB","CG"),("CB","CG","SD"),("CG","SD","CE")],
+        "PHE": [("CA","CB","CG")],
+        "TRP": [("CA","CB","CG")],
+        "TYR": [("CA","CB","CG")],
+        "VAL": [("CA","CB","CG1")],
+    }
+
+    # Build (chain,rnum,aname) → cluster-0-based-index lookup
+    cluster_idx: dict[tuple[str, int, str], int] = {}
+    for k, a in enumerate(cluster):
+        cluster_idx[(a.chain, a.rnum, a.aname)] = k
+
+    # Build (chain,rnum,aname) → position lookup for design
+    design_pos: dict[tuple[str, int, str], np.ndarray] = {}
+    for a in design_atoms:
+        if not a.is_hetatm:
+            design_pos[(a.chain, a.rnum, a.aname)] = a.pos
+
+    rests = []
+    for c in catalytic:
+        for trip in SC_ANG.get(c.rname, []):
+            a0, a1, a2 = trip
+            i = cluster_idx.get((c.chain, c.rnum, a0))
+            j = cluster_idx.get((c.chain, c.rnum, a1))
+            k = cluster_idx.get((c.chain, c.rnum, a2))
+            d0 = design_pos.get((c.chain, c.rnum, a0))
+            d1 = design_pos.get((c.chain, c.rnum, a1))
+            d2 = design_pos.get((c.chain, c.rnum, a2))
+            if i is None or j is None or k is None \
+                    or d0 is None or d1 is None or d2 is None:
+                continue
+            v1, v2 = d0 - d1, d2 - d1
+            cos = float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)))
+            theta = float(np.arccos(np.clip(cos, -1, 1)))
+            rests.append((i, j, k, theta, k_ev_per_rad2,
+                          f"{c.rname}{c.rnum}.{a0}-{a1}-{a2}"))
+    return rests
+
+
 def _make_harmonic_distance_class():
     """Build the HarmonicDistance ASE constraint class lazily (so that ASE is
     only imported when MACE backend is used)."""
@@ -838,6 +999,70 @@ def _make_harmonic_distance_class():
     return HarmonicDistance
 
 
+def _make_harmonic_angle_class():
+    """Two-sided harmonic *angle* restraint between atoms i, j, k (j is the
+    vertex). Energy E = 0.5 * k_ang * (theta - theta_0)^2.
+
+    This is what fixes the CA-CB-CG → 130° distortion: distance restraints
+    on far-away contacts can pull the chain in ways that break sidechain
+    valence; an angle restraint anchored to design's value resists that.
+    """
+    import numpy as _np
+
+    class HarmonicAngle:
+        def __init__(self, i: int, j: int, k: int, theta0: float, k_ang: float):
+            self.i = int(i); self.j = int(j); self.k = int(k)
+            self.theta0 = float(theta0); self.k_ang = float(k_ang)
+
+        def adjust_positions(self, atoms, new):
+            return
+
+        def adjust_forces(self, atoms, forces):
+            r_i = atoms.positions[self.i]
+            r_j = atoms.positions[self.j]
+            r_k = atoms.positions[self.k]
+            v1 = r_i - r_j; v2 = r_k - r_j
+            n1 = _np.linalg.norm(v1); n2 = _np.linalg.norm(v2)
+            if n1 < 1e-9 or n2 < 1e-9: return
+            cos_t = _np.dot(v1, v2) / (n1 * n2)
+            cos_t = max(-1.0 + 1e-9, min(1.0 - 1e-9, cos_t))
+            theta = _np.arccos(cos_t)
+            sin_t = _np.sqrt(1 - cos_t * cos_t)
+            # dtheta/dr_i = -1/sin(theta) * d(cos_t)/dr_i
+            # d(cos_t)/dr_i = (v2/(n1*n2) - cos_t * v1 / n1**2)
+            dcos_dri = (v2 - cos_t * v1 * (n2 / n1)) / (n1 * n2)
+            dcos_drk = (v1 - cos_t * v2 * (n1 / n2)) / (n1 * n2)
+            dcos_drj = -(dcos_dri + dcos_drk)
+            inv_sin = -1.0 / sin_t
+            f_factor = self.k_ang * (theta - self.theta0)
+            # F_x = -dE/dx = -k * (theta-theta0) * dtheta/dx
+            #     = -k * (theta-theta0) * (-1/sin) * dcos/dx
+            #     = k * (theta-theta0) / sin * dcos/dx
+            forces[self.i] += -f_factor * inv_sin * dcos_dri
+            forces[self.j] += -f_factor * inv_sin * dcos_drj
+            forces[self.k] += -f_factor * inv_sin * dcos_drk
+
+        def get_indices(self):
+            return [self.i, self.j, self.k]
+
+        def index_shuffle(self, atoms, ind):
+            for nm in ("i", "j", "k"):
+                v = getattr(self, nm)
+                if v not in ind:
+                    raise IndexError("HarmonicAngle index removed by shuffle")
+                setattr(self, nm, ind.index(v))
+
+        def todict(self):
+            return {"name": "HarmonicAngle",
+                    "kwargs": {"i": self.i, "j": self.j, "k": self.k,
+                               "theta0": self.theta0, "k_ang": self.k_ang}}
+
+        def get_removed_dof(self, atoms):
+            return 0
+
+    return HarmonicAngle
+
+
 def run_mace_opt(
     cluster: list[Atom],
     workdir: Path,
@@ -852,9 +1077,11 @@ def run_mace_opt(
     fmax: float = 0.05,
     max_steps: int = 200,
     k_scale: float = 1.0,
+    angle_restraints: list | None = None,  # tuples from build_internal_angle_restraints
+    polish_steps: int = 0,                  # if >0, run an unrestrained pass after
 ) -> tuple[list[Atom] | None, str]:
     """ASE BFGS optimisation with MACE forcefield + FixAtoms + harmonic
-    distance restraints from the design contact map."""
+    distance + (optional) harmonic angle restraints + (optional) polish pass."""
     workdir.mkdir(parents=True, exist_ok=True)
     try:
         from ase.constraints import FixAtoms
@@ -872,14 +1099,20 @@ def run_mace_opt(
     pairs, n_skipped = _build_distance_restraints(cluster, contacts, k_scale=k_scale)
 
     HarmonicDistance = _make_harmonic_distance_class()
-    constraints = [FixAtoms(indices=fix_idx)] if fix_idx else []
+    HarmonicAngle = _make_harmonic_angle_class()
+    constraints: list = [FixAtoms(indices=fix_idx)] if fix_idx else []
     constraints += [HarmonicDistance(i, j, d, k) for i, j, d, k, _ in pairs]
+    if angle_restraints:
+        constraints += [HarmonicAngle(i, j, k, t, ka)
+                        for i, j, k, t, ka, _ in angle_restraints]
     atoms.set_constraint(constraints)
 
     log.info(f"  MACE constraints: {len(fix_idx)}/{len(cluster)} fixed "
              f"(ligand={counts['n_lig']}, bb={counts['n_bb']}, caps={counts['n_cap']}, "
              f"unfrozen-bb={counts['n_unfrozen']}); "
-             f"{len(pairs)} harmonic distance restraints, skipped={n_skipped}")
+             f"{len(pairs)} distance restraints, "
+             f"{len(angle_restraints) if angle_restraints else 0} angle restraints, "
+             f"skipped={n_skipped}")
     log.info(f"  Loading MACE model '{model}' on device='{device}' …")
 
     # mace-omol is charge-aware → pass charge via atoms.info
@@ -901,6 +1134,25 @@ def run_mace_opt(
 
     log.info(f"  BFGS converged={converged} after {opt.nsteps} steps "
              f"(final fmax={float(np.linalg.norm(atoms.get_forces(), axis=1).max()):.3f} eV/Å)")
+
+    # Polish stage: drop the harmonic restraints (keep FixAtoms only) and let
+    # MLFF's intrinsic bond/angle terms relax internal valence. This is the
+    # standard QM/MM 2-stage workflow and recovers sp3 geometry that the
+    # restrained-pull pass may have distorted.
+    if polish_steps > 0:
+        atoms.set_constraint([FixAtoms(indices=fix_idx)] if fix_idx else [])
+        polish_log = workdir / "polish.log"
+        polish_traj = workdir / "polish.traj"
+        log.info(f"  Polish pass: {polish_steps} unrestrained BFGS steps "
+                 f"(restraints removed, {len(fix_idx)} atoms still frozen)")
+        opt2 = BFGS(atoms, trajectory=str(polish_traj), logfile=str(polish_log))
+        try:
+            polish_converged = opt2.run(fmax=fmax, steps=polish_steps)
+        except Exception as e:
+            log.warning(f"  Polish stage failed: {e}; keeping restrained result")
+            polish_converged = False
+        else:
+            log.info(f"  Polish converged={polish_converged} after {opt2.nsteps} steps")
 
     relaxed = []
     for i, a in enumerate(cluster):
@@ -987,10 +1239,13 @@ def main():
                    help="Catres-ligand pair cutoff for design contact map (default 4.5)")
     p.add_argument("--max-contacts-per-res", type=int, default=6)
     p.add_argument("--backend", default="mace-mp",
-                   choices=["mace-mp", "mace-omol", "mace-off", "xtb"],
+                   choices=["mace-mp", "mace-omol", "mace-off",
+                            "mace-polar-m", "mace-polar-s", "mace-polar-l",
+                            "xtb", "g-xtb"],
                    help="Relaxation engine. Default mace-mp (r2SCAN, all elements). "
-                        "mace-omol is charge-aware + TS-trained (slower). "
-                        "xtb-GFN options apply only when --backend xtb.")
+                        "mace-omol is charge-aware + TS-trained. "
+                        "mace-polar-m is the polarisable gold-standard for ionic systems. "
+                        "g-xtb uses the Grimme g-xTB binary (--gxtb method, modified xtb 6.7.1).")
     p.add_argument("--device", default="cpu", choices=["cpu", "cuda"],
                    help="ASE device for MACE (default cpu)")
     p.add_argument("--dtype", default="float32",
@@ -1003,7 +1258,18 @@ def main():
     p.add_argument("--max-steps", type=int, default=200,
                    help="Maximum optimizer steps (MACE backend)")
     p.add_argument("--k-scale", type=float, default=1.0,
-                   help="Multiplier on all restraint force constants (MACE backend)")
+                   help="Multiplier on all restraint force constants")
+    p.add_argument("--angle-restraints", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Add harmonic restraints on catres-sidechain internal angles "
+                        "(CA-CB-CG, etc.) using design's values as targets. "
+                        "Fixes the 'sidechain valence drifts to 130°' failure. "
+                        "Default ON; --no-angle-restraints to disable.")
+    p.add_argument("--polish-steps", type=int, default=0,
+                   help="After the restrained pass, run N more optimisation steps "
+                        "with all distance/angle restraints removed (FixAtoms only). "
+                        "Lets MLFF/xtb's intrinsic bond/angle terms relax internal "
+                        "valence. Default 0 (no polish). 30-100 is reasonable.")
     p.add_argument("--rigidity", default="backbone",
                    choices=["backbone", "backbone-cb"])
     p.add_argument("--unfreeze-shell", type=int, default=1,
@@ -1137,12 +1403,37 @@ def main():
     log.info(f"Step 5: {args.backend} constrained opt (rigidity={args.rigidity}, "
              f"unfreeze=±{args.unfreeze_shell})")
     log.info("=" * 70)
+    # Build sidechain internal angle restraints from design (if enabled).
+    # For MACE: pass HarmonicAngle ASE constraints. For xTB: emit "angle: i,j,k"
+    # lines into xcontrol.inp.
+    angle_rests = None
+    if args.angle_restraints:
+        angle_rests = build_internal_angle_restraints(
+            cluster_capped, design_atoms, catalytic,
+            k_ev_per_rad2=8.0 * args.k_scale)
+        log.info(f"  Sidechain angle restraints: {len(angle_rests)} "
+                 f"(k_eV/rad² = {8.0 * args.k_scale:.2f})")
+
     if args.backend == "xtb":
         relaxed, msg = run_xtb_opt(
             cluster_capped, workdir / "xtb",
             charge=total_charge, catalytic=catalytic, contacts=contacts,
             gfn=args.gfn, rigidity=args.rigidity,
             unfreeze_shell=args.unfreeze_shell,
+            angle_restraints=angle_rests,
+            k_scale=args.k_scale,
+            polish_steps=args.polish_steps,
+        )
+    elif args.backend == "g-xtb":
+        relaxed, msg = run_xtb_opt(
+            cluster_capped, workdir / "gxtb",
+            charge=total_charge, catalytic=catalytic, contacts=contacts,
+            gfn=args.gfn, rigidity=args.rigidity,
+            unfreeze_shell=args.unfreeze_shell,
+            angle_restraints=angle_rests,
+            k_scale=args.k_scale,
+            binary=GXTB_BIN, extra_method_args=["--gxtb"],
+            polish_steps=args.polish_steps,
         )
     else:
         relaxed, msg = run_mace_opt(
@@ -1151,6 +1442,8 @@ def main():
             model=args.backend, device=args.device, dtype=args.dtype,
             unfreeze_shell=args.unfreeze_shell, rigidity=args.rigidity,
             fmax=args.fmax, max_steps=args.max_steps, k_scale=args.k_scale,
+            angle_restraints=angle_rests,
+            polish_steps=args.polish_steps,
         )
     if relaxed is None:
         log.error(f"  Optimisation failed: {msg}")
