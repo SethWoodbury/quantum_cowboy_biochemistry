@@ -72,6 +72,32 @@ XTB_LIB_DIRS = [
     "/home/woodbuse/conda/envs/qcb-xtb/lib",
 ]
 
+# ── Formal charges (pH 7, no PROPKA — simple, deterministic) ────────────
+# Residues not listed are treated as neutral (charge 0).
+RESIDUE_CHARGE: dict[str, int] = {
+    "LYS": +1, "ARG": +1,
+    "ASP": -1, "GLU": -1,
+    "HIS":  0,  # default HID/HIE; HIP (+1) needs explicit override
+}
+
+# Final formal charge of common PTMs (NOT a delta — the absolute charge of the
+# modified residue). Used when --ptm specifies a non-canonical residue.
+PTM_CHARGE: dict[str, int] = {
+    "KCX": -1,  # carbamylated lysine: -CH₂-NH-COO⁻
+}
+
+# Default formal charges of common HETATM residues. Per the user's spec,
+# Zn is always Zn(II); future metals can be added here. The actual ligand
+# charge is supplied at the CLI via --ligand-charge (one entry per HETATM
+# residue name); these are only used as defaults if the user omits them.
+DEFAULT_HETATM_CHARGE: dict[str, int] = {
+    "ZN":  +2, "MG": +2, "CA": +2, "MN": +2,
+    "FE":  +3,  # ambiguous; user should override if Fe(II)
+    "K":   +1, "NA": +1,
+    "CL":  -1,
+    "HOH":  0, "WAT": 0,
+}
+
 PROTEIN_RES = {"ALA","ARG","ASN","ASP","CYS","GLN","GLU","GLY","HIS","ILE",
                "LEU","LYS","MET","PHE","PRO","SER","THR","TRP","TYR","VAL"}
 BACKBONE_ATOMS = {"N", "CA", "C", "O"}
@@ -401,6 +427,118 @@ def build_cluster(
 
     cluster = [a for a in atoms if (a.chain, a.rnum) in keep]
     return cluster, keep
+
+
+# ──────────────────────────────────────────────────────────────────
+# Cluster net-charge calculation
+# ──────────────────────────────────────────────────────────────────
+
+# Atomic numbers for electron-parity sanity check.
+_ATOMIC_NUMBER: dict[str, int] = {
+    "H": 1, "C": 6, "N": 7, "O": 8, "F": 9, "P": 15, "S": 16,
+    "CL": 17, "BR": 35, "I": 53, "ZN": 30, "MG": 12, "MN": 25, "FE": 26,
+    "CA": 20, "K": 19, "NA": 11, "B": 5, "SE": 34,
+}
+
+
+def parse_ligand_charge_specs(specs: list[str]) -> dict[str, int]:
+    """Turn ['YYE:0', 'ZN:2'] → {'YYE': 0, 'ZN': 2}. Format: 'RESNAME:CHARGE'."""
+    out: dict[str, int] = {}
+    for spec in specs:
+        m = re.match(r"([A-Za-z0-9]{1,3}):([+-]?\d+)$", spec)
+        if not m:
+            raise ValueError(f"--ligand-charge must be 'RESNAME:CHARGE', got {spec!r}")
+        out[m.group(1).upper()] = int(m.group(2))
+    return out
+
+
+def compute_cluster_charge(
+    cluster: list[Atom],
+    ptms: list[PtmSpec],
+    catalytic: list[CatRes],
+    user_ligand_charges: dict[str, int],
+    pH: float = 7.0,
+) -> tuple[int, list[str]]:
+    """Walk every unique residue in the cluster, sum its formal charge, and
+    return (total_charge, audit_lines).
+
+    Per the user's stated assumptions:
+      • spin = 1 always (no radicals)
+      • Zn always Zn(II) → +2
+      • HIS defaults to neutral (HID/HIE) — override via PTM if HIP is wanted
+      • PTM residues use the PTM's absolute charge from PTM_CHARGE,
+        replacing the canonical residue's charge
+      • HETATM residues use --ligand-charge if given, else
+        DEFAULT_HETATM_CHARGE, else 0 (with a warning)
+    """
+    # Resolve PTM-affected residues: (chain, rnum) → new resname
+    ptm_by_residue: dict[tuple[str, int], str] = {}
+    cat_by_idx = {c.cat_idx: c for c in catalytic}
+    for p in ptms:
+        c = cat_by_idx.get(p.cat_idx)
+        if c is None:
+            continue
+        ptm_by_residue[(c.chain, c.rnum)] = p.new_name
+
+    # Group atoms per residue
+    by_res: dict[tuple[str, int], list[Atom]] = {}
+    for a in cluster:
+        by_res.setdefault((a.chain, a.rnum), []).append(a)
+
+    total = 0
+    audit: list[str] = []
+    seen_hetatm_resnames: set[str] = set()
+
+    for (ch, rn), atoms in sorted(by_res.items()):
+        rname = atoms[0].rname
+        is_het = any(a.is_hetatm for a in atoms)
+
+        if (ch, rn) in ptm_by_residue:
+            ncaa = ptm_by_residue[(ch, rn)]
+            if ncaa not in PTM_CHARGE:
+                audit.append(f"  WARN  PTM {ncaa} on {ch}{rn} has no known charge "
+                             f"— treating as 0")
+                q = 0
+            else:
+                q = PTM_CHARGE[ncaa]
+                audit.append(f"  PTM   {ch}{rn} {rname}→{ncaa} = {q:+d}")
+        elif is_het:
+            seen_hetatm_resnames.add(rname)
+            if rname in user_ligand_charges:
+                q = user_ligand_charges[rname]
+                audit.append(f"  HET   {ch}{rn} {rname} = {q:+d} (user)")
+            elif rname in DEFAULT_HETATM_CHARGE:
+                q = DEFAULT_HETATM_CHARGE[rname]
+                audit.append(f"  HET   {ch}{rn} {rname} = {q:+d} (default)")
+            else:
+                q = 0
+                audit.append(f"  WARN  HETATM {rname} has no charge entry "
+                             f"— treating as 0; pass --ligand-charge {rname}:N "
+                             f"to override")
+        elif rname in PROTEIN_RES:
+            q = RESIDUE_CHARGE.get(rname, 0)
+            if q != 0:
+                audit.append(f"  RES   {ch}{rn} {rname} = {q:+d}")
+        else:
+            q = 0
+            audit.append(f"  WARN  unknown residue {ch}{rn} {rname} = 0")
+
+        total += q
+
+    return total, audit
+
+
+def cluster_electron_parity(cluster: list[Atom], total_charge: int) -> tuple[int, bool]:
+    """Sum atomic numbers, subtract total_charge, return (n_electrons, even).
+    Used to flag open-shell systems before xtb does."""
+    n = 0
+    for a in cluster:
+        z = _ATOMIC_NUMBER.get(a.element.upper())
+        if z is None:
+            continue
+        n += z
+    n -= total_charge
+    return n, (n % 2 == 0)
 
 
 def cap_backbone(cluster: list[Atom], all_atoms: list[Atom],
@@ -871,8 +1009,18 @@ def main():
     p.add_argument("--unfreeze-shell", type=int, default=1,
                    help="Unfreeze backbone of residues within ±N of catalytic "
                         "(default 1 — catres backbone free)")
+    p.add_argument("--ligand-charge", action="append", default=[],
+                   metavar="RESNAME:CHARGE",
+                   help="Net charge of a HETATM residue (e.g., 'YYE:0', 'ZN:2'). "
+                        "Repeatable. Defaults: ZN +2, MG +2, MN +2, NA +1, CL -1, "
+                        "HOH 0; protein residues use canonical pH-7 formal charges; "
+                        "PTMs use their absolute charge (KCX = -1).")
+    p.add_argument("--total-charge", type=int, default=None,
+                   help="Override the auto-computed total cluster charge (use only "
+                        "if you know what you're doing).")
     p.add_argument("--extra-charge", type=int, default=0,
-                   help="Extra charge added beyond PTM-induced.")
+                   help="(Legacy) Add this to the auto-computed charge. Prefer "
+                        "--ligand-charge / --total-charge for new code.")
     p.add_argument("--workdir", default=None)
     p.add_argument("--keep-workdir", action="store_true")
     args = p.parse_args()
@@ -928,11 +1076,8 @@ def main():
     log.info("Step 3: Load aligned AF3, apply PTM protonation")
     log.info("=" * 70)
     af3_atoms, headers = parse_pdb(aligned_pdb)
-    af3_atoms_fixed, charge_delta, kcx_residues = apply_kcx_protonation(
+    af3_atoms_fixed, _charge_delta_unused, kcx_residues = apply_kcx_protonation(
         af3_atoms, catalytic, ptms)
-    total_charge = args.extra_charge + charge_delta
-    log.info(f"  Charge: extra={args.extra_charge} + PTM_delta={charge_delta:+d} "
-             f"= total {total_charge:+d}")
     log.info(f"  KCX residues: {kcx_residues or 'none'}")
 
     # ─── Cluster + cap ────────────────────────────────────────────
@@ -942,6 +1087,45 @@ def main():
     cluster, keep = build_cluster(af3_atoms_fixed, catalytic, radius=args.radius)
     cluster_capped = cap_backbone(cluster, af3_atoms_fixed, keep)
     log.info(f"  Cluster: {len(keep)} residues, {len(cluster_capped)} atoms (with caps)")
+
+    # ─── Cluster net charge ───────────────────────────────────────
+    log.info("=" * 70)
+    log.info("Step 4b: Compute cluster net charge")
+    log.info("=" * 70)
+    user_lig_charges = parse_ligand_charge_specs(args.ligand_charge)
+    auto_charge, charge_audit = compute_cluster_charge(
+        cluster_capped, ptms, catalytic, user_lig_charges)
+    for line in charge_audit:
+        log.info(line)
+    n_e, even_e = cluster_electron_parity(cluster_capped, auto_charge)
+    log.info(f"  Auto-computed charge: {auto_charge:+d}  ({n_e} electrons, "
+             f"{'closed-shell' if even_e else 'OPEN-SHELL — odd e⁻'})")
+
+    if args.total_charge is not None:
+        total_charge = args.total_charge
+        log.info(f"  --total-charge override: using {total_charge:+d}")
+    else:
+        total_charge = auto_charge + args.extra_charge
+
+    if args.extra_charge:
+        log.info(f"  --extra-charge: {args.extra_charge:+d} → total {total_charge:+d}")
+
+    n_e_final, even_e_final = cluster_electron_parity(cluster_capped, total_charge)
+    if not even_e_final:
+        # User specified: no radicals, always closed-shell. If our auto sum is
+        # odd-electron, nudge by ±1 toward zero charge (the charge most likely
+        # right for a typical enzyme active site) and warn loudly.
+        nudged = total_charge + (1 if total_charge < 0 else -1)
+        n_e_nudged, even_nudged = cluster_electron_parity(cluster_capped, nudged)
+        if even_nudged and args.total_charge is None:
+            log.warning(f"  ⚠️ Auto-charge {total_charge:+d} gives ODD electrons "
+                        f"({n_e_final}); nudging to {nudged:+d} ({n_e_nudged} e⁻) "
+                        f"to satisfy closed-shell. Pass --total-charge to override.")
+            total_charge = nudged
+        else:
+            log.warning(f"  ⚠️ Final charge {total_charge:+d} gives ODD electrons "
+                        f"({n_e_final}). Even ±1 didn't help — pass --ligand-charge "
+                        f"or --total-charge explicitly.")
 
     cluster_dir = output_pdb.parent / f"{output_pdb.stem}_cluster"
     cluster_dir.mkdir(exist_ok=True)
@@ -994,8 +1178,8 @@ def main():
         f"REMARK QCB REFINE_V2 design={design_pdb.name} aligned={aligned_pdb.name}",
         f"REMARK QCB METHOD backend={args.backend} rigidity={args.rigidity} "
         f"unfreeze=±{args.unfreeze_shell} radius={args.radius}",
-        f"REMARK QCB CHARGE total={total_charge:+d} (extra={args.extra_charge}, "
-        f"PTM_delta={charge_delta:+d})",
+        f"REMARK QCB CHARGE total={total_charge:+d} (auto={auto_charge:+d}, "
+        f"extra={args.extra_charge}, override={args.total_charge})",
         f"REMARK QCB PTMs " + (",".join(args.ptm) or "none"),
         f"REMARK QCB RMSD all={rmsd_all:.3f} ligand={lig_rmsd:.6f}",
     ]
