@@ -3,7 +3,16 @@ Active-site extraction from PDB structures.
 
 Extracts atoms surrounding a ligand (or set of ligands) by distance cutoff,
 keeping whole residues intact.  Supports single-radius and multi-zone
-extraction for QM/MM-style partitioning.
+extraction for QM/MM-style partitioning, plus:
+
+- *gap-filling*: small (≤ N residues) gaps in the consecutive-residue
+  window of each chain are filled in so the cluster doesn't have isolated
+  single residues sticking out
+- *always-include*: explicit catalytic residues always make the cut
+  regardless of distance (useful when the catres list is known a priori
+  from a REMARK 666 line)
+- pairs cleanly with :func:`qcb.prep.cap.cap_backbone_h` for downstream
+  H-capping of the severed peptide bonds
 """
 
 from __future__ import annotations
@@ -97,11 +106,93 @@ def _whole_residue_mask(
     return whole_mask
 
 
+def fill_residue_gaps(
+    structure: AtomArray,
+    keep_mask: np.ndarray,
+    max_gap: int = 2,
+) -> np.ndarray:
+    """Expand a residue-level keep mask to fill small gaps in the residue-id
+    sequence within each chain.
+
+    For each chain, look at the kept residue ids: if two consecutive kept
+    ids ``i`` and ``j`` differ by ``j - i ≤ max_gap + 1``, include all
+    residues with ids in ``(i, j)`` — i.e. fill any gap of at most
+    ``max_gap`` residues. This avoids cutting clusters across isolated
+    "lonely" residues; a ±1 gap typically means a single residue happened
+    to fall just outside the radius but is part of the same secondary
+    structure element.
+
+    Hetero residues (waters, ligands, ions) are left untouched: gap-filling
+    only applies inside polypeptide chains.
+
+    Args:
+        structure: full AtomArray.
+        keep_mask: atom-level boolean mask (length ``len(structure)``) after
+            an initial selection pass.
+        max_gap: maximum gap in residue ids that gets filled (default 2).
+            Set to 0 to disable. Mirrors enz-ts ``_fill_in_consec_res``.
+
+    Returns:
+        New atom-level boolean mask with small gaps filled.
+    """
+    if max_gap <= 0:
+        return keep_mask.copy()
+
+    new_mask = keep_mask.copy()
+
+    # Operate per chain on protein residues only
+    chains = np.unique(structure.chain_id)
+    for chain in chains:
+        chain_mask = structure.chain_id == chain
+        protein_mask = chain_mask & ~structure.hetero
+        if not protein_mask.any():
+            continue
+
+        # Get sorted unique kept residue ids in this chain
+        kept_in_chain = chain_mask & keep_mask & protein_mask
+        if not kept_in_chain.any():
+            continue
+        kept_res_ids = np.unique(structure.res_id[kept_in_chain])
+        if len(kept_res_ids) < 2:
+            continue
+
+        # Find which residues to add via gap-fill
+        to_add: list[int] = []
+        for prev, nxt in zip(kept_res_ids[:-1], kept_res_ids[1:]):
+            gap = int(nxt) - int(prev) - 1
+            if 0 < gap <= max_gap:
+                to_add.extend(range(int(prev) + 1, int(nxt)))
+        if not to_add:
+            continue
+
+        # Promote those residues' atoms to kept (within the same chain)
+        fill_mask = chain_mask & np.isin(structure.res_id, to_add)
+        new_mask |= fill_mask
+
+    return new_mask
+
+
+def _always_include_mask(
+    structure: AtomArray,
+    always_include: list[tuple[str, int]] | None,
+) -> np.ndarray:
+    """Boolean mask selecting all atoms in residues listed as
+    ``(chain_id, res_id)`` tuples in ``always_include``."""
+    if not always_include:
+        return np.zeros(len(structure), dtype=bool)
+    mask = np.zeros(len(structure), dtype=bool)
+    for chain, rid in always_include:
+        mask |= (structure.chain_id == chain) & (structure.res_id == rid)
+    return mask
+
+
 def extract_active_site(
     pdb_path: str | Path,
     ligand_names: list[str],
     radius: float = 5.0,
     include_waters: bool = True,
+    always_include: list[tuple[str, int]] | None = None,
+    gap_fill: int = 0,
 ) -> AtomArray:
     """Extract atoms within *radius* angstroms of a ligand, keeping whole residues.
 
@@ -116,6 +207,13 @@ def extract_active_site(
             least one atom within this distance of any ligand atom are kept.
         include_waters: Whether to keep water molecules (HOH/WAT) that
             fall within the radius.
+        always_include: List of ``(chain_id, res_id)`` tuples that must
+            always be in the cut, even if they fall outside the radius.
+            Useful for catalytic residues identified ahead of time
+            (e.g. from a REMARK 666 line).
+        gap_fill: Fill polypeptide-chain residue-id gaps of up to this
+            many residues so the cluster doesn't have isolated lonely
+            residues. Default 0 (no fill). 1-3 is sensible.
 
     Returns:
         A biotite :class:`AtomArray` containing the extracted atoms.
@@ -130,7 +228,14 @@ def extract_active_site(
     # Always include the ligand itself
     residue_mask |= ligand_mask
 
-    # Optionally exclude waters
+    # Always include explicit catres
+    residue_mask |= _always_include_mask(structure, always_include)
+
+    # Fill small residue-id gaps so cuts happen at sensible boundaries
+    residue_mask = fill_residue_gaps(structure, residue_mask, max_gap=gap_fill)
+
+    # Optionally exclude waters (after gap-fill so we don't accidentally
+    # promote a water inside the gap; gap-fill ignores hetero already).
     if not include_waters:
         water_mask = np.isin(structure.res_name, ["HOH", "WAT"])
         residue_mask &= ~water_mask
@@ -143,6 +248,8 @@ def extract_by_zones(
     ligand_names: list[str],
     zones: list[float] | None = None,
     include_waters: bool = True,
+    always_include: list[tuple[str, int]] | None = None,
+    gap_fill: int = 0,
 ) -> AtomArray:
     """Zone-based extraction around a ligand.
 
@@ -188,6 +295,12 @@ def extract_by_zones(
 
     # Always include ligand
     residue_mask |= ligand_mask
+
+    # Always include explicit catres
+    residue_mask |= _always_include_mask(structure, always_include)
+
+    # Fill small residue-id gaps inside the outer zone
+    residue_mask = fill_residue_gaps(structure, residue_mask, max_gap=gap_fill)
 
     # Optionally exclude waters
     if not include_waters:

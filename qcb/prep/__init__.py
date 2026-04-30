@@ -13,7 +13,12 @@ from qcb.prep.protonate_consensus import (
     ConsensusResult,
     MethodResult,
 )
-from qcb.prep.extract import extract_active_site, extract_by_zones
+from qcb.prep.extract import (
+    extract_active_site,
+    extract_by_zones,
+    fill_residue_gaps,
+)
+from qcb.prep.cap import cap_backbone_h, PROTEIN_RES
 from qcb.prep.charge import calculate_net_charge
 from qcb.prep.convert import (
     biotite_to_ase,
@@ -38,6 +43,9 @@ __all__ = [
     # extraction / charges / I/O
     "extract_active_site",
     "extract_by_zones",
+    "fill_residue_gaps",
+    "cap_backbone_h",
+    "PROTEIN_RES",
     "calculate_net_charge",
     "biotite_to_ase",
     "ase_to_biotite",
