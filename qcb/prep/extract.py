@@ -17,11 +17,14 @@ extraction for QM/MM-style partitioning, plus:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdb import PDBFile
+
+log = logging.getLogger("qcb.prep.extract")
 
 
 def _load_structure(pdb_path: str | Path) -> AtomArray:
@@ -114,49 +117,73 @@ def fill_residue_gaps(
     """Expand a residue-level keep mask to fill small gaps in the residue-id
     sequence within each chain.
 
-    For each chain, look at the kept residue ids: if two consecutive kept
-    ids ``i`` and ``j`` differ by ``j - i ≤ max_gap + 1``, include all
-    residues with ids in ``(i, j)`` — i.e. fill any gap of at most
-    ``max_gap`` residues. This avoids cutting clusters across isolated
-    "lonely" residues; a ±1 gap typically means a single residue happened
-    to fall just outside the radius but is part of the same secondary
-    structure element.
+    For each chain, look at the kept *protein* residue ids: if two
+    consecutive kept ids satisfy ``0 < (nxt - prev - 1) ≤ max_gap``,
+    include all residues with ids in ``(prev, nxt)`` — i.e. fill any gap
+    of at most ``max_gap`` residues. This avoids cutting clusters across
+    isolated "lonely" residues; a ±1 gap typically means a single residue
+    happened to fall just outside the radius but is part of the same
+    secondary structure element.
 
-    Hetero residues (waters, ligands, ions) are left untouched: gap-filling
-    only applies inside polypeptide chains.
+    Only protein-chain residues participate in the analysis; promoted
+    atoms are restricted to the protein subset of the chain too, so a
+    HETATM with the same `res_id` won't sneak in via gap-fill.
+
+    A warning is logged if a chain has duplicate residue ids (e.g. two
+    independent segments numbered identically) — gap-fill would collapse
+    them, which is rarely what you want.
 
     Args:
         structure: full AtomArray.
-        keep_mask: atom-level boolean mask (length ``len(structure)``) after
-            an initial selection pass.
-        max_gap: maximum gap in residue ids that gets filled (default 2).
+        keep_mask: atom-level boolean mask (length ``len(structure)``)
+            after an initial selection pass.
+        max_gap: maximum gap (in residues) that gets filled. Default 2.
             Set to 0 to disable. Mirrors enz-ts ``_fill_in_consec_res``.
 
     Returns:
-        New atom-level boolean mask with small gaps filled.
+        New atom-level boolean mask with small protein-chain gaps filled.
     """
     if max_gap <= 0:
         return keep_mask.copy()
 
     new_mask = keep_mask.copy()
-
-    # Operate per chain on protein residues only
+    protein_mask_all = ~structure.hetero
     chains = np.unique(structure.chain_id)
     for chain in chains:
         chain_mask = structure.chain_id == chain
-        protein_mask = chain_mask & ~structure.hetero
-        if not protein_mask.any():
+        protein_in_chain = chain_mask & protein_mask_all
+        if not protein_in_chain.any():
             continue
 
-        # Get sorted unique kept residue ids in this chain
-        kept_in_chain = chain_mask & keep_mask & protein_mask
+        kept_in_chain = chain_mask & keep_mask & protein_mask_all
         if not kept_in_chain.any():
             continue
+
         kept_res_ids = np.unique(structure.res_id[kept_in_chain])
         if len(kept_res_ids) < 2:
             continue
 
-        # Find which residues to add via gap-fill
+        # Sanity check: count residues with this chain id and >1 ins-code
+        # span. Duplicate res_ids in the same chain (e.g. two segments
+        # of identical numbering) would be merged by the gap-fill below.
+        seg_atoms = structure.res_id[protein_in_chain]
+        if len(np.unique(seg_atoms)) < seg_atoms.shape[0]:
+            # That count is meaningless on its own; the real test is
+            # whether res_ids are not strictly increasing within the chain
+            sorted_ids = seg_atoms[np.argsort(seg_atoms)]
+            if not np.all(np.diff(sorted_ids[sorted_ids != np.roll(sorted_ids, 1)]) >= 0):
+                pass  # the count test below is the actual one
+        # Cheap test: are kept_res_ids monotonic with respect to atom order?
+        # If a chain has duplicates the np.unique won't tell us, so
+        # additionally check that the chain's first→last residue sequence
+        # is non-decreasing.
+        atom_order_ids = structure.res_id[chain_mask]
+        if np.any(np.diff(atom_order_ids) < 0):
+            log.warning(
+                f"chain {chain!r} has non-monotonic res_ids — gap-fill may "
+                "merge what the source PDB intended as separate segments"
+            )
+
         to_add: list[int] = []
         for prev, nxt in zip(kept_res_ids[:-1], kept_res_ids[1:]):
             gap = int(nxt) - int(prev) - 1
@@ -165,8 +192,11 @@ def fill_residue_gaps(
         if not to_add:
             continue
 
-        # Promote those residues' atoms to kept (within the same chain)
-        fill_mask = chain_mask & np.isin(structure.res_id, to_add)
+        # Crucial: confine the fill to protein atoms of this chain. A
+        # bare `chain_mask & np.isin(res_id, to_add)` would sweep in any
+        # HETATM that happens to share a res_id (rare but documented in
+        # CHEMBL ligand entries).
+        fill_mask = protein_in_chain & np.isin(structure.res_id, to_add)
         new_mask |= fill_mask
 
     return new_mask
@@ -174,15 +204,35 @@ def fill_residue_gaps(
 
 def _always_include_mask(
     structure: AtomArray,
-    always_include: list[tuple[str, int]] | None,
+    always_include: (
+        list[tuple[str, int] | tuple[str, int, str]] | None
+    ),
 ) -> np.ndarray:
-    """Boolean mask selecting all atoms in residues listed as
-    ``(chain_id, res_id)`` tuples in ``always_include``."""
+    """Boolean mask selecting all atoms in residues listed in
+    ``always_include``.
+
+    Each entry can be ``(chain_id, res_id)`` (matches all insertion codes)
+    or ``(chain_id, res_id, ins_code)`` (matches a specific insertion).
+    """
     if not always_include:
         return np.zeros(len(structure), dtype=bool)
     mask = np.zeros(len(structure), dtype=bool)
-    for chain, rid in always_include:
-        mask |= (structure.chain_id == chain) & (structure.res_id == rid)
+    for entry in always_include:
+        if len(entry) == 2:
+            chain, rid = entry
+            mask |= (structure.chain_id == chain) & (structure.res_id == rid)
+        elif len(entry) == 3:
+            chain, rid, ins = entry
+            mask |= (
+                (structure.chain_id == chain)
+                & (structure.res_id == rid)
+                & (structure.ins_code == ins)
+            )
+        else:
+            raise ValueError(
+                f"always_include entries must be (chain, res_id) or "
+                f"(chain, res_id, ins_code); got {entry!r}"
+            )
     return mask
 
 
@@ -272,6 +322,12 @@ def extract_by_zones(
             Defaults to ``[5.0, 10.0]``.
         include_waters: Whether to keep water molecules that fall within the
             outermost zone.
+        always_include: List of ``(chain, res_id)`` (or
+            ``(chain, res_id, ins_code)``) tuples that must be in the
+            extraction regardless of distance — typically catres from a
+            REMARK 666 line.
+        gap_fill: Fill polypeptide-chain residue-id gaps of up to this many
+            residues. Default 0 (no fill).
 
     Returns:
         A biotite :class:`AtomArray` with an integer annotation ``zone``

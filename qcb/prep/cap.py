@@ -32,6 +32,8 @@ PROTEIN_RES: set[str] = {
     "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
     "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
 }
+# Cached tuple form for np.isin: avoids re-coercing the set each call.
+_PROTEIN_RES_TUPLE = tuple(sorted(PROTEIN_RES))
 
 
 def _residue_keys(atoms: AtomArray) -> np.ndarray:
@@ -47,54 +49,88 @@ def cap_backbone_h(
     atoms: AtomArray,
     bond_length: float = 1.0,
     cap_name: str = "HCAP",
+    *,
+    original: AtomArray | None = None,
 ) -> AtomArray:
     """Add H caps to dangling backbone N or C atoms at chain breaks.
 
-    For every protein residue ``r`` in *atoms*, look for its left neighbour
-    ``(r.chain, r.res_id - 1)`` and right neighbour ``(r.chain, r.res_id + 1)``.
-    If a neighbour is missing AND the corresponding terminal heavy atom (N
-    on the left, C on the right) is present, append a single H along the
-    CA→terminal direction at *bond_length*.
+    For every protein residue ``r`` in *atoms*, look for an adjacent
+    *protein* residue with ``res_id - 1`` (N-terminal direction) or
+    ``res_id + 1`` (C-terminal direction) on the same chain. If no
+    adjacent residue is in *original* (or in *atoms* if no original
+    provided) AND the corresponding terminal heavy atom (N on the left,
+    C on the right) is present, append a single H along the CA→terminal
+    direction at *bond_length*.
+
+    The H sits along the existing CA→N (or CA→C) axis extrapolated past
+    the heavy atom, giving a linear (180°) cap geometry. That's
+    intentional: for backbone-frozen QM/MLFF clusters this is the
+    cheapest valence-saturating cap that doesn't require additional
+    geometry decisions; the cap atom doesn't model real chemistry.
 
     Args:
         atoms: input :class:`biotite.structure.AtomArray`. Not modified.
-        bond_length: cap N–H / C–H distance in Å. Default 1.0 Å — chosen
-            to be intentionally a bit shorter than equilibrium so that the
-            first energy minimization step doesn't kick the cap into a
-            valence-violating geometry.
+        bond_length: cap N–H / C–H distance in Å. Default 1.0 Å, slightly
+            below equilibrium (≈ 1.01 N–H, 1.09 C–H) so the first energy
+            minimization step doesn't kick the cap into a clash.
         cap_name: ``atom_name`` to assign to the new caps so downstream
             code can identify (and e.g. freeze) them. Defaults to
             ``"HCAP"``.
+        original: full *unchopped* :class:`AtomArray` from which *atoms*
+            was extracted. Pass this so we can distinguish a real chain
+            break (= cap needed) from a true natural terminus (= no cap,
+            because there was nothing to bond to in the parent structure
+            either). If ``None``, we fall back to *atoms* itself, which
+            will over-cap the genuine N- and C-termini of every chain
+            and treat HETATM-adjacent residues as breaks too.
 
     Returns:
         New :class:`AtomArray` with cap H atoms appended at the end. The
-        original *atoms* is unchanged. If no caps are needed, the original
-        array is returned (after a defensive copy).
+        original *atoms* is unchanged. If no caps are needed, a defensive
+        copy of *atoms* is returned.
     """
     if len(atoms) == 0:
         return atoms.copy()
 
-    # Build (chain, res_id, ins_code) → set lookup once
-    res_keys = _residue_keys(atoms)
-    present_residues: set[tuple[str, int, str]] = {
-        (str(k["chain"]), int(k["res_id"]), str(k["ins"])) for k in res_keys
+    # Build (chain, res_id) protein-residue sets for both the cluster and,
+    # if provided, the parent structure. We ignore ins_code in this set:
+    # res_id arithmetic doesn't carry the insertion-code letter, and a
+    # split insert cluster like 27/27A/27B is correctly summarised as a
+    # single "(chain, 27)" presence.
+    cluster_protein_keys: set[tuple[str, int]] = {
+        (str(atoms.chain_id[i]), int(atoms.res_id[i]))
+        for i in np.where(np.isin(atoms.res_name, _PROTEIN_RES_TUPLE))[0]
     }
-    is_protein = np.isin(atoms.res_name, list(PROTEIN_RES))
+    if original is not None:
+        original_protein_keys: set[tuple[str, int]] = {
+            (str(original.chain_id[i]), int(original.res_id[i]))
+            for i in np.where(np.isin(original.res_name, _PROTEIN_RES_TUPLE))[0]
+        }
+    else:
+        original_protein_keys = cluster_protein_keys  # fallback: over-caps termini
 
-    # Group atom indices per residue for fast position lookup
+    # Group ATOM-array indices by (chain, res_id, ins_code) for the
+    # protein subset of `atoms`.
+    is_protein_atoms = np.isin(atoms.res_name, _PROTEIN_RES_TUPLE)
     res_to_atoms: dict[tuple[str, int, str], dict[str, int]] = {}
-    for i in range(len(atoms)):
-        if not is_protein[i]:
-            continue
-        key = (str(atoms.chain_id[i]), int(atoms.res_id[i]), str(atoms.ins_code[i]))
+    for i in np.where(is_protein_atoms)[0]:
+        key = (str(atoms.chain_id[i]), int(atoms.res_id[i]),
+               str(atoms.ins_code[i]))
         res_to_atoms.setdefault(key, {})[atoms.atom_name[i].strip()] = i
 
     cap_records: list[dict] = []
     for key, name_to_idx in res_to_atoms.items():
-        chain, rnum, ins = key
+        chain, rnum, _ins = key
         for offset, target_atom in ((-1, "N"), (+1, "C")):
-            neighbor = (chain, rnum + offset, ins)
-            if neighbor in present_residues:
+            neighbor_key = (chain, rnum + offset)
+            # Internal cluster residue → no cap needed.
+            if neighbor_key in cluster_protein_keys:
+                continue
+            # Boundary residue: cap only if there *was* a peptide-bonded
+            # neighbour in the parent structure. Without that we'd be
+            # adding an HCAP onto a real protein terminus that's already
+            # chemically saturated (NH3⁺ / COOH).
+            if neighbor_key not in original_protein_keys:
                 continue
             if target_atom not in name_to_idx or "CA" not in name_to_idx:
                 continue
@@ -108,27 +144,36 @@ def cap_backbone_h(
             cap_records.append({
                 "chain_id": chain,
                 "res_id": rnum,
-                "ins_code": ins,
-                "res_name": atoms.res_name[ca_idx],
+                "ins_code": str(atoms.ins_code[ca_idx]),
+                "res_name": str(atoms.res_name[ca_idx]),
                 "atom_name": cap_name,
                 "element": "H",
-                "hetero": False,
+                # Inherit hetero status from the host residue's CA so the
+                # cap doesn't break PDB ATOM/HETATM consistency.
+                "hetero": bool(atoms.hetero[ca_idx]),
                 "coord": cap_pos,
             })
 
     if not cap_records:
         return atoms.copy()
 
-    # Build the cap AtomArray and concatenate to the input
+    # Build the cap AtomArray with the host array's exact dtypes so we
+    # can concatenate without silent string-dtype broadening.
     n_caps = len(cap_records)
     caps = AtomArray(n_caps)
-    caps.chain_id = np.array([r["chain_id"] for r in cap_records])
-    caps.res_id = np.array([r["res_id"] for r in cap_records], dtype=int)
-    caps.ins_code = np.array([r["ins_code"] for r in cap_records])
-    caps.res_name = np.array([r["res_name"] for r in cap_records])
-    caps.atom_name = np.array([r["atom_name"] for r in cap_records])
-    caps.element = np.array([r["element"] for r in cap_records])
-    caps.hetero = np.array([r["hetero"] for r in cap_records])
-    caps.coord = np.array([r["coord"] for r in cap_records])
+    caps.chain_id = np.array([r["chain_id"] for r in cap_records],
+                              dtype=atoms.chain_id.dtype)
+    caps.res_id = np.array([r["res_id"] for r in cap_records],
+                            dtype=atoms.res_id.dtype)
+    caps.ins_code = np.array([r["ins_code"] for r in cap_records],
+                              dtype=atoms.ins_code.dtype)
+    caps.res_name = np.array([r["res_name"] for r in cap_records],
+                              dtype=atoms.res_name.dtype)
+    caps.atom_name = np.array([r["atom_name"] for r in cap_records],
+                               dtype=atoms.atom_name.dtype)
+    caps.element = np.array([r["element"] for r in cap_records],
+                             dtype=atoms.element.dtype)
+    caps.hetero = np.array([r["hetero"] for r in cap_records], dtype=bool)
+    caps.coord = np.array([r["coord"] for r in cap_records], dtype=np.float64)
 
     return atoms + caps

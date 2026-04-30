@@ -31,17 +31,58 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
 import numpy as np
+
+from qcb.analysis.kde import KernelSet, evaluate_density_grid
+
+
+def _minimum_filter(arr: np.ndarray, size: int) -> np.ndarray:
+    """Local minimum filter — fallback if skimage isn't available."""
+    from scipy.ndimage import minimum_filter
+    return minimum_filter(arr, size=size, mode="reflect")
 
 log = logging.getLogger("qcb.analysis.fes")
 
 # Boltzmann constant in kJ/(mol·K)
 KB_KJ_PER_MOL_K = 8.314462618e-3
 KJ_TO_KCAL = 1.0 / 4.184
+
+
+@dataclass
+class Extremum:
+    """A point on the FES — minimum, maximum, or saddle.
+
+    Coordinates are in CV space (`(d,)`), value is in kJ/mol.
+    """
+    coord: np.ndarray
+    F_kJ: float
+    kind: str = "min"  # 'min' | 'max' | 'saddle'
+
+    @property
+    def F_kcal(self) -> float:
+        return self.F_kJ * KJ_TO_KCAL
+
+
+@dataclass
+class Barrier2D:
+    """A pair of basins + the saddle/highest-point along a line between them."""
+    a: Extremum
+    b: Extremum
+    ts: Extremum
+    fwd_kJ: float
+    rev_kJ: float
+
+    @property
+    def fwd_kcal(self) -> float:
+        return self.fwd_kJ * KJ_TO_KCAL
+
+    @property
+    def rev_kcal(self) -> float:
+        return self.rev_kJ * KJ_TO_KCAL
 
 
 @dataclass
@@ -431,6 +472,335 @@ def plot_fes(
     ax.grid(alpha=0.3)
     if basins or barrier:
         ax.legend()
+    fig.tight_layout()
+
+    if out_path:
+        fig.savefig(str(out_path), dpi=150)
+        log.info(f"FES plot → {out_path}")
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Multi-walker HILLS aggregation (post-MTD merge)
+# ═══════════════════════════════════════════════════════════════════
+
+def parse_hills_dir(
+    sim_dir: str | Path,
+    pattern: str = "WALKER_ID_*/HILLS",
+) -> HillsData:
+    """Read HILLS from every walker directory under ``sim_dir`` and merge
+    into a single :class:`HillsData` with ``walker_id`` populated.
+
+    Modeled on the enz-ts ``merge_hills`` workflow but as a pure read step
+    (no on-disk merge file written; callers can `np.savetxt` if they want
+    one). Tolerates walkers with mismatched lengths.
+
+    Args:
+        sim_dir: directory containing per-walker subdirs.
+        pattern: glob (relative to sim_dir) to find each walker's HILLS.
+            Default matches enz-ts layout.
+
+    Returns:
+        Combined :class:`HillsData`. Hills are concatenated in ascending
+        walker-id order; the ``walker_id`` field is always populated.
+    """
+    sim_dir = Path(sim_dir)
+    paths = sorted(sim_dir.glob(pattern))
+    if not paths:
+        raise FileNotFoundError(
+            f"no HILLS files found under {sim_dir} with pattern {pattern!r}"
+        )
+
+    # Extract walker id from the parent directory name "WALKER_ID_5".
+    def _walker_id(p: Path) -> int:
+        m = re.search(r"WALKER_ID_(\d+)", str(p.parent))
+        return int(m.group(1)) if m else -1
+
+    paths.sort(key=_walker_id)
+
+    parts: list[HillsData] = []
+    walker_ids: list[np.ndarray] = []
+    cv_names: list[str] | None = None
+    bias_factor = 1.0
+    for p in paths:
+        h = parse_hills(p)
+        if cv_names is None:
+            cv_names = h.cv_names
+            bias_factor = h.bias_factor
+        elif h.cv_names != cv_names:
+            raise ValueError(
+                f"CV-name mismatch between walkers: "
+                f"{cv_names} vs {h.cv_names} ({p})"
+            )
+        parts.append(h)
+        walker_ids.append(np.full(len(h.time_ps), _walker_id(p), dtype=int))
+
+    return HillsData(
+        time_ps=np.concatenate([h.time_ps for h in parts]),
+        cv=np.concatenate([h.cv for h in parts]),
+        sigma=np.concatenate([h.sigma for h in parts]),
+        height_kJ=np.concatenate([h.height_kJ for h in parts]),
+        bias_factor=bias_factor,
+        cv_names=cv_names or [],
+        walker_id=np.concatenate(walker_ids),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 2D FES reconstruction (sum-of-Gaussians)
+# ═══════════════════════════════════════════════════════════════════
+
+def fes_from_hills_2d(
+    hills: HillsData,
+    grid_x: np.ndarray | tuple[float, float, int] | None = None,
+    grid_y: np.ndarray | tuple[float, float, int] | None = None,
+    bias_factor: float | None = None,
+    pad_sigma: float = 3.0,
+    grid_n: int = 200,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Reconstruct a 2D FES by summing deposited Gaussians.
+
+    Same well-tempered scaling as :func:`fes_from_hills`:
+    ``F(s) = -(γ/(γ-1)) · V_bias(s)``.
+
+    Args:
+        hills: parsed multi-walker HillsData with `cv.shape[1] == 2`.
+        grid_x, grid_y: explicit 1-D grid arrays, ``(min, max, n)`` tuples,
+            or None to auto-pad ``±pad_sigma·max(σ)`` around data range
+            and use ``grid_n`` points per axis.
+        bias_factor: override hills.bias_factor (e.g., for OPES).
+        pad_sigma, grid_n: defaults for auto-grid.
+
+    Returns:
+        (grid_x, grid_y, F[Ny, Nx])  — F is shifted so min = 0.
+    """
+    if hills.cv.shape[1] != 2:
+        raise ValueError(
+            f"fes_from_hills_2d expects 2 CVs, got {hills.cv.shape[1]}"
+        )
+
+    def _resolve_axis(g, lo, hi):
+        if g is None:
+            return np.linspace(lo, hi, grid_n)
+        if isinstance(g, tuple):
+            return np.linspace(g[0], g[1], g[2])
+        return np.asarray(g, dtype=np.float64)
+
+    s = hills.cv
+    sig = hills.sigma
+    pad = pad_sigma * sig.max()
+    grid_x = _resolve_axis(grid_x, float(s[:, 0].min() - pad), float(s[:, 0].max() + pad))
+    grid_y = _resolve_axis(grid_y, float(s[:, 1].min() - pad), float(s[:, 1].max() + pad))
+
+    kernels = KernelSet(centers=s, sigmas=sig, heights=hills.height_kJ)
+    V_bias = evaluate_density_grid(kernels, [grid_x, grid_y])  # (Nx, Ny)
+
+    gamma = bias_factor if bias_factor is not None else hills.bias_factor
+    F = -(gamma / (gamma - 1.0)) * V_bias if gamma > 1 else -V_bias
+    F -= F.min()
+    # Return as (Ny, Nx) for matplotlib pcolormesh / contourf convention
+    return grid_x, grid_y, F.T
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 2D minima / saddle
+# ═══════════════════════════════════════════════════════════════════
+
+def find_minima_2d(
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    F: np.ndarray,
+    *,
+    smoothing_sigma: float = 1.5,
+    min_distance: int = 5,
+    max_F_kJ: float | None = None,
+    n_max: int | None = None,
+) -> list[Extremum]:
+    """Find local minima of a 2D FES grid.
+
+    Uses :func:`scipy.ndimage.gaussian_filter` to denoise then
+    :func:`skimage.feature.peak_local_max` on ``-F`` to detect peaks of
+    the inverted surface (i.e. minima of F).
+
+    Args:
+        grid_x, grid_y: 1-D axes (lengths Nx, Ny).
+        F: ``(Ny, Nx)`` FES grid (kJ/mol).
+        smoothing_sigma: Gaussian blur radius before peak detection
+            (in grid points). 1-2 is reasonable.
+        min_distance: minimum grid-cell separation between detected
+            minima (peak_local_max parameter).
+        max_F_kJ: drop minima with F > min(F) + max_F_kJ. Filters
+            shallow numerical noise. Default None = keep all.
+        n_max: keep at most this many deepest minima. Default None.
+
+    Returns:
+        List of :class:`Extremum` (kind='min'), deepest first.
+    """
+    from scipy.ndimage import gaussian_filter, maximum_filter
+    Fs = gaussian_filter(F, sigma=smoothing_sigma)
+
+    # Prefer skimage's peak_local_max when available — it has better
+    # handling of plateaux and the `min_distance` param interpretation.
+    try:
+        from skimage.feature import peak_local_max
+        coords_idx = peak_local_max(-Fs, min_distance=min_distance)
+    except ImportError:
+        # Pure-numpy fallback: a cell is a local minimum if it equals the
+        # local minimum within a (2*min_distance+1)² window. We then
+        # greedily prune neighbours that are within `min_distance` of an
+        # already-accepted minimum (lower-F first) to mimic skimage's
+        # min_distance semantics.
+        size = max(1, 2 * min_distance + 1)
+        local_min = (Fs == _minimum_filter(Fs, size=size))
+        rows, cols = np.where(local_min)
+        order = np.argsort(Fs[rows, cols])
+        accepted: list[tuple[int, int]] = []
+        for k in order:
+            r, c = int(rows[k]), int(cols[k])
+            if any(max(abs(r - rr), abs(c - cc)) < min_distance
+                   for rr, cc in accepted):
+                continue
+            accepted.append((r, c))
+        coords_idx = np.array(accepted, dtype=int) if accepted else np.empty((0, 2), int)
+    minima: list[Extremum] = []
+    for r, c in coords_idx:
+        F_val = float(F[r, c])
+        if max_F_kJ is not None and F_val - F.min() > max_F_kJ:
+            continue
+        minima.append(Extremum(
+            coord=np.array([grid_x[c], grid_y[r]]),
+            F_kJ=F_val,
+            kind="min",
+        ))
+    minima.sort(key=lambda e: e.F_kJ)
+    if n_max is not None:
+        minima = minima[:n_max]
+    return minima
+
+
+def saddle_along_line(
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    F: np.ndarray,
+    a: Extremum,
+    b: Extremum,
+    *,
+    n_steps: int = 200,
+) -> Extremum:
+    """Estimate the saddle / barrier between two minima as the maximum of
+    ``F`` along the straight line between them.
+
+    Cheap and good-enough for most enzyme-FES use cases. For tortuous
+    paths use a NEB-on-the-FES (not yet implemented in qcb).
+
+    Args:
+        grid_x, grid_y: FES axes (Nx, Ny).
+        F: ``(Ny, Nx)`` FES grid.
+        a, b: two :class:`Extremum` (typically minima).
+        n_steps: number of samples along the line.
+
+    Returns:
+        :class:`Extremum` of kind 'saddle' at the line's max.
+    """
+    from scipy.interpolate import RegularGridInterpolator
+    interp = RegularGridInterpolator(
+        (grid_y, grid_x), F, bounds_error=False, fill_value=F.max(),
+    )
+    t = np.linspace(0.0, 1.0, n_steps)
+    line = a.coord[None, :] * (1 - t)[:, None] + b.coord[None, :] * t[:, None]
+    Fs = interp(np.column_stack([line[:, 1], line[:, 0]]))  # (y, x) order
+    k = int(np.argmax(Fs))
+    return Extremum(coord=line[k], F_kJ=float(Fs[k]), kind="saddle")
+
+
+def barrier_2d(
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    F: np.ndarray,
+    a: Extremum,
+    b: Extremum,
+    *,
+    n_steps: int = 200,
+) -> Barrier2D:
+    """Convenience: compute saddle + forward/reverse barriers between two
+    2D minima."""
+    ts = saddle_along_line(grid_x, grid_y, F, a, b, n_steps=n_steps)
+    return Barrier2D(
+        a=a, b=b, ts=ts,
+        fwd_kJ=ts.F_kJ - a.F_kJ,
+        rev_kJ=ts.F_kJ - b.F_kJ,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 2D plotting
+# ═══════════════════════════════════════════════════════════════════
+
+def plot_fes_2d(
+    grid_x: np.ndarray,
+    grid_y: np.ndarray,
+    F: np.ndarray,
+    *,
+    minima: Sequence[Extremum] | None = None,
+    barrier: Barrier2D | None = None,
+    cv_labels: tuple[str, str] = ("CV1", "CV2"),
+    units: str = "kcal",
+    levels: int | Sequence[float] = 20,
+    cmap: str = "viridis",
+    title: str | None = None,
+    out_path: str | Path | None = None,
+    F_max: float | None = None,
+):
+    """2-D FES plot with optional minima + saddle annotation.
+
+    Args:
+        grid_x, grid_y: 1-D axes.
+        F: ``(Ny, Nx)`` FES grid (kJ/mol).
+        minima, barrier: optional features to overlay.
+        cv_labels: x and y axis labels.
+        units: 'kcal' (default) or 'kJ'.
+        levels: contour levels (int → auto, sequence → explicit).
+        cmap: matplotlib colormap.
+        F_max: clip the colour scale at this energy (kJ/mol). Useful for
+            very deep barriers — surfaces above F_max get ``F_max`` colour.
+
+    Returns: the matplotlib figure (or None if matplotlib missing).
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        log.warning("matplotlib not available — skipping plot")
+        return None
+
+    F_plot = F * (KJ_TO_KCAL if units == "kcal" else 1.0)
+    if F_max is not None:
+        F_plot = np.minimum(F_plot, F_max * (KJ_TO_KCAL if units == "kcal" else 1.0))
+
+    label = "kcal/mol" if units == "kcal" else "kJ/mol"
+    fig, ax = plt.subplots(figsize=(7.5, 6))
+    cs = ax.contourf(grid_x, grid_y, F_plot, levels=levels, cmap=cmap)
+    ax.contour(grid_x, grid_y, F_plot, levels=levels, colors="k", linewidths=0.4, alpha=0.4)
+    cbar = fig.colorbar(cs, ax=ax)
+    cbar.set_label(f"Free energy ({label})")
+
+    if minima:
+        for m in minima:
+            ax.plot(m.coord[0], m.coord[1], "o",
+                    color="white", markeredgecolor="black", markersize=10, zorder=5)
+
+    if barrier is not None:
+        ax.plot(barrier.ts.coord[0], barrier.ts.coord[1], "^",
+                color="red", markeredgecolor="black", markersize=12, zorder=6)
+        ax.plot(
+            [barrier.a.coord[0], barrier.ts.coord[0], barrier.b.coord[0]],
+            [barrier.a.coord[1], barrier.ts.coord[1], barrier.b.coord[1]],
+            "k--", linewidth=1, alpha=0.6, zorder=4,
+        )
+
+    ax.set_xlabel(cv_labels[0])
+    ax.set_ylabel(cv_labels[1])
+    if title:
+        ax.set_title(title)
     fig.tight_layout()
 
     if out_path:
