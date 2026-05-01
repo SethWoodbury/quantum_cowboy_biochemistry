@@ -145,24 +145,31 @@ def submit_walker_sweep(
     """Submit ``cfg.n_rounds`` chained array jobs, one per round.
 
     Round 1 has no dependency; rounds 2..N each depend on the previous
-    via ``--dependency=afterany`` so they only run after the prior
-    round's array completes. (``afterany`` rather than ``afterok`` because
-    a single walker crashing shouldn't prevent the rest of the sweep
-    from continuing — the next round's walkers will simply resume from
-    whatever checkpoint exists.)
+    via ``--dependency=afterany`` so they only run *after* the prior
+    round's array reaches a terminal state (COMPLETED, FAILED,
+    CANCELLED, TIMEOUT). ``afterany`` is intentional: walltime-killed
+    walkers and crashed walkers should still let the next round run —
+    the surviving walkers' shared HILLS keep accumulating, and PLUMED
+    reads whatever HILLS files exist. Side effect: if you ``scancel``
+    round 1, rounds 2..N will still launch and pick up the partial
+    HILLS — explicitly cancel the whole chain with ``scancel`` on every
+    job id this function returns.
+
+    A shared-filesystem precheck warns if ``cfg.output_dir`` looks like
+    it lives on tmpfs / overlayfs (sub-second visibility for HILLS
+    files is required for correct multi-walker bias collection).
 
     Args:
         cfg: the sweep config.
         python_bin: path to the Python interpreter to use inside the
-            job. Defaults to whatever runs the submit call.
+            job. Defaults to the running interpreter.
         dry_run: if True, write the sbatch scripts but don't submit.
-            The returned ids will be ``[-1, -1, ...]`` and the actual
-            scripts are kept in the logs dir.
 
     Returns:
         SLURM job ids (one per round). ``-1`` for ``dry_run``.
     """
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
+    _validate_shared_fs(cfg.output_dir)
     logs_dir = cfg.output_dir / "logs"
     logs_dir.mkdir(exist_ok=True)
     snapshot_path = cfg.output_dir / "sweep_config.json"
@@ -209,14 +216,29 @@ def submit_walker_sweep(
 
 
 def run_local_sweep(cfg: WalkerSweepConfig) -> list[dict]:
-    """Run the entire sweep serially on the current node — no SLURM.
+    """Run the entire sweep on the current node — no SLURM.
 
     For development, single-machine smoke tests, or running on a
-    well-provisioned login node with no scheduler. Returns a list of
-    walker summaries (one per (walker, round) pair).
+    well-provisioned login node with no scheduler.
+
+    .. warning::
+
+       Walkers run **serially in a single process**. This is *not*
+       equivalent to a real multi-walker run: with parallel walkers,
+       hills deposited at time t0 by walker A appear in walker B's
+       bias at the same wall-clock t0, so the walkers interact through
+       collective bias accumulation. Here walker A runs to completion
+       before walker B starts — they share the deposited HILLS history
+       but the *temporal* coupling is gone. Use this for plumbing
+       smoke-tests, not for production-quality sampling.
+       (Production work: use :func:`submit_walker_sweep` on SLURM, or
+        plug in :class:`multiprocessing.Pool` here yourself.)
+
+    Returns a list of walker summaries (one per (walker, round) pair).
     """
     from qcb.ops.mtd_walkers import run_walker
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
+    _validate_shared_fs(cfg.output_dir)
     snapshot_path = cfg.output_dir / "sweep_config.json"
     _serialize_config(cfg, snapshot_path)
 
@@ -230,6 +252,24 @@ def run_local_sweep(cfg: WalkerSweepConfig) -> list[dict]:
                 )
             )
     return summaries
+
+
+def _validate_shared_fs(path: Path) -> None:
+    """Warn (don't fail) if ``path`` looks like a non-shared filesystem.
+
+    Multi-walker PLUMED needs sub-second cross-process visibility on the
+    HILLS files. /tmp / overlayfs / tmpfs typically don't share at all
+    across nodes; NFS and Lustre do. We can't tell with certainty, so
+    this is best-effort.
+    """
+    p = str(path.resolve())
+    bad_prefixes = ("/tmp/", "/var/tmp/", "/dev/shm/")
+    if any(p.startswith(pre) for pre in bad_prefixes):
+        log.warning(
+            f"output_dir {p!r} looks node-local (tmpfs/overlay). "
+            "Multi-walker PLUMED needs a shared filesystem (NFS/Lustre) "
+            "for HILLS visibility — sweep results may be wrong."
+        )
 
 
 def _detect_python() -> str:

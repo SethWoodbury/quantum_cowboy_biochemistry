@@ -1,11 +1,14 @@
 """Multi-walker metadynamics — orchestration layer.
 
-PLUMED's `MULTIPLE_WALKERS` keyword lets several MD trajectories share the
-same set of deposited Gaussian hills via the filesystem. Each walker runs
-as an independent process, writes its own ``HILLS.<walker_id>`` file in
-a shared directory, and reads everyone else's HILLS files at every
-deposit-stride. This module provides the orchestration around that
-PLUMED feature:
+PLUMED's METAD/OPES_METAD bias actions support a multi-walker mode via
+the inline keywords ``WALKERS_N``, ``WALKERS_ID``, ``WALKERS_DIR`` and
+``WALKERS_RSTRIDE``. Each walker runs as an independent process, writes
+its own ``HILLS.<walker_id>`` file in a shared directory, and reads
+everyone else's HILLS files at every ``WALKERS_RSTRIDE`` step so the
+deposited bias is collective. This module provides the orchestration
+around that PLUMED feature (PLUMED also has a separate top-level
+``MULTIPLE_WALKERS`` action; we use the inline form because that's what
+``qcb.mlff.plumed_runner`` already emits):
 
 * :class:`WalkerSweepConfig` — single typed dataclass with every
   parameter for the sweep (no YAML hierarchy gymnastics).
@@ -72,7 +75,10 @@ class WalkerSweepConfig:
     n_walkers: int = 8
     n_rounds: int = 4
     walltime_per_round: str = "12:00:00"
-    walltime_buffer: str = "00:05:00"  # time to wait for fs sync between rounds
+    # Stagger walker startup by N seconds × walker_id to avoid the FS
+    # metadata storm of N walkers all touching shared_hills/ at once.
+    # 0 disables. ~5 s is plenty on NFS.
+    startup_stagger_s: int = 5
 
     # MD params
     timestep_fs: float = 0.5
@@ -145,11 +151,12 @@ def run_walker(
 ) -> dict:
     """Run a single walker for one round.
 
-    Decides on entry whether to resume from existing trajectory data in
-    ``config.walker_dir(walker_id)`` or to start fresh. Resume is detected
-    by the presence of any ``round_*.cif`` (or ``round_*.traj``) file —
-    the walker will continue where the last one left off, and all new
-    output gets the current ``round_num`` tag.
+    Decides on entry whether prior rounds completed in
+    ``config.walker_dir(walker_id)`` (each round writes a
+    ``walker_summary.json`` on success). On resume the per-walker state
+    is just whatever lives on disk — PLUMED reads the shared HILLS
+    history; we don't restart velocities. The new round writes its own
+    output to ``round_NNN/`` regardless.
 
     The MD itself is delegated to :func:`qcb.mlff.metadynamics` for the
     actual integrator, and :mod:`qcb.mlff.plumed_runner` for the multi-
@@ -174,43 +181,63 @@ def run_walker(
     walker_root.mkdir(parents=True, exist_ok=True)
     config.shared_hills_dir().mkdir(parents=True, exist_ok=True)
 
-    # Resume detection
-    existing_rounds = sorted(walker_root.glob("round_*/"))
-    is_resume = len(existing_rounds) > 0
+    # Stagger walker startups so N walkers don't simultaneously touch the
+    # shared HILLS dir (NFS metadata storm).
+    if config.startup_stagger_s > 0 and walker_id > 0:
+        import time
+        delay = walker_id * config.startup_stagger_s
+        log.info(f"[walker {walker_id}] startup stagger: sleep {delay}s")
+        time.sleep(delay)
+
+    # Resume detection — done BEFORE we mkdir the current round, so we don't
+    # see ourselves in the prior-rounds list. We also require an actual
+    # round artefact (a written walker_summary.json) to count as "ran" —
+    # an empty round dir from a prior crashed attempt should re-run, not
+    # be treated as a successful prior round.
+    completed_rounds = [
+        d for d in walker_root.glob("round_*")
+        if d.is_dir() and (d / "walker_summary.json").is_file()
+    ]
+    is_resume = len(completed_rounds) > 0
     round_dir = walker_root / f"round_{round_num:03d}"
     round_dir.mkdir(exist_ok=True)
-
     log.info(
         f"[walker {walker_id}] round {round_num}: "
-        f"{'RESUME (' + str(len(existing_rounds)) + ' prior rounds)' if is_resume else 'FRESH'}; "
+        f"{'RESUME (' + str(len(completed_rounds)) + ' prior rounds)' if is_resume else 'FRESH'}; "
         f"out → {round_dir}"
     )
 
-    # Build the PLUMED multi-walker spec.
+    # Build the PLUMED multi-walker spec. PlumedRunSpec wants cvs (list)
+    # and method.cv_name; sigma is a *scalar* (PLUMED handles per-CV
+    # bandwidths via the SIGMA= keyword on the method line, and qcb's
+    # current method dataclasses are 1-CV).
     from qcb.mlff.plumed_runner import (
         PlumedRunSpec, WTMetadynamics, OPESMetadynamics, run_plumed_md,
     )
+    sigma_val = (config.sigma[0] if isinstance(config.sigma, (list, tuple))
+                 and config.sigma else 0.05)
     if config.method == "metad":
         method = WTMetadynamics(
-            sigma=config.sigma or [0.05],
-            height_kJ_mol=config.bias_height_kJ_mol,
+            cv_name=config.cv.name,
+            sigma=sigma_val,
+            height_kJ=config.bias_height_kJ_mol,
             bias_factor=config.bias_factor,
             pace_steps=config.pace_steps,
             file="HILLS",
         )
     else:
         method = OPESMetadynamics(
-            sigma=config.sigma or [0.05],
-            barrier_kJ_mol=config.barrier_kJ_mol or 50.0,
+            cv_name=config.cv.name,
+            sigma=sigma_val,
+            barrier_kJ=config.barrier_kJ_mol or 50.0,
             pace_steps=config.pace_steps,
         )
     spec = PlumedRunSpec(
-        cv=config.cv,
+        cvs=[config.cv],
         method=method,
         walker_id=walker_id,
         n_walkers=config.n_walkers,
         walker_dir=str(config.shared_hills_dir().resolve()),
-        out_dir=round_dir,
     )
 
     # Materialise the calculator + atoms + run MD
@@ -233,20 +260,32 @@ def run_walker(
         from ase.constraints import FixAtoms
         constraint = FixAtoms(indices=list(config.constraint_atoms))
 
-    # Optional equilibration before round 1's first walker pass
+    # Optional equilibration before the very first round. We re-read the
+    # equilibrated geometry from disk so the production MD sees the
+    # relaxed positions (keeping the original `atoms` object would risk
+    # silently dropping changes if `run_md` returned a copy or used a
+    # restart trajectory).
     if equilibrate and round_num == 1 and not is_resume:
         from qcb.ops.md import run as run_md
         log.info(f"[walker {walker_id}] equilibrating {config.equilibration_time_ps} ps")
+        equil_dir = round_dir / "equil"
         run_md(
             atoms=atoms,
-            outdir=str(round_dir / "equil"),
+            outdir=str(equil_dir),
             timestep_fs=config.timestep_fs,
             temperature_K=config.temperature_K,
             total_time_ps=config.equilibration_time_ps,
             friction_per_ps=config.friction_per_ps,
         )
+        equil_final = equil_dir / "final.xyz"
+        if equil_final.is_file():
+            atoms = ase.io.read(str(equil_final))
+            atoms.calc = calculator
 
-    # Production MTD with PLUMED multi-walker
+    # Production MTD with PLUMED multi-walker. Seed packs walker_id and
+    # round_num into a non-colliding 32-bit int (1M slot per walker; up
+    # to 1M rounds before wraparound).
+    seed = (walker_id * 1_000_000 + round_num) & 0xFFFFFFFF
     result = run_plumed_md(
         atoms=atoms,
         calculator=calculator,
@@ -257,9 +296,13 @@ def run_walker(
         temperature_K=config.temperature_K,
         friction_per_ps=config.friction_per_ps,
         constraint=constraint,
-        seed=config.n_rounds * 1000 + walker_id * 100 + round_num,
+        seed=seed,
     )
-    n_steps = int(config.total_time_ps_per_round * 1000 / config.timestep_fs)
+    # n_steps is reported by run_plumed_md if available; otherwise
+    # compute the planned count for the summary file.
+    n_steps = result.get("n_steps") if isinstance(result, dict) else None
+    if n_steps is None:
+        n_steps = int(config.total_time_ps_per_round * 1000 / config.timestep_fs)
 
     # Walker-local summary for downstream merge
     summary = {
@@ -279,37 +322,41 @@ def run_walker(
 # ─────────────────────────────────────────────────────────────────────
 
 def merge_walkers(output_dir: Path) -> dict:
-    """Aggregate all walkers' HILLS for a finished sweep.
+    """Aggregate every walker's HILLS for a finished sweep.
 
-    Wraps :func:`qcb.analysis.fes.parse_hills_dir` with the layout this
-    module writes. Returns a dict with a HillsData object plus per-walker
-    counts; callers can immediately feed that into
-    :func:`qcb.analysis.fes.fes_from_hills_2d` for analysis.
+    Looks first under ``output_dir/shared_hills/`` for the multi-walker
+    layout PLUMED writes (``HILLS.<id>``), and falls back to the older
+    ``WALKER_<id>/HILLS`` per-walker layout that some enz-ts runs used.
+    PLUMED restart-backup files (``bck.*HILLS*``) are filtered out.
+
+    Returns a dict ``{n_walkers, n_hills_total, hills: HillsData}`` ready
+    to feed into :func:`qcb.analysis.fes.fes_from_hills_2d` etc.
     """
-    from qcb.analysis.fes import parse_hills_dir
+    import re
     output_dir = Path(output_dir)
     shared = output_dir / "shared_hills"
-    if not shared.is_dir():
-        raise FileNotFoundError(f"shared HILLS dir missing: {shared}")
-    # Each walker writes HILLS.<id> in shared_hills; parse_hills_dir
-    # expects the WALKER_<id>/HILLS layout though, so use a compatible
-    # fallback glob.
-    paths = sorted(shared.glob("HILLS.*"))
+    paths: list[Path] = []
+    if shared.is_dir():
+        paths = sorted(p for p in shared.iterdir()
+                       if re.fullmatch(r"HILLS\.\d+", p.name))
     if not paths:
-        # Older layout: each walker has its own HILLS in its dir
         paths = sorted(output_dir.glob("WALKER_*/HILLS"))
     if not paths:
         raise FileNotFoundError(
             f"no HILLS files found under {output_dir}. Did the sweep finish?"
         )
-    # Re-shape into the format parse_hills_dir expects
-    # (parse_hills_dir uses pattern matching on parent dir name)
     log.info(f"merging {len(paths)} walker HILLS files")
     return _merge_hills_paths(paths)
 
 
 def _merge_hills_paths(paths) -> dict:
-    """Merge an explicit list of HILLS paths."""
+    """Merge an explicit list of HILLS paths into one :class:`HillsData`.
+
+    The walker id is parsed from each path's *basename* (or its parent
+    dir's basename for the per-walker layout) — never from the full
+    string, to avoid an outer ``WALKER_007`` directory tagging every
+    file as walker 7.
+    """
     import re
     import numpy as np
     from qcb.analysis.fes import parse_hills, HillsData
@@ -328,9 +375,12 @@ def _merge_hills_paths(paths) -> dict:
                 f"CV-name mismatch between walkers: "
                 f"{cv_names} vs {h.cv_names} ({p})"
             )
-        # Walker id from "HILLS.7" or "WALKER_007/HILLS"
-        m = re.search(r"WALKER_(\d+)|HILLS\.(\d+)", str(p))
-        wid = int(next(g for g in m.groups() if g)) if m else -1
+        # Walker id from filename "HILLS.<id>" or parent dir "WALKER_<id>"
+        m = re.fullmatch(r"HILLS\.(\d+)", p.name)
+        wid = int(m.group(1)) if m else None
+        if wid is None:
+            m = re.match(r"WALKER_(\d+)", p.parent.name)
+            wid = int(m.group(1)) if m else -1
         parts.append(h)
         walker_ids.append(np.full(len(h.time_ps), wid, dtype=int))
 
