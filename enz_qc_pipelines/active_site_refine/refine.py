@@ -841,16 +841,11 @@ def run_xtb_opt(
 # MACE backend (ASE + custom harmonic-distance restraint)
 # ──────────────────────────────────────────────────────────────────
 
-MACE_MODELS = {
-    "mace-mp":      "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
-    "mace-omol":    "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
-    "mace-off":     "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
-    "mace-polar-s": "/home/gbg222/projects/mace_models/MACE-POLAR-1-S.model",
-    "mace-polar-m": "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
-    "mace-polar-l": "/home/gbg222/projects/mace_models/MACE-POLAR-1-L.model",
-    "mace-polar":   "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",  # alias
-    "mace-mh":      "/home/gbg222/projects/mace_models/mace-mh-0.model",
-}
+# Single source of truth for model paths: quantum_engine.config.MACE_MODELS,
+# consumed by quantum_engine.calc.make_calc(). We import the dict directly
+# here so the refine MACE backend's --backend choices stay in sync with the
+# rest of the engine.
+from quantum_engine.config import MACE_MODELS  # noqa: E402
 
 
 def _build_ase_atoms_and_constraints(

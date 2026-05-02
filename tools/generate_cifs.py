@@ -1,3 +1,4 @@
+from quantum_engine.units import EV_TO_KCAL
 #!/usr/bin/env python
 """
 Generate CIF files with proper bond types for completed NEB-TS runs.
@@ -37,7 +38,6 @@ logging.basicConfig(
 log = logging.getLogger("generate-cifs")
 
 XTB_BIN = "/home/dme5188/bin/xtb/xtb-6.6.1/bin/xtb"
-EV_TO_KCAL = 23.0609
 
 
 def run_xtb_singlepoint(atoms, total_charge, workdir):

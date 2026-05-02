@@ -23,6 +23,8 @@ Usage:
 
 from __future__ import annotations
 
+from quantum_engine.units import EV_TO_KCAL
+
 import argparse
 import json
 import logging
@@ -50,18 +52,14 @@ from mace.calculators import MACECalculator
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("refine-ts")
 
-EV_TO_KCAL = 23.0609
 
 # ══════════════════════════════════════════════════════════════
-#  MODEL LOADING (reuse from run_neb_ts.py)
+#  MODEL LOADING — delegated to the canonical factory
 # ══════════════════════════════════════════════════════════════
-
-MODEL_PATHS = {
-    "mace-mp": "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
-    "mace-omol": "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
-    "mace-mh": "/home/gbg222/projects/mace_models/mace-mh-0.model",
-    "mace-polar-m": "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
-}
+# Legacy script. Model-path lookup goes through quantum_engine.calc
+# now; the registry alias below stays for any local code path that
+# still expects MODEL_PATHS to be a mapping.
+from quantum_engine.config import MACE_MODELS as MODEL_PATHS  # noqa: E402
 
 MH_DEFAULT_HEADS = {"mace-mh": "omol"}
 

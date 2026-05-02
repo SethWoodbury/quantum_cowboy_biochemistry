@@ -1,3 +1,4 @@
+from quantum_engine.units import EV_TO_KCAL
 #!/usr/bin/env python
 """
 DEPRECATED ENTRY POINT — use `scripts/qcb ts` or `python -m qcb.cli ts` instead.
@@ -98,7 +99,6 @@ logging.basicConfig(
 log = logging.getLogger("neb-ts")
 
 # Energy conversion: ASE uses eV internally, enzymology uses kcal/mol
-EV_TO_KCAL = 23.0609  # 1 eV = 23.06 kcal/mol
 
 
 # ══════════════════════════════════════════════════════════════
@@ -663,106 +663,28 @@ BOND_BREAKING_DEFS = {
 }
 
 # ══════════════════════════════════════════════════════════════
-#  MODEL REGISTRY
+#  MODEL REGISTRY — delegated to quantum_engine.calc
 # ══════════════════════════════════════════════════════════════
-MODEL_PATHS = {
-    # ── DIGS cluster models ──
-    "mace-mp":          "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
-    "mace-mp-old":      "/home/gbg222/projects/mace_models/2023-12-10-mace-128-L0_energy_epoch-249.model",
-    "mace-off-small":   "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_small.model",
-    "mace-off-medium":  "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_medium.model",
-    "mace-off":         "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
-    "mace-off-large":   "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
-    # ── gbg222 models ──
-    "mace-omol":        "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
-    "mace-mh":          "/home/gbg222/projects/mace_models/mace-mh-0.model",
-    "mace-polar-s":     "/home/gbg222/projects/mace_models/MACE-POLAR-1-S.model",
-    "mace-polar-m":     "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
-    "mace-polar-l":     "/home/gbg222/projects/mace_models/MACE-POLAR-1-L.model",
-    "mace-polar":       "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",  # default size
-}
+# This script kept its own copy of the model registry historically;
+# both have now been merged into quantum_engine.config.MACE_MODELS,
+# read by quantum_engine.calc.factory.make_calc().
+from quantum_engine.config import MACE_MODELS as MODEL_PATHS  # back-compat alias
+from quantum_engine.calc import make_calc as _make_calc
 
-# Default heads for multi-head model
 MH_DEFAULT_HEADS = {
     "mace-mh": "omol",  # wB97M-V level, same training as OMOL
 }
-
-# Models that need gbg222 venv (not universal.sif) due to graph_electrostatics
 NEEDS_GBG_VENV = {"mace-polar-s", "mace-polar-m", "mace-polar-l", "mace-polar"}
 
 
 def get_calculator(model_key, device="cuda", dtype="float64", head=None):
-    """Construct a MACE calculator from a model key or file path.
-
-    Args:
-        model_key: Registry name (e.g. 'mace-mp'), direct path to .model file,
-                   or convenience name for auto-download.
-        device: 'cuda' or 'cpu'
-        dtype: 'float64' (accurate, slower) or 'float32' (faster, less precise)
-        head: For multi-head models (mace-mh), which DFT head to use.
-              Options: rgd1_b3lyp, matpes_r2scan, omol, spice_wB97M, etc.
-    """
-    kwargs = dict(device=device, default_dtype=dtype)
-
-    # Resolve head for multi-head models
+    """Construct a MACE calculator. Thin wrapper around the canonical
+    :func:`quantum_engine.calc.make_calc` (which handles file paths,
+    registry lookup, and HuggingFace auto-download)."""
     if head is None and model_key in MH_DEFAULT_HEADS:
         head = MH_DEFAULT_HEADS[model_key]
-    if head:
-        kwargs["head"] = head
-
-    # Direct file path
-    if os.path.isfile(model_key):
-        log.info(f"Loading MACE model from file: {model_key}" +
-                 (f" (head={head})" if head else ""))
-        return MACECalculator(model_paths=model_key, **kwargs)
-
-    # Try the registry
-    if model_key in MODEL_PATHS:
-        path = MODEL_PATHS[model_key]
-        if os.path.isfile(path):
-            log.info(f"Loading '{model_key}' from {path}" +
-                     (f" (head={head})" if head else ""))
-            return MACECalculator(model_paths=path, **kwargs)
-        log.warning(f"Model path not found: {path}")
-
-    # Try convenience loaders (auto-download from HuggingFace)
-    try:
-        if "omol" in model_key:
-            from mace.calculators import mace_omol
-            log.info("Loading MACE-OMOL via auto-download (extra_large)...")
-            return mace_omol(model="extra_large", device=device, default_dtype=dtype)
-        elif "polar" in model_key:
-            from mace.calculators import mace_polar
-            size = "polar-1-m"
-            if "small" in model_key or "-s" in model_key:
-                size = "polar-1-s"
-            elif "large" in model_key or "-l" in model_key:
-                size = "polar-1-l"
-            log.info(f"Loading MACE-POLAR via auto-download ({size})...")
-            return mace_polar(model=size, device=device, default_dtype=dtype)
-        elif "mp" in model_key:
-            from mace.calculators import mace_mp
-            log.info("Loading MACE-MP via auto-download...")
-            return mace_mp(device=device, default_dtype=dtype)
-        elif "off" in model_key:
-            from mace.calculators import mace_off
-            size = "large"
-            if "small" in model_key:
-                size = "small"
-            elif "medium" in model_key:
-                size = "medium"
-            log.info(f"Loading MACE-OFF via auto-download ({size})...")
-            return mace_off(model=size, device=device, default_dtype=dtype)
-    except Exception as e:
-        log.warning(f"Auto-download failed for {model_key}: {e}")
-
-    avail = list(MODEL_PATHS.keys())
-    raise FileNotFoundError(
-        f"Could not find model '{model_key}'.\n"
-        f"  Available on DIGS: {avail}\n"
-        f"  Or provide a direct path to a .model file.\n"
-        f"  For multi-head models, use --head to select DFT level."
-    )
+    return _make_calc(model=model_key, head=head, device=device,
+                      default_dtype=dtype)
 
 
 # ══════════════════════════════════════════════════════════════

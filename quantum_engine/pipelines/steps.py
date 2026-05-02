@@ -65,7 +65,7 @@ class Sp:
         from quantum_engine.ops import sp
         atoms = _resolve_atoms(ctx, None)
         outdir = _step_outdir(ctx, self.name)
-        res = sp.run(atoms, ctx.calc, outdir, constraint=getattr(ctx, "constraint", None))
+        res = sp.run(atoms, ctx.calc, outdir, constraint=ctx.constraint)
         return StepResult(
             name=self.name, status=res.get("status", "completed"),
             atoms=atoms, energy_eV=res.get("energy_eV"),
@@ -89,7 +89,7 @@ class Opt:
         atoms = _resolve_atoms(ctx, self.input_step)
         outdir = _step_outdir(ctx, self.name)
         res = opt.run(atoms, ctx.calc, outdir,
-                      constraint=getattr(ctx, "constraint", None),
+                      constraint=ctx.constraint,
                       optimizer=self.optimizer, fmax=self.fmax,
                       max_steps=self.max_steps)
         # Opt advances geometry — flow it forward
@@ -121,7 +121,7 @@ class MD:
         atoms = _resolve_atoms(ctx, self.input_step)
         outdir = _step_outdir(ctx, self.name)
         res = md.run(atoms, ctx.calc, outdir,
-                     constraint=getattr(ctx, "constraint", None),
+                     constraint=ctx.constraint,
                      ensemble=self.ensemble, timestep_fs=self.timestep_fs,
                      total_time_ps=self.total_time_ps, temperature_K=self.temperature_K,
                      friction_per_ps=self.friction_per_ps, seed=self.seed)
@@ -149,7 +149,7 @@ class Saddle:
         atoms = _resolve_atoms(ctx, self.input_step)
         outdir = _step_outdir(ctx, self.name)
         res = saddle.run(atoms, ctx.calc, outdir,
-                         constraint=getattr(ctx, "constraint", None),
+                         constraint=ctx.constraint,
                          fmax=self.fmax, max_steps=self.max_steps)
         if res.get("atoms") is not None:
             ctx.atoms = res["atoms"]
@@ -178,7 +178,7 @@ class IRC:
         atoms = _resolve_atoms(ctx, self.input_step)
         outdir = _step_outdir(ctx, self.name)
         res = irc.run(atoms, ctx.calc, outdir,
-                      constraint=getattr(ctx, "constraint", None),
+                      constraint=ctx.constraint,
                       irc_step=self.irc_step, irc_fmax=self.irc_fmax,
                       saddle_fmax=self.saddle_fmax,
                       reactant_hint_bonds=self.reactant_hint_bonds, full=self.full)
@@ -221,7 +221,7 @@ class NEB:
             )
         outdir = _step_outdir(ctx, self.name)
         res = neb.run(r, p, ctx.calc, outdir,
-                      constraint=getattr(ctx, "constraint", None),
+                      constraint=ctx.constraint,
                       n_images=self.n_images, fmax=self.fmax,
                       max_steps=self.max_steps, climb=self.climb,
                       interpolation=self.interpolation)
@@ -249,7 +249,7 @@ class Freq:
         atoms = _resolve_atoms(ctx, self.input_step)
         outdir = _step_outdir(ctx, self.name)
         res = freq.run(atoms, ctx.calc, outdir,
-                       constraint=getattr(ctx, "constraint", None),
+                       constraint=ctx.constraint,
                        indices=self.indices, delta=self.delta,
                        method=self.method, temperature_K=self.temperature_K)
         return StepResult(
@@ -278,7 +278,7 @@ class MTD:
         atoms = _resolve_atoms(ctx, self.input_step)
         outdir = _step_outdir(ctx, self.name)
         res = mtd.run(atoms, calculator=ctx.calc, outdir=outdir,
-                      constraint=getattr(ctx, "constraint", None),
+                      constraint=ctx.constraint,
                       p_idx=self.p_idx, nuc_idx=self.nuc_idx, lg_idx=self.lg_idx,
                       total_time_ps=self.total_time_ps,
                       temperature_K=self.temperature_K, variant=self.variant)

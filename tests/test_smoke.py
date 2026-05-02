@@ -156,7 +156,100 @@ def test_bond_breaking_defs_loaded():
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Test 5 — CLI entry point
+# Test 5 — Context.constraint plumbed through Steps (codex regression)
+# ─────────────────────────────────────────────────────────────────────
+
+def test_context_has_constraint_field():
+    """Context must declare a `constraint` field — Steps read it via
+    direct attribute access, not getattr-with-default. If this regresses,
+    every Pipeline silently drops user constraints (FixAtoms etc.)."""
+    from quantum_engine.pipelines import Context
+    ctx = Context(atoms=None, calc=None)
+    assert hasattr(ctx, "constraint")
+    assert ctx.constraint is None
+    # Also: explicit assignment survives
+    ctx2 = Context(atoms=None, calc=None, constraint="dummy_constraint")
+    assert ctx2.constraint == "dummy_constraint"
+
+
+def test_step_propagates_ctx_constraint():
+    """Capture the constraint a Step would pass to its underlying op."""
+    from quantum_engine.pipelines import Context, StepResult
+    from quantum_engine.pipelines.steps import Sp
+    captured = {}
+
+    class _DummyOps:
+        @staticmethod
+        def run(atoms, calc, outdir, constraint=None, **kw):
+            captured["constraint"] = constraint
+            return {"status": "completed", "energy_eV": 0.0}
+
+    # Patch quantum_engine.ops.sp.run so the Step's import sees our dummy.
+    import quantum_engine.ops.sp as real_sp
+    orig_run = real_sp.run
+    real_sp.run = _DummyOps.run
+    try:
+        ctx = Context(atoms="dummy", calc=None,
+                      constraint="MY_CONSTRAINT",
+                      outdir=Path("/tmp"))
+        Sp().run(ctx)
+        assert captured["constraint"] == "MY_CONSTRAINT", \
+            "Step did not propagate ctx.constraint to the op call"
+    finally:
+        real_sp.run = orig_run
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 6 — no duplicate MACE_MODELS registries (codex regression)
+# ─────────────────────────────────────────────────────────────────────
+
+def test_no_duplicate_mace_registries():
+    """quantum_engine.config.MACE_MODELS is the single source of truth.
+    Walk every .py file under quantum_engine/, enz_qc_pipelines/, and
+    tools/ (excluding the canonical site) and assert no other module
+    has a top-level dict literal named MACE_MODELS or MODEL_PATHS.
+
+    Imports of MACE_MODELS (e.g. ``from quantum_engine.config import
+    MACE_MODELS``) are fine — what we ban is *redeclaration*.
+    """
+    import ast
+    repo = Path(__file__).resolve().parent.parent
+    canonical = (repo / "quantum_engine" / "config.py").resolve()
+
+    def _is_dict_assign(node, names):
+        if not isinstance(node, ast.Assign):
+            return False
+        if not (len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
+            return False
+        return node.targets[0].id in names and isinstance(node.value, ast.Dict)
+
+    offenders: list[str] = []
+    for d in (repo / "quantum_engine", repo / "enz_qc_pipelines",
+              repo / "tools"):
+        if not d.exists():
+            continue
+        for p in d.rglob("*.py"):
+            if p.resolve() == canonical:
+                continue
+            try:
+                tree = ast.parse(p.read_text())
+            except SyntaxError:
+                continue
+            for node in tree.body:
+                if _is_dict_assign(node, {"MACE_MODELS", "MODEL_PATHS"}):
+                    offenders.append(f"{p.relative_to(repo)}:{node.lineno}")
+
+    assert not offenders, (
+        f"Duplicate MACE_MODELS / MODEL_PATHS dict declarations:\n  "
+        + "\n  ".join(offenders)
+        + "\n  Canonical source is quantum_engine/config.py — every "
+          "other module should `from quantum_engine.config import "
+          "MACE_MODELS` or use quantum_engine.calc.make_calc()."
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 7 — CLI entry point
 # ─────────────────────────────────────────────────────────────────────
 
 def test_cli_help_runs():

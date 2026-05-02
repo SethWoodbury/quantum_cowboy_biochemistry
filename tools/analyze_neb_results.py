@@ -1,3 +1,4 @@
+from quantum_engine.units import EV_TO_KCAL
 #!/usr/bin/env python
 """
 Analyze NEB-TS results: extract barriers, validate endpoints, summarize.
@@ -16,7 +17,6 @@ from pathlib import Path
 
 import numpy as np
 
-EV_TO_KCAL = 23.0609
 
 
 def analyze_single_run(outdir):

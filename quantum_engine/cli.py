@@ -271,6 +271,50 @@ def _cmd_run(args):
     return run_config(args.config)
 
 
+def _cmd_list_models(args):
+    """`qcb list-models` — print every MACE / MLFF alias the factory knows.
+
+    Single source of truth: :data:`quantum_engine.config.MACE_MODELS`.
+    """
+    import os
+    from quantum_engine.calc import list_models
+    models = list_models()
+    print(f"{'alias':<20}  {'present?':<8}  path")
+    print("-" * 80)
+    for k, path in sorted(models.items()):
+        if not path:
+            ok = "  -  "
+        else:
+            ok = "  ✓  " if os.path.isfile(path) else "  ✗  "
+        if path is None and not args.missing_ok:
+            continue
+        print(f"{k:<20}  {ok:<8}  {path or '(none)'}")
+    return {"status": "completed", "n_models": len(models)}
+
+
+def _cmd_info(args):
+    """`qcb info <file>` — quick summary of a structure file."""
+    from collections import Counter
+    from quantum_engine.io import load_structure
+    atoms, bt_struct, charge_hint = load_structure(args.input)
+    print(f"file:        {args.input}")
+    print(f"format:      ASE inferred ({type(atoms).__name__})")
+    print(f"n_atoms:     {len(atoms)}")
+    if bt_struct is not None:
+        chains = sorted(set(bt_struct.chain_id))
+        print(f"n_chains:    {len(chains)}  ({chains})")
+        residues = set(zip(bt_struct.chain_id, bt_struct.res_id))
+        print(f"n_residues:  {len(residues)}")
+        hets = sorted(set(bt_struct.res_name[bt_struct.hetero]))
+        if hets:
+            print(f"hetatms:     {hets}")
+    el_counts = Counter(atoms.get_chemical_symbols())
+    print(f"composition: {dict(el_counts.most_common())}")
+    if charge_hint is not None:
+        print(f"charge_hint: {charge_hint:+d}  (from REMARK)")
+    return {"status": "completed"}
+
+
 def _cmd_protonate(args):
     """Consensus protonation: ChimeraX + propka + pdbfixer + hardcoded rules."""
     from quantum_engine.prep import consensus_protonate
@@ -584,6 +628,17 @@ def main(argv=None):
                        help="Run methods sequentially instead of in parallel")
     p_pro.add_argument("--log-level", default="INFO")
 
+    # list-models — discoverability
+    p_lm = sub.add_parser("list-models",
+                          help="List MACE / MLFF model aliases known to the calculator factory")
+    p_lm.add_argument("--missing-ok", action="store_true",
+                      help="Show entries even when the file isn't on disk")
+
+    # info — quick structure info
+    p_info = sub.add_parser("info",
+                            help="Quick structural / electronic-state summary of a PDB or XYZ")
+    p_info.add_argument("input", help="Path to PDB / XYZ / CIF")
+
     # ts
     p_ts = sub.add_parser("ts", help="Native TS pipeline (composes saddle/irc/neb/mtd)")
     p_ts.add_argument("input")
@@ -632,6 +687,8 @@ def main(argv=None):
         "gsm": _cmd_gsm, "ts": _cmd_ts,
         "run": _cmd_run,
         "protonate": _cmd_protonate,
+        "list-models": _cmd_list_models,
+        "info": _cmd_info,
     }
     handler = dispatch[args.op]
     result = handler(args)

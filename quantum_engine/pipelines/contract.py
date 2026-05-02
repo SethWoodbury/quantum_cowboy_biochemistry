@@ -90,6 +90,11 @@ class Context:
         ASE calculator. Persisted across steps unless a step explicitly
         replaces it (very rare). Set ``atoms.info["charge"]`` here
         rather than passing charge through every Step.
+    constraint : ase.constraints.Constraint | list | None
+        ASE constraint object (or list of them) applied to every Step
+        that supports it. Set once at pipeline entry; all built-in
+        Steps in :mod:`quantum_engine.pipelines.steps` propagate it
+        to their underlying op call.
     outdir : pathlib.Path
         Top-level run directory. Each Step is given a sub-dir
         ``outdir / step.name`` to write into.
@@ -97,14 +102,22 @@ class Context:
         Lookup of every completed step's StepResult, keyed by step
         name. Steps reference earlier results by name, e.g.
         ``Saddle(input_step="opt")``.
+    input_pdb : pathlib.Path | None
+        Optional path to the source PDB on disk. Steps that need
+        REMARK 666 catres / REMARK 350 / HETATM records that
+        ``ase.Atoms`` doesn't carry (e.g. consensus protonation,
+        docking pocket selection) read this. Falls back to writing
+        ``atoms`` to a temp PDB if missing.
     metadata : dict[str, Any]
         Free-form bag for cross-step state (e.g. a CV definition the
         first step computed and the second step consumes).
     """
     atoms: Any
     calc: Any = None
+    constraint: Any = None
     outdir: Path = field(default_factory=lambda: Path("./qcb-run"))
     history: dict[str, StepResult] = field(default_factory=dict)
+    input_pdb: Path | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
