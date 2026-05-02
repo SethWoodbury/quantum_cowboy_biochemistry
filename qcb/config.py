@@ -95,19 +95,21 @@ def _find_chimera() -> str | None:
 CHIMERA_KERNEL = _find_chimera()
 
 # PLUMED 2 — for advanced sampling (MTD, OPES, umbrella, multi-walker)
-# Resolution order:
-#   1. $PLUMED_KERNEL (env override — wins if set to a real file)
-#   2. deps/plumed2/install/lib/libplumedKernel.so (vendored submodule build)
-#   3. /net/software/lab/plumed2-2.10/install/lib/libplumedKernel.so (lab-
-#      shared install, optional — populated by `cp -a deps/plumed2/install
+# Resolution order (deliberately ignores the standard $PLUMED_KERNEL env
+# variable; that one is often set in user shells for plain `plumed` CLI
+# use and may point at a stale or about-to-be-deleted path).
+#   1. $QCB_PLUMED_KERNEL (qcb-specific env override)
+#   2. deps/plumed2/install/lib/libplumedKernel.so (vendored submodule)
+#   3. /net/software/lab/plumed2-2.10/lib/libplumedKernel.so (lab-shared
+#      install — populated by `cp -a deps/plumed2/install
 #      /net/software/lab/plumed2-2.10` after a vendored build)
 # Build the submodule with `bash deps/plumed2_build.sh`.
 import os as _os
 _qcb_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 _kernel_candidates = [
-    _os.environ.get("PLUMED_KERNEL"),
+    _os.environ.get("QCB_PLUMED_KERNEL"),
     _os.path.join(_qcb_root, "deps", "plumed2", "install", "lib", "libplumedKernel.so"),
-    "/net/software/lab/plumed2-2.10/install/lib/libplumedKernel.so",
+    "/net/software/lab/plumed2-2.10/lib/libplumedKernel.so",
 ]
 PLUMED_KERNEL = next(
     (p for p in _kernel_candidates if p and _os.path.isfile(p)),
