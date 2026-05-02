@@ -48,22 +48,34 @@ deps/xtb/install/bin/xtb --version
 
 ## g-xTB (general extended tight-binding)
 
-Vendored at `deps/g-xtb/` (submodule of `grimme-lab/g-xtb`). The upstream repo ships static prebuilt binaries in `binaries/` — extracted into `deps/g-xtb/install/xtb-6.7.1/bin/xtb`. **No build needed.**
+Vendored at `deps/g-xtb/` (submodule of `grimme-lab/g-xtb`). The upstream repo ships static prebuilt binaries in `binaries/` — extracted into `deps/g-xtb/install/xtb-<ver>/bin/xtb`. **No build needed.**
+
+The g-xTB binary is a modified xtb 6.7.1 (Grimme group's `thfroitzheim/xtb gxtb` branch). It accepts everything regular xtb does, plus `--gxtb` to enable g-xTB (a wB97M-V/def2-TZVPPD-approximating semiempirical method, all elements Z=1–103).
+
+`qcb/config.py` exposes this as `GXTB_BIN`, separate from `XTB_BIN` (the regular xtb at `deps/xtb/install/bin/xtb`). Use `XTB_BIN` for GFN-FF/GFN1/GFN2; use `GXTB_BIN` only when you specifically want the g-xTB method.
+
+### Tracking the latest release
+
+`.gitmodules` pins `deps/g-xtb` to `branch = main` (not a fixed commit) because upstream is pre-release and iterates frequently — we want their newest binaries by default. To bump to whatever they pushed last:
 
 ```bash
-# After git submodule update:
-mkdir -p deps/g-xtb/install
-tar xJf deps/g-xtb/binaries/xtb-6.7.1-gxtb-210426-linux-x86_64.tar.xz \
-    -C deps/g-xtb/install
+bash deps/bump_gxtb.sh
 ```
 
-The g-xtb binary is a modified xtb 6.7.1 (Grimme group's `thfroitzheim/xtb gxtb` branch). It accepts everything regular xtb does, plus `--gxtb` to enable g-xTB (a wB97M-V/def2-TZVPPD-approximating semiempirical method, all elements Z=1–103).
+The script:
+1. `git fetch && git pull` on the submodule's `main` branch
+2. picks the newest `xtb-*-gxtb-*-linux-x86_64.tar.xz` tarball under `binaries/` (filename embeds a build date so `sort | tail -1` wins)
+3. verifies the published `.sha256` if present
+4. wipes and re-extracts into `install/`
+5. runs a tiny H2O smoke test through `--gxtb` to confirm the new binary actually executes
+
+Then commit the new submodule pin:
 
 ```bash
-deps/g-xtb/install/xtb-6.7.1/bin/xtb file.xyz --gxtb --opt
+git add deps/g-xtb && git commit -m "bump g-xtb to <SHA>"
 ```
 
-`qcb/config.py` exposes this as `GXTB_BIN`, separate from `XTB_BIN` (the regular xtb at `deps/xtb/install/bin/xtb`). Use `XTB_BIN` for GFN-FF/GFN1/GFN2; use `GXTB_BIN` only when you specifically want the g-xTB method. Status: pre-release — track upstream tags before relying on it for paper figures.
+Status: pre-release. Treat geometric agreement on the YYE/Zn₂ benchmark (`enzyme_design_applications/active_site_refine/geom_score.py`) as the regression test before relying on a new version for production work.
 
 ## Why submodules and not just `pip install`?
 

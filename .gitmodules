@@ -13,3 +13,8 @@
 [submodule "deps/g-xtb"]
 	path = deps/g-xtb
 	url = https://github.com/grimme-lab/g-xtb.git
+	# Track upstream main — `git submodule update --remote deps/g-xtb`
+	# (or `bash deps/bump_gxtb.sh`) pulls latest. Pre-release upstream;
+	# we always want their newest binaries.
+	branch = main
+	update = checkout
