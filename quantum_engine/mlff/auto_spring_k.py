@@ -219,7 +219,7 @@ def _covalent_radius(symbol: str) -> float:
 def _resolve_xtb_binary() -> Optional[str]:
     """Find xTB binary. Prefer qcb.mlff.xtb_refine's resolution, then PATH."""
     try:
-        from quantum_engine.mlff.xtb_refine import XTB_BIN as _configured
+        from quantum_engine.qm.xtb_refine import XTB_BIN as _configured
         if _configured and os.path.isfile(_configured):
             return _configured
     except Exception:

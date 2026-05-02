@@ -21,7 +21,7 @@ def _resolve_atom_indices(
     selector_name: str, selectors: dict, atoms, bt_struct
 ) -> list[int]:
     """Look up a named selector and return matching atom indices."""
-    from quantum_engine.io.constraints import parse_constraints
+    from quantum_engine.select import parse_constraints
     spec = selectors[selector_name]
     spec_str = spec.spec if hasattr(spec, "spec") else spec
     mask = parse_constraints(atoms, bt_struct, [spec_str])

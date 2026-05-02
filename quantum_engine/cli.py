@@ -72,7 +72,7 @@ def _setup_atoms_and_calc(args):
     """Shared setup: load structure, build calculator, build constraint."""
     from quantum_engine.calc import make_calc
     from quantum_engine.io import load_structure, parse_constraints, build_fix_atoms
-    from quantum_engine.io.constraints import preset_to_specs
+    from quantum_engine.select import preset_to_specs
 
     atoms, bt_struct, charge_hint = load_structure(args.input)
     # Warn on charge conflict between CLI flag and PDB REMARK
@@ -85,7 +85,7 @@ def _setup_atoms_and_calc(args):
     # Detect ligand for preset exclusions (first HETATM non-water, non-metal)
     ligand_name = None
     if bt_struct is not None:
-        from quantum_engine.io.constraints import STANDARD_EXCLUDED_RES
+        from quantum_engine.select import STANDARD_EXCLUDED_RES
         for rn in bt_struct.res_name:
             if rn not in STANDARD_EXCLUDED_RES and rn not in ("ALA","ARG","ASN","ASP","CYS",
                 "GLN","GLU","GLY","HIS","ILE","LEU","LYS","MET","PHE","PRO","SER","THR","TRP",
@@ -192,7 +192,7 @@ def _cmd_neb(args):
     from quantum_engine.ops import neb
     from quantum_engine.calc import make_calc_fn
     from quantum_engine.io import load_structure, parse_constraints, build_fix_atoms
-    from quantum_engine.io.constraints import preset_to_specs, STANDARD_EXCLUDED_RES
+    from quantum_engine.select import preset_to_specs, STANDARD_EXCLUDED_RES
 
     r_atoms, r_bt, r_charge = load_structure(args.reactant)
     p_atoms, p_bt, p_charge = load_structure(args.product)
@@ -336,7 +336,7 @@ def _cmd_ts(args):
     from quantum_engine.ops import ts as ts_op
     from quantum_engine.calc import make_calc_fn
     from quantum_engine.io import load_structure, parse_constraints, build_fix_atoms
-    from quantum_engine.io.constraints import preset_to_specs, STANDARD_EXCLUDED_RES
+    from quantum_engine.select import preset_to_specs, STANDARD_EXCLUDED_RES
 
     # Legacy subprocess mode (opt-in via --legacy-subprocess)
     if getattr(args, "legacy_subprocess", False):

@@ -2131,7 +2131,7 @@ def _write_ts_cif(ts_atoms, template_st, outdir, charge_method="auto",
 
         # Try atomworks CIF writer (proper bond types from WBO)
         try:
-            from quantum_engine.mlff.cif_writer import write_ts_cif
+            from quantum_engine.io.cif import write_ts_cif
             result = write_ts_cif(
                 ts_atoms, template_st, outdir,
                 total_charge=charge,
@@ -2552,7 +2552,7 @@ def run_pipeline(args):
 
         # ── Optional: xTB endpoint refinement (validates MACE endpoints with semi-empirical QM) ──
         if getattr(args, "refine_xtb", False):
-            from quantum_engine.mlff.xtb_refine import validate_endpoint_pair
+            from quantum_engine.qm.xtb_refine import validate_endpoint_pair
             log.info("  Running xTB endpoint refinement ...")
             p_name = BOND_BREAKING_DEFS[ligand][0][0] if ligand in BOND_BREAKING_DEFS else None
             nuc_name = next((d[1] for d in BOND_BREAKING_DEFS.get(ligand, []) if d[3] == "attractive"), None)

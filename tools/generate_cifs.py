@@ -199,7 +199,7 @@ def generate_cif(ts_pdb, outdir, cif_filename=None):
 
     # Try atomworks CIF writer
     try:
-        from quantum_engine.mlff.cif_writer import write_ts_cif
+        from quantum_engine.io.cif import write_ts_cif
         result = write_ts_cif(
             ts_atoms, template_st, str(outdir),
             total_charge=total_charge,
