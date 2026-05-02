@@ -13,6 +13,7 @@ Vendored third-party dependencies built from source. Adding a new dep here means
 | `g-xtb/` | Grimme g-xTB (wB97M-V approx, all elements) | `bump_gxtb.sh` |
 | `crest/` | Grimme conformer-rotamer ensemble sampler | `build_crest.sh` |
 | `ketcher/` | EPAM 2D molecular / reaction editor (web) | `build_ketcher.sh` (or `tools/ketcher.html` for zero-install) |
+| `openmm/` | OpenMM MD engine + companion ML/PLUMED bindings | `build_openmm.sh` |
 
 Loose source trees: `graph_longrange_src/`, `mace_polar_src/`, `pyGSM/` — checked-in copies, not submodules.
 
@@ -22,7 +23,7 @@ External tools that don't fit a submodule build (commercial / restricted / web-o
 |---|---|---|
 | Gaussian g16 | `quantum_engine.site.GAUSSIAN_BIN` → `/net/software/gaussian/g16/g16` | Cluster-wide install, license-controlled |
 | ORCA 4.1.1 | `quantum_engine.site.ORCA_BIN` → `/net/software/orca/orca_4_1_1_linux_x86-64_openmpi313/orca` | Multiple cluster versions in `ORCA_VERSIONS` |
-| ChemShell | `$QCB_CHEMSHELL` → `deps/chemshell/install/bin/chemsh` → `/net/software/lab/chemshell/bin/chemsh` | Manual install — see "ChemShell" section below |
+| ChemShell | `$QCB_CHEMSHELL` → `deps/chemshell/install/bin/chemsh` → `/net/software/lab/chemshell/bin/chemsh` | Optional. ChemShell is more TS-native but needs registration. Default qcb QM/MM goes through OpenMM (`deps/openmm/`) — see below. |
 | Ketcher v3.12.0 | `deps/ketcher/` submodule + `tools/ketcher.html` (CDN) or `deps/build_ketcher.sh` (offline) | 2D reaction drawer; opens in browser, export SMILES/MOL/RXN |
 
 Pip-installable chemistry tools (declared in `pyproject.toml` under `[project.optional-dependencies] chem`):
@@ -153,3 +154,37 @@ bash deps/build_xtb.sh                            # rebuild
 
 bash deps/build_crest.sh                          # pulls latest conda-forge crest
 ```
+
+## OpenMM (broadest MD engine + force-field substitution)
+
+Vendored at `deps/openmm/` (pinned at v8.5.1). The build script defaults to a fast conda-forge install into `qcb-xtb` (~3 min) plus three companion packages that make OpenMM the broadest MD engine in the codebase:
+
+| Package | Why |
+|---|---|
+| `openmm-ml`     | MACE / ANI / NequIP / TorchANI as OpenMM forces — same interface as classical force fields |
+| `openmm-plumed` | PLUMED 2 biasing (we already vendor PLUMED) hooked into OpenMM's MD loop |
+| `openmm-torch`  | Generic PyTorch force — drop in any model trained with our MACE benchmark suite |
+
+```bash
+bash deps/build_openmm.sh                  # conda path (default)
+BUILD_FROM_SOURCE=1 bash deps/build_openmm.sh
+```
+
+After install, every force-field choice is a one-liner swap:
+
+```python
+from quantum_engine.mm.openmm import OpenMMSession
+
+# Classical
+sess = OpenMMSession.from_pdb("system.pdb", forcefield="amber14-all.xml")
+sess.run_md(total_time_ps=10.0)
+
+# Swap to MACE — same Pipeline, just attach a different force.
+sess = OpenMMSession.from_pdb("system.pdb").attach_mace("mace-omol.model")
+sess.run_md(total_time_ps=10.0)
+
+# Add PLUMED bias (multi-walker, etc. via our existing plumed_runner).
+sess.attach_plumed(open("plumed.dat").read()).run_md(total_time_ps=50.0)
+```
+
+This is why we picked OpenMM over ChemShell for the default QM/MM story: ChemShell is more TS-native but the distribution is friction-heavy and the force field menu is narrower. OpenMM gives us the full classical→ML→QM ladder in one swap. Use ChemShell only when you specifically want HDLCopt+dimer over an internal-coord optimiser — it's plumbed in via `quantum_engine.qm.chemshell` if so.

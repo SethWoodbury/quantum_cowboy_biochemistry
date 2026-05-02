@@ -32,7 +32,7 @@ def test_subpackage_imports():
     # Each subpackage importable
     from quantum_engine import (        # noqa: F401
         analysis, calc, config, data, io,
-        mlff, ops, pipelines, prep, qm, select, slurm, units,
+        mlff, mm, ops, pipelines, prep, qm, select, slurm, units,
     )
 
 

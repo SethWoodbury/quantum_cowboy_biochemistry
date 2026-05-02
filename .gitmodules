@@ -24,3 +24,6 @@
 [submodule "deps/ketcher"]
 	path = deps/ketcher
 	url = https://github.com/epam/ketcher.git
+[submodule "deps/openmm"]
+	path = deps/openmm
+	url = https://github.com/openmm/openmm.git
