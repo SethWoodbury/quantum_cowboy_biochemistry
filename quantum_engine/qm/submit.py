@@ -17,7 +17,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from quantum_engine.config import GAUSSIAN_ROOT, SCRATCH_DIR
+from quantum_engine.site import GAUSSIAN_ROOT, SCRATCH_DIR
 
 # ── Defaults ─────────────────────────────────────────────────────────
 _USERNAME = getpass.getuser()

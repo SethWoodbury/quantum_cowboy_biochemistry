@@ -115,7 +115,7 @@ def test_list_models_non_empty():
     """list_models() should return the registry from
     quantum_engine.config.MACE_MODELS — single source."""
     from quantum_engine.calc import list_models
-    from quantum_engine.config import MACE_MODELS
+    from quantum_engine.site import MACE_MODELS
     models = list_models()
     assert models, "expected at least one model in registry"
     # Every key in the canonical config should appear.
@@ -204,17 +204,17 @@ def test_step_propagates_ctx_constraint():
 # ─────────────────────────────────────────────────────────────────────
 
 def test_no_duplicate_mace_registries():
-    """quantum_engine.config.MACE_MODELS is the single source of truth.
+    """quantum_engine.site.MACE_MODELS is the single source of truth.
     Walk every .py file under quantum_engine/, enz_qc_pipelines/, and
     tools/ (excluding the canonical site) and assert no other module
     has a top-level dict literal named MACE_MODELS or MODEL_PATHS.
 
-    Imports of MACE_MODELS (e.g. ``from quantum_engine.config import
+    Imports of MACE_MODELS (e.g. ``from quantum_engine.site import
     MACE_MODELS``) are fine — what we ban is *redeclaration*.
     """
     import ast
     repo = Path(__file__).resolve().parent.parent
-    canonical = (repo / "quantum_engine" / "config.py").resolve()
+    canonical = (repo / "quantum_engine" / "site.py").resolve()
 
     def _is_dict_assign(node, names):
         if not isinstance(node, ast.Assign):
@@ -242,8 +242,8 @@ def test_no_duplicate_mace_registries():
     assert not offenders, (
         f"Duplicate MACE_MODELS / MODEL_PATHS dict declarations:\n  "
         + "\n  ".join(offenders)
-        + "\n  Canonical source is quantum_engine/config.py — every "
-          "other module should `from quantum_engine.config import "
+        + "\n  Canonical source is quantum_engine/site.py — every "
+          "other module should `from quantum_engine.site import "
           "MACE_MODELS` or use quantum_engine.calc.make_calc()."
     )
 

@@ -66,7 +66,7 @@ log = logging.getLogger("quantum_engine.mlff.ligand_xtb")
 
 def _resolve_xtb() -> str | None:
     try:
-        from quantum_engine.config import XTB_BIN
+        from quantum_engine.site import XTB_BIN
         if XTB_BIN and os.path.isfile(XTB_BIN):
             return XTB_BIN
     except Exception:

@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from quantum_engine.config import GAUSSIAN_ROOT
+from quantum_engine.site import GAUSSIAN_ROOT
 
 # ── Supported job type → route keyword mapping ──────────────────────
 _JOB_TYPE_KEYWORDS: dict[str, str] = {

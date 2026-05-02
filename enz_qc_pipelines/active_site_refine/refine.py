@@ -845,7 +845,7 @@ def run_xtb_opt(
 # consumed by quantum_engine.calc.make_calc(). We import the dict directly
 # here so the refine MACE backend's --backend choices stay in sync with the
 # rest of the engine.
-from quantum_engine.config import MACE_MODELS  # noqa: E402
+from quantum_engine.site import MACE_MODELS  # noqa: E402
 
 
 def _build_ase_atoms_and_constraints(

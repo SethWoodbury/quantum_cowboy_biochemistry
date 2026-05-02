@@ -22,7 +22,7 @@ log = logging.getLogger("quantum_engine.calc")
 # Edit that file (or override via env vars per the layered-config story) to
 # add/move models; this factory just reads.
 try:
-    from quantum_engine.config import MACE_MODELS
+    from quantum_engine.site import MACE_MODELS
 except Exception:
     MACE_MODELS = {}
 

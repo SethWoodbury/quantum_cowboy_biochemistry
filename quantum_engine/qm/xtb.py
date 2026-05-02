@@ -11,7 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from quantum_engine.config import XTB_BIN
+from quantum_engine.site import XTB_BIN
 
 # ── Supported GFN methods ───────────────────────────────────────────
 _GFN_METHODS: dict[str, str] = {

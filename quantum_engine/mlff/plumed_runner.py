@@ -269,7 +269,7 @@ def _setup_plumed_env() -> tuple[str, dict]:
     Returns (kernel_path, env_dict_to_set).
     """
     try:
-        from quantum_engine.config import PLUMED_KERNEL
+        from quantum_engine.site import PLUMED_KERNEL
     except Exception:
         PLUMED_KERNEL = None
 

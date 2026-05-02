@@ -58,7 +58,7 @@ def run(config_path: str | Path, override: dict | None = None) -> dict:
 
     Returns: result dict from the called op (status, energy_eV, outputs, ...)
     """
-    from quantum_engine.io.config import load_config
+    from quantum_engine.config.schema import load_config
     from quantum_engine.io import load_structure, parse_constraints, build_fix_atoms
     from quantum_engine.calc import make_calc, make_calc_fn
 

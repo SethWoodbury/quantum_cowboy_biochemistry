@@ -55,7 +55,7 @@ def _resolve_kernel(kernel: str | None = None) -> str | None:
     if kernel and os.path.isfile(kernel):
         return kernel
     try:
-        from quantum_engine.config import CHIMERA_KERNEL
+        from quantum_engine.site import CHIMERA_KERNEL
         if CHIMERA_KERNEL and os.path.isfile(CHIMERA_KERNEL):
             return CHIMERA_KERNEL
     except Exception:

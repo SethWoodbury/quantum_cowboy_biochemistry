@@ -668,7 +668,7 @@ BOND_BREAKING_DEFS = {
 # This script kept its own copy of the model registry historically;
 # both have now been merged into quantum_engine.config.MACE_MODELS,
 # read by quantum_engine.calc.factory.make_calc().
-from quantum_engine.config import MACE_MODELS as MODEL_PATHS  # back-compat alias
+from quantum_engine.site import MACE_MODELS as MODEL_PATHS  # back-compat alias
 from quantum_engine.calc import make_calc as _make_calc
 
 MH_DEFAULT_HEADS = {

@@ -97,7 +97,7 @@ Programmatic usage
 ------------------
 .. code-block:: python
 
-    from quantum_engine.io.config import load_config, normalize_selectors
+    from quantum_engine.config.schema import load_config, normalize_selectors
 
     cfg = load_config("override.yaml", defaults=["defaults.yaml"])
     selectors: dict[str, str] = normalize_selectors(cfg)

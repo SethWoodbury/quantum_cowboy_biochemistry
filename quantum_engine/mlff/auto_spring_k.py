@@ -225,7 +225,7 @@ def _resolve_xtb_binary() -> Optional[str]:
     except Exception:
         pass
     try:
-        from quantum_engine.config import XTB_BIN as _configured  # type: ignore
+        from quantum_engine.site import XTB_BIN as _configured  # type: ignore
         if _configured and os.path.isfile(_configured):
             return _configured
     except Exception:

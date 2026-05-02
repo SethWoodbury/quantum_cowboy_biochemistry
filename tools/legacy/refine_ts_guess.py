@@ -59,7 +59,7 @@ log = logging.getLogger("refine-ts")
 # Legacy script. Model-path lookup goes through quantum_engine.calc
 # now; the registry alias below stays for any local code path that
 # still expects MODEL_PATHS to be a mapping.
-from quantum_engine.config import MACE_MODELS as MODEL_PATHS  # noqa: E402
+from quantum_engine.site import MACE_MODELS as MODEL_PATHS  # noqa: E402
 
 MH_DEFAULT_HEADS = {"mace-mh": "omol"}
 

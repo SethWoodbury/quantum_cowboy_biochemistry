@@ -75,10 +75,10 @@ log = logging.getLogger("quantum_engine.xtb_refine")
 
 
 def _resolve_xtb_binary() -> str | None:
-    """Find xTB binary from quantum_engine.config, PATH, or None."""
+    """Find xTB binary from quantum_engine.site, PATH, or None."""
     # Prefer qcb.config (cluster-specific)
     try:
-        from quantum_engine.config import XTB_BIN as _configured
+        from quantum_engine.site import XTB_BIN as _configured
         if _configured and os.path.isfile(_configured):
             return _configured
     except Exception:
