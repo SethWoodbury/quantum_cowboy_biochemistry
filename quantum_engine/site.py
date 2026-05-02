@@ -53,8 +53,21 @@ MH_DEFAULT_HEADS = {
 # Models that need gbg222's venv (has graph_electrostatics for POLAR)
 NEEDS_GBG_VENV = {"mace-polar-s", "mace-polar-m", "mace-polar-l", "mace-polar"}
 
-# QM software
+# ── External QM packages ───────────────────────────────────────
+# Cluster-installed packages we shell out to. Each path is the binary
+# itself (or, for Gaussian, the install root).
 GAUSSIAN_ROOT = "/net/software/gaussian/g16"
+GAUSSIAN_BIN = f"{GAUSSIAN_ROOT}/g16"
+
+# ORCA — locally installed at the cluster level, multiple versions:
+ORCA_BIN = "/net/software/orca/orca_4_1_1_linux_x86-64_openmpi313/orca"
+ORCA_VERSIONS = {
+    "4.1.1": "/net/software/orca/orca_4_1_1_linux_x86-64_openmpi313/orca",
+    "4.0.1.2": "/net/software/orca/orca_4_0_1_2_linux_x86-64_openmpi202/orca",
+}
+
+# ── External chemistry workflow tools ──────────────────────────
+# Wired below after _REPO_ROOT is defined.
 
 # xtb is vendored as a git submodule at deps/xtb (see deps/README.md). The
 # build script writes the binary + libxtb.so under deps/xtb/install/.
@@ -136,3 +149,32 @@ def get_project_root():
 def get_deps_dir():
     """Return the deps directory for local package installs (.local_pkgs)."""
     return get_project_root() / "deps"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# External chemistry workflow tools (resolved last so _REPO_ROOT exists)
+# ─────────────────────────────────────────────────────────────────────
+
+def _resolve_crest() -> str | None:
+    """CREST (Grimme conformer search). Vendored at deps/crest with
+    deps/build_crest.sh. Override via $QCB_CREST_BIN."""
+    candidates = [
+        os.environ.get("QCB_CREST_BIN"),
+        str(_REPO_ROOT / "deps" / "crest" / "install" / "bin" / "crest"),
+        "/net/software/lab/crest/bin/crest",
+    ]
+    return next((p for p in candidates if p and os.path.isfile(p)), None)
+
+
+def _resolve_chemshell() -> str | None:
+    """ChemShell (CCFE QM/MM TS framework). Override via $QCB_CHEMSHELL."""
+    candidates = [
+        os.environ.get("QCB_CHEMSHELL"),
+        str(_REPO_ROOT / "deps" / "chemshell" / "install" / "bin" / "chemsh"),
+        "/net/software/lab/chemshell/bin/chemsh",
+    ]
+    return next((p for p in candidates if p and os.path.isfile(p)), None)
+
+
+CREST_BIN = _resolve_crest()
+CHEMSHELL_BIN = _resolve_chemshell()

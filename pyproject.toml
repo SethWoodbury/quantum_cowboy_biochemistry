@@ -18,8 +18,21 @@ dependencies = [
 mlff = ["ase>=3.23", "mace-torch>=0.3.10", "sella>=2.3"]
 qm = ["ase>=3.23"]
 analysis = ["scikit-image>=0.22", "pandas>=2.0"]
+# Chemistry workflow tools (drawing → mapping → 2D-3D → conformers → profile).
+# These are pip-installable; the heavyweight binaries (CREST, ChemShell) are
+# vendored as git submodules under deps/ — see deps/README.md.
+chem = [
+    "rdkit>=2024.03",          # 2D / 3D / format / bond-diff / ETKDGv3
+    "epam.indigo>=1.27",       # 2nd format+stereo backend (cross-validate vs RDKit)
+    "rxnmapper>=0.4",          # transformer-based atom mapping
+    "CGRtools>=4.1",           # bond-change / reaction-graph diff
+    "autode>=1.4",             # SMILES → reaction profile (defaults to xtb / ORCA)
+]
+# Everything except cuda-only MLFF stuff.
 all = ["ase>=3.23", "mace-torch>=0.3.10", "sella>=2.3", "biotite>=0.40",
-       "scikit-image>=0.22", "pandas>=2.0"]
+       "scikit-image>=0.22", "pandas>=2.0",
+       "rdkit>=2024.03", "epam.indigo>=1.27", "rxnmapper>=0.4",
+       "CGRtools>=4.1", "autode>=1.4"]
 
 [project.scripts]
 # CLI binary stays `qcb` for backwards compatibility / habit; package is
