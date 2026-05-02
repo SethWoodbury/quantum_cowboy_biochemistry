@@ -18,40 +18,18 @@ from typing import Callable
 log = logging.getLogger("quantum_engine.calc")
 
 
-# MACE model paths on DIGS cluster (override via qcb.config if needed)
+# Single source of truth for MACE model paths: quantum_engine.config.MACE_MODELS.
+# Edit that file (or override via env vars per the layered-config story) to
+# add/move models; this factory just reads.
 try:
-    from quantum_engine.config import MACE_MODELS as _CONFIGURED_MODELS
+    from quantum_engine.config import MACE_MODELS
 except Exception:
-    _CONFIGURED_MODELS = None
-
-
-DEFAULT_MODEL_PATHS = {
-    # ── General-purpose foundation models ──
-    "mace-mp":           "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
-    "mace-omol":         "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
-    "mace-mh":           "/home/gbg222/projects/mace_models/mace-mh-0.model",
-    # ── MACE-OFF (organic only, no metals) ──
-    "mace-off-small":    "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_small.model",
-    "mace-off-medium":   "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_medium.model",
-    "mace-off":          "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
-    "mace-off-large":    "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
-    # ── MACE-POLAR-1 (charge/electrostatics-aware, recommended for ionic systems) ──
-    # See: arXiv:2602.19411 — long-range electrostatics in MACE
-    "mace-polar-s":      "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/MACE-POLAR-1-S.model",
-    "mace-polar-m":      "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/MACE-POLAR-1-M.model",
-    "mace-polar":        "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/MACE-POLAR-1-M.model",  # default = M
-    "mace-polar-l":      "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/MACE-POLAR-1-L.model",
-    # ── Legacy ──
-    "mace-128":          "/projects/ml/enzyme_filtering/enz-ts/lib/mace_models/2023-12-10-mace-128-L0_energy_epoch-249.model",
-}
+    MACE_MODELS = {}
 
 
 def list_models() -> dict[str, str]:
     """Return dict of available model aliases and their file paths."""
-    models = dict(DEFAULT_MODEL_PATHS)
-    if _CONFIGURED_MODELS:
-        models.update({k: v for k, v in _CONFIGURED_MODELS.items() if v})
-    return models
+    return dict(MACE_MODELS)
 
 
 @dataclass
@@ -89,18 +67,57 @@ def make_calc(
 
     models = list_models()
 
+    # 1. Direct file path
     if os.path.isfile(model):
         model_path = model
-    elif model in models:
+    # 2. Registry hit with the model file present locally
+    elif model in models and models[model] and os.path.isfile(models[model]):
         model_path = models[model]
-        if not model_path or not os.path.isfile(model_path):
-            raise FileNotFoundError(
-                f"Model '{model}' → '{model_path}' not found. "
-                f"Update qcb/config.py or pass an absolute path."
-            )
+    # 3. HuggingFace auto-download fallback for known model families.
+    #    Lets users get going on a fresh machine where the local registry
+    #    paths don't exist yet — picks a sensible variant per family.
     else:
+        if model in models and models[model]:
+            log.warning(f"Registry path missing on disk: {models[model]} — "
+                        f"falling back to HuggingFace auto-download")
+        try:
+            if "omol" in model:
+                from mace.calculators import mace_omol
+                log.info(f"Loading MACE-OMOL via auto-download")
+                return mace_omol(model="extra_large", device=device,
+                                 default_dtype=default_dtype)
+            if "polar" in model:
+                from mace.calculators import mace_polar
+                size = "polar-1-m"
+                if "-s" in model: size = "polar-1-s"
+                elif "-l" in model: size = "polar-1-l"
+                log.info(f"Loading MACE-POLAR via auto-download ({size})")
+                return mace_polar(model=size, device=device,
+                                  default_dtype=default_dtype)
+            if "off" in model:
+                from mace.calculators import mace_off
+                size = "large"
+                if "small" in model: size = "small"
+                elif "medium" in model: size = "medium"
+                log.info(f"Loading MACE-OFF via auto-download ({size})")
+                return mace_off(model=size, device=device,
+                                default_dtype=default_dtype)
+            if "mp" in model:
+                from mace.calculators import mace_mp
+                log.info(f"Loading MACE-MP via auto-download")
+                return mace_mp(device=device, default_dtype=default_dtype)
+        except Exception as e:
+            log.warning(f"Auto-download failed for {model}: {e}")
+        # Last resort: tell the user what we tried.
         available = ", ".join(models.keys())
-        raise ValueError(f"Unknown model '{model}'. Available: {available}")
+        raise FileNotFoundError(
+            f"Model '{model}' could not be resolved.\n"
+            f"  - Not a file: {model}\n"
+            f"  - Registry path: "
+            f"{models.get(model, '(not in registry)')!r}\n"
+            f"  - HuggingFace auto-download family didn't match.\n"
+            f"  Available registry keys: {available}"
+        )
 
     log.info(f"Loading '{model}' from {model_path}" + (f" (head={head})" if head else ""))
 

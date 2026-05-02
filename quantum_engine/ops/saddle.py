@@ -10,10 +10,10 @@ from pathlib import Path
 from ase import Atoms
 
 from quantum_engine.mlff.irc import sella_saddle_search
+from quantum_engine.units import EV_TO_KCAL
 
 log = logging.getLogger("quantum_engine.ops.saddle")
 
-EV_TO_KCAL = 23.0609
 
 
 def run(

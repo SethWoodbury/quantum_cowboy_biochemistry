@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms
 from ase.io import read, write
 from ase.mep.neb import NEB, NEBOptimizer
@@ -19,7 +20,6 @@ from quantum_engine.mlff.interpolation import interpolate
 
 log = logging.getLogger("quantum_engine.ops.neb")
 
-EV_TO_KCAL = 23.0609
 
 
 def run(

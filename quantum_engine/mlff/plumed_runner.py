@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Sequence
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms, units
 from ase.io import write as ase_write
 from ase.md.langevin import Langevin
@@ -46,7 +47,6 @@ from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 
 log = logging.getLogger("quantum_engine.mlff.plumed_runner")
 
-EV_TO_KCAL = 23.0609
 KJ_TO_EV = units.kJ / units.mol  # 0.010364 eV per kJ/mol
 
 

@@ -11,12 +11,12 @@ import logging
 from pathlib import Path
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms
 from ase.optimize import LBFGS, BFGS, FIRE
 
 log = logging.getLogger("quantum_engine.ops.opt")
 
-EV_TO_KCAL = 23.0609
 
 OPTIMIZERS = {"lbfgs": LBFGS, "bfgs": BFGS, "fire": FIRE}
 

@@ -31,6 +31,8 @@ When NOT to use
 """
 from __future__ import annotations
 
+from quantum_engine.units import EV_TO_KCAL
+
 import json
 import logging
 import sys
@@ -41,7 +43,6 @@ from ase import Atoms
 
 log = logging.getLogger("quantum_engine.ops.gsm")
 
-EV_TO_KCAL = 23.0609
 
 # Add pysisyphus to path (installed as a git submodule under deps/)
 _PYSIS_PATH = Path(__file__).resolve().parents[2] / "deps" / "pysisyphus"

@@ -43,13 +43,13 @@ import os
 from pathlib import Path
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms
 from ase.io import read, write
 from ase.optimize import LBFGS
 
 log = logging.getLogger("quantum_engine.irc")
 
-EV_TO_KCAL = 23.0609
 BOHR_TO_A = 0.529177
 
 

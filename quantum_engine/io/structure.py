@@ -11,12 +11,12 @@ import re
 from pathlib import Path
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms
 from ase.io import read
 
 log = logging.getLogger("quantum_engine.io")
 
-EV_TO_KCAL = 23.0609
 
 
 def load_structure(path: str | Path) -> tuple[Atoms, "AtomArray | None", int | None]:

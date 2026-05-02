@@ -32,12 +32,12 @@ import time
 from pathlib import Path
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms
 from ase.optimize import LBFGS
 
 log = logging.getLogger("quantum_engine.ops.ts")
 
-EV_TO_KCAL = 23.0609
 
 
 def _setup_calc_and_constraint(atoms, calc_fn, charge: int, constraint=None):

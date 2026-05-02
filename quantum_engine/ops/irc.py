@@ -4,6 +4,8 @@ Wraps qcb.mlff.irc.irc_from_ts_guess (full workflow) or run_irc (descent-only).
 """
 from __future__ import annotations
 
+from quantum_engine.units import EV_TO_KCAL
+
 import logging
 from pathlib import Path
 
@@ -11,7 +13,6 @@ from ase import Atoms
 
 log = logging.getLogger("quantum_engine.ops.irc")
 
-EV_TO_KCAL = 23.0609
 
 
 def run(

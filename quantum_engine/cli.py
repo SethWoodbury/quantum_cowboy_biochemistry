@@ -392,13 +392,8 @@ def _cmd_ts(args):
     # Auto-detect CV atoms from ligand bond-breaking defs (if ligand known)
     p_idx = nuc_idx = lg_idx = None
     if ligand_name and bt_struct is not None:
-        # Import bond-breaking defs from the legacy script module
         try:
-            import sys
-            _script_dir = Path(__file__).resolve().parent.parent.parent / "scripts"
-            if str(_script_dir) not in sys.path:
-                sys.path.insert(0, str(_script_dir))
-            from run_neb_ts import BOND_BREAKING_DEFS
+            from quantum_engine.data import BOND_BREAKING_DEFS
             if ligand_name in BOND_BREAKING_DEFS:
                 defs = BOND_BREAKING_DEFS[ligand_name]
                 nuc_name = next((d[1] for d in defs if d[3] == "attractive"), None)
@@ -615,7 +610,7 @@ def main(argv=None):
     p_ts.add_argument("--lg-idx", type=int, default=None)
     p_ts.add_argument("--mtd-time-ps", type=float, default=100.0)
     p_ts.add_argument("--legacy-subprocess", action="store_true",
-                      help="Use old subprocess wrapper around scripts/run_neb_ts.py "
+                      help="Use old subprocess wrapper around tools/run_neb_ts.py "
                            "(has known energy-consistency bug; use only for backward compat)")
     p_ts.add_argument("--passthrough", nargs=argparse.REMAINDER,
                       help="(legacy-subprocess only) additional flags to pass to run_neb_ts.py")

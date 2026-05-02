@@ -6,11 +6,11 @@ import logging
 from pathlib import Path
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms
 
 log = logging.getLogger("quantum_engine.ops.sp")
 
-EV_TO_KCAL = 23.0609
 
 
 def run(

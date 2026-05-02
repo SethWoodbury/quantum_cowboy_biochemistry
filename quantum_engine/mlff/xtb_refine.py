@@ -67,6 +67,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms
 from ase.io import read, write
 
@@ -89,7 +90,6 @@ def _resolve_xtb_binary() -> str | None:
 
 
 XTB_BIN = _resolve_xtb_binary()
-EV_TO_KCAL = 23.0609
 
 
 def _write_xtb_input(

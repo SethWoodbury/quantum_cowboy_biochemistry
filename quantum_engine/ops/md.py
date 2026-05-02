@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 
 import numpy as np
+from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms, units
 from ase.io import write as ase_write
 from ase.md.langevin import Langevin
@@ -18,7 +19,6 @@ from ase.md.verlet import VelocityVerlet
 
 log = logging.getLogger("quantum_engine.ops.md")
 
-EV_TO_KCAL = 23.0609
 
 
 def run(

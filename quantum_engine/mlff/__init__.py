@@ -1,9 +1,17 @@
 """
-Machine Learning Force Fields: NEB transition state searches, Sella refinement,
-dimer method, endpoint generation, and model management.
+Machine-learning force fields and the algorithms that drive them.
 
-Key modules:
-  qcb.mlff.models             - MACE model registry and calculator factory
-  qcb.mlff.endpoint_generation - 4 methods for generating NEB endpoints
-  qcb.mlff.dimer              - ASE dimer method for TS search
+This subpackage holds two kinds of code:
+
+  1. **Calc-agnostic primitives** that happen to be used downstream of an
+     MLFF: :mod:`metadynamics`, :mod:`interpolation`, :mod:`cv_spring`,
+     :mod:`dimer`. They work with any ASE calculator.
+
+  2. **MLFF-specific helpers**: charge-aware MACE wrappers, post-MD CIF
+     writing, etc.
+
+Calculator instantiation lives in :mod:`quantum_engine.calc.factory`
+(single source of truth via :data:`quantum_engine.config.MACE_MODELS`).
+For Sella saddle-search etc. used by ``ops/saddle.py``, see
+:mod:`quantum_engine.mlff.irc`.
 """
