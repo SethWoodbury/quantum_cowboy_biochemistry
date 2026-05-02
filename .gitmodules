@@ -21,3 +21,6 @@
 [submodule "deps/crest"]
 	path = deps/crest
 	url = https://github.com/crest-lab/crest.git
+[submodule "deps/ketcher"]
+	path = deps/ketcher
+	url = https://github.com/epam/ketcher.git

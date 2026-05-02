@@ -12,6 +12,7 @@ Vendored third-party dependencies built from source. Adding a new dep here means
 | `xtb/` | Grimme extended-tight-binding semiempirical QM | `build_xtb.sh` |
 | `g-xtb/` | Grimme g-xTB (wB97M-V approx, all elements) | `bump_gxtb.sh` |
 | `crest/` | Grimme conformer-rotamer ensemble sampler | `build_crest.sh` |
+| `ketcher/` | EPAM 2D molecular / reaction editor (web) | `build_ketcher.sh` (or `tools/ketcher.html` for zero-install) |
 
 Loose source trees: `graph_longrange_src/`, `mace_polar_src/`, `pyGSM/` — checked-in copies, not submodules.
 
@@ -22,7 +23,7 @@ External tools that don't fit a submodule build (commercial / restricted / web-o
 | Gaussian g16 | `quantum_engine.site.GAUSSIAN_BIN` → `/net/software/gaussian/g16/g16` | Cluster-wide install, license-controlled |
 | ORCA 4.1.1 | `quantum_engine.site.ORCA_BIN` → `/net/software/orca/orca_4_1_1_linux_x86-64_openmpi313/orca` | Multiple cluster versions in `ORCA_VERSIONS` |
 | ChemShell | `$QCB_CHEMSHELL` → `deps/chemshell/install/bin/chemsh` → `/net/software/lab/chemshell/bin/chemsh` | Manual install — see "ChemShell" section below |
-| Ketcher | (web-only — not vendor-able) | Use https://lifescience.opensource.epam.com/ketcher/ for 2D reaction drawing; export to MOL/RXN, feed to qcb |
+| Ketcher v3.12.0 | `deps/ketcher/` submodule + `tools/ketcher.html` (CDN) or `deps/build_ketcher.sh` (offline) | 2D reaction drawer; opens in browser, export SMILES/MOL/RXN |
 
 Pip-installable chemistry tools (declared in `pyproject.toml` under `[project.optional-dependencies] chem`):
 
