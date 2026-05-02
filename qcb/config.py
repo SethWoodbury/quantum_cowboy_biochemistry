@@ -95,16 +95,23 @@ def _find_chimera() -> str | None:
 CHIMERA_KERNEL = _find_chimera()
 
 # PLUMED 2 — for advanced sampling (MTD, OPES, umbrella, multi-walker)
-# Prefer the submodule build at deps/plumed2/install/lib/libplumedKernel.so when
-# available; fall back to the cluster-shared prebuilt at /net/scratch/woodbuse.
-# Set with: export PLUMED_KERNEL=/path/to/libplumedKernel.so
+# Resolution order:
+#   1. $PLUMED_KERNEL (env override — wins if set to a real file)
+#   2. deps/plumed2/install/lib/libplumedKernel.so (vendored submodule build)
+#   3. /net/software/lab/plumed2-2.10/install/lib/libplumedKernel.so (lab-
+#      shared install, optional — populated by `cp -a deps/plumed2/install
+#      /net/software/lab/plumed2-2.10` after a vendored build)
+# Build the submodule with `bash deps/plumed2_build.sh`.
 import os as _os
 _qcb_root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-_submodule_kernel = _os.path.join(_qcb_root, "deps", "plumed2", "install", "lib", "libplumedKernel.so")
-_shared_kernel = "/net/scratch/woodbuse/metad/plumed/lib/libplumedKernel.so"
-PLUMED_KERNEL = (
-    _submodule_kernel if _os.path.isfile(_submodule_kernel)
-    else (_shared_kernel if _os.path.isfile(_shared_kernel) else None)
+_kernel_candidates = [
+    _os.environ.get("PLUMED_KERNEL"),
+    _os.path.join(_qcb_root, "deps", "plumed2", "install", "lib", "libplumedKernel.so"),
+    "/net/software/lab/plumed2-2.10/install/lib/libplumedKernel.so",
+]
+PLUMED_KERNEL = next(
+    (p for p in _kernel_candidates if p and _os.path.isfile(p)),
+    None,
 )
 
 # Reference codebases (read-only, for migration/comparison)
