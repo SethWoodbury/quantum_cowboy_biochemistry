@@ -1,29 +1,37 @@
 [project]
-name = "quantum-cowboy-biochemistry"
-version = "0.1.0"
-description = "One-stop shop for enzyme quantum chemistry: active site prep, MLFF NEB/TS searches, and QM job management"
+name = "quantum-engine"
+version = "0.2.0"
+description = "Quantum engine for enzyme design — modular tools for active-site prep, MD/metadynamics, MLFF NEB/IRC/TS, and FES analysis. Composable into multi-step orchestrator pipelines."
 authors = [
     { name = "Seth M. Woodbury", email = "woodbuse@uw.edu" },
 ]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "numpy",
-    "matplotlib",
-    "biotite",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "biotite>=0.40",
+    "scipy>=1.11",
 ]
 
 [project.optional-dependencies]
-mlff = ["ase", "mace-torch", "sella"]
-qm = ["ase"]
-all = ["ase", "mace-torch", "sella", "biotite"]
+mlff = ["ase>=3.23", "mace-torch>=0.3.10", "sella>=2.3"]
+qm = ["ase>=3.23"]
+analysis = ["scikit-image>=0.22", "pandas>=2.0"]
+all = ["ase>=3.23", "mace-torch>=0.3.10", "sella>=2.3", "biotite>=0.40",
+       "scikit-image>=0.22", "pandas>=2.0"]
+
+[project.scripts]
+# CLI binary stays `qcb` for backwards compatibility / habit; package is
+# `quantum_engine`. `pip install -e .` puts qcb on PATH.
+qcb = "quantum_engine.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["qcb*"]
+include = ["quantum_engine*", "enz_qc_pipelines*"]
 
 [tool.ruff]
 lint.select = ["I", "UP", "F", "E", "W"]

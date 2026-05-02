@@ -75,7 +75,7 @@ Then commit the new submodule pin:
 git add deps/g-xtb && git commit -m "bump g-xtb to <SHA>"
 ```
 
-Status: pre-release. Treat geometric agreement on the YYE/Zn₂ benchmark (`enzyme_design_applications/active_site_refine/geom_score.py`) as the regression test before relying on a new version for production work.
+Status: pre-release. Treat geometric agreement on the YYE/Zn₂ benchmark (`enz_qc_pipelines/active_site_refine/geom_score.py`) as the regression test before relying on a new version for production work.
 
 ## Why submodules and not just `pip install`?
 
