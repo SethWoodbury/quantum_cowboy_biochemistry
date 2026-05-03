@@ -529,19 +529,86 @@ def _motif_fill(
 
 @dataclass
 class PerStepVacuumTS:
-    """Iterate over mechanism steps; build a vacuum TS per step.
-    Stores results under ctx.metadata['mechanism_results'] indexed by
-    (mechanism_idx, step_idx)."""
+    """Vacuum TS for the overall reaction.
+
+    Two regimes:
+      * **overall=True** (default for now): build ONE vacuum TS for
+        reactant_smiles → product_smiles using the swappable adapter
+        from :mod:`enz_qc_pipelines.enzyme_ts_design.orchestrator`. This
+        is the realistic flow when the user has already supplied
+        concrete substrate SMILES and the M-CSA mechanism arrow-pushing
+        is too generic to drive per-step coords (PTE 159 is exactly
+        this case — Marvin XML is empty).
+      * **overall=False** (TODO): iterate over
+        ``entry.mechanisms[*].steps[*]``, parse marvin_xml for
+        arrow-pushing → driving coords (via
+        :func:`quantum_engine.data.mcsa.parse_marvin_xml`), and run
+        SE-GSM per step (see :mod:`quantum_engine.qm.pygsm`). Stores
+        per-step results under ctx.metadata['mechanism_results']
+        keyed by (mechanism_idx, step_idx). Lands once we have a M-CSA
+        entry with non-empty marvin_xml to test against (159 doesn't,
+        641/900 do).
+    """
     name: str = "per_step_vacuum_ts"
-    tool: str = "scine"              # "scine" | "autode" | "molecularGSM"
+    tool: str = "autode"             # "autode" | "scine" | "molecularGSM"
     qm_method: str = "g-xtb"
+    overall: bool = True
     workdir: str | Path | None = None
 
     def run(self, ctx: Context) -> StepResult:
-        raise NotImplementedError(
-            "PerStepVacuumTS: for each Mechanism in entry.mechanisms, "
-            "for each MechanismStep, parse marvin_xml for arrow-pushing, "
-            "translate to driving coords, run vacuum TS via tool."
+        if not self.overall:
+            raise NotImplementedError(
+                "PerStepVacuumTS(overall=False): per-step iteration over "
+                "entry.mechanisms[*].steps[*] needs the Marvin XML arrow "
+                "parser to be wired (quantum_engine.data.mcsa.parse_marvin_xml "
+                "is currently a stub). Use overall=True for now."
+            )
+        # Delegate to the generic vacuum-TS step from enzyme_ts_design.
+        # That step handles tool dispatch (autode | scine | molecularGSM)
+        # and the brittle autodE config / monkey-patching.
+        from enz_qc_pipelines.enzyme_ts_design.orchestrator import (
+            VacuumTSSearch,
+        )
+        reactant = ctx.metadata.get("reactant_smiles")
+        product = ctx.metadata.get("product_smiles")
+        if not reactant or not product:
+            raise RuntimeError(
+                "PerStepVacuumTS: ctx.metadata is missing reactant_smiles / "
+                "product_smiles. Run ResolveSubstrateSMILES first."
+            )
+
+        sub_outdir = (Path(self.workdir) if self.workdir
+                      else (ctx.outdir / self.name))
+        sub_outdir.mkdir(parents=True, exist_ok=True)
+
+        # VacuumTSSearch reads R/P from ctx.metadata — already populated
+        # by Stage 1. The stage just needs ctx.outdir to point at our
+        # subdir so its scratch files land cleanly. Save and restore.
+        original_outdir = ctx.outdir
+        ctx.outdir = sub_outdir
+        try:
+            sub_step = VacuumTSSearch(tool=self.tool, qm_method=self.qm_method,
+                                      workdir=sub_outdir)
+            sub_result = sub_step.run(ctx)
+        finally:
+            ctx.outdir = original_outdir
+
+        # Persist the per-step result on metadata for downstream stages
+        # (refine, path-refind, polish). Keyed under 'overall' since we
+        # didn't iterate per mechanism step.
+        ctx.metadata.setdefault("mechanism_results", {})["overall"] = {
+            "ts_atoms": ctx.atoms,
+            "outputs": dict(sub_result.outputs),
+        }
+
+        return StepResult(
+            name=self.name,
+            atoms=ctx.atoms,
+            outputs={
+                "mode": "overall",
+                "delegated_tool": self.tool,
+                **sub_result.outputs,
+            },
         )
 
 
