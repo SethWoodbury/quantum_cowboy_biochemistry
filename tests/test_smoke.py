@@ -49,6 +49,40 @@ def test_new_qm_adapters_import_clean():
     assert yarp.yarp_available() is False  # stub: always False
 
 
+def test_slurm_job_runner_imports_and_formats():
+    """SLURM generic job runner — must build a sbatch script without
+    actually submitting (no SLURM on the dev box). Verifies all directives
+    land in the right format."""
+    import tempfile
+    from quantum_engine.slurm import (
+        JobConfig, slurm_available,
+    )
+    from quantum_engine.slurm.job_runner import _format_sbatch
+
+    assert isinstance(slurm_available(), bool)
+
+    with tempfile.TemporaryDirectory() as td:
+        cfg = JobConfig(
+            command="python -c 'print(42)'",
+            workdir=Path(td),
+            job_name="qcb_smoke",
+            gpu=True,
+            n_gpus=2,
+            cpus=8,
+            mem="32G",
+            time="01:30:00",
+        )
+        script = _format_sbatch(cfg)
+        assert "#SBATCH -J qcb_smoke" in script
+        assert "#SBATCH --gres=gpu:2" in script
+        assert "#SBATCH -c 8" in script
+        assert "#SBATCH --mem=32G" in script
+        assert "#SBATCH -t 01:30:00" in script
+        # Default GPU partition is 'gpu' (env override available).
+        assert "#SBATCH -p gpu" in script
+        assert "python -c 'print(42)'" in script
+
+
 def test_mcsa_parser_offline():
     """MCSAEntry parser must build a valid object from a tiny stub
     JSON shaped like the API response — no network needed."""
