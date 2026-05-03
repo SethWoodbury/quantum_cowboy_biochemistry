@@ -49,6 +49,35 @@ def test_new_qm_adapters_import_clean():
     assert yarp.yarp_available() is False  # stub: always False
 
 
+def test_apptainer_exec_helper():
+    """Apptainer exec helper builds the right --nv / --bind / sif sequence."""
+    from quantum_engine.site import apptainer_exec, CONTAINERS
+    assert "universal" in CONTAINERS
+    assert "qcb" in CONTAINERS
+
+    # Generic invocation
+    cmd = apptainer_exec("universal", "python --version")
+    assert "apptainer exec" in cmd
+    assert "--bind /home:/home" in cmd
+    assert "--bind /net:/net" in cmd
+    assert "/net/software/containers/universal.sif" in cmd
+    assert cmd.endswith(" python --version")
+    assert "--nv" not in cmd  # gpu=False default
+
+    # GPU + custom binds + env vars
+    cmd2 = apptainer_exec("qcb", "python -c 'print(42)'",
+                          gpu=True, binds=("/home", "/scratch"),
+                          env={"QCB_TEST": "1"})
+    assert "--nv" in cmd2
+    assert "--bind /scratch:/scratch" in cmd2
+    assert "--bind /net:/net" not in cmd2  # not in custom binds
+    assert "--env QCB_TEST=1" in cmd2
+
+    # Absolute path also accepted
+    cmd3 = apptainer_exec("/some/custom.sif", "echo hi")
+    assert "/some/custom.sif" in cmd3
+
+
 def test_slurm_job_runner_imports_and_formats():
     """SLURM generic job runner — must build a sbatch script without
     actually submitting (no SLURM on the dev box). Verifies all directives

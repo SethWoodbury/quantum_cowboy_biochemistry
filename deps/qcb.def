@@ -1,0 +1,142 @@
+Bootstrap: localimage
+From: /net/software/containers/universal.sif
+
+# QCB enzyme TS-search pipeline container — single image holding every
+# chemistry / MLFF / path-search dep we use across enzyme_ts_design and
+# mcsa_theozyme.
+#
+# Strategy: build on the lab's universal.sif (Python 3.11 + torch 2.11 +
+# mace 0.3.15 + rdkit + biotite) and pip-add everything else — autodE,
+# RXNMapper, SCINE Chemoton/ReaDuct/Sparrow, orb-models, AIMNet (no extras),
+# pysisyphus, sella, openmm-ml + openmm-plumed, CGRtools.
+#
+# Pin numpy to 1.26.4 — that's the only version SCINE Chemoton 4.1.0
+# tolerates AND that AIMNet (sans [sella,pysis] extras) accepts. Without
+# this pin, sella/pysisyphus pulled in numpy 2.4 and broke SCINE.
+#
+# Build:
+#   apptainer build --fakeroot \
+#       /net/software/containers/users/woodbuse/qcb/qcb-$(date +%Y%m%d).sif \
+#       deps/qcb.def
+#
+# Run (example — explicit binds to /net for shared databases):
+#   apptainer exec --nv \
+#       --bind /home:/home --bind /net:/net --bind /mnt:/mnt \
+#       /net/software/containers/users/woodbuse/qcb/qcb.sif \
+#       python -m enz_qc_pipelines.mcsa_theozyme.cli --mcsa-id 159 ...
+
+%labels
+    Author woodbuse@uw.edu
+    Project qcb (quantum_cowboy_biochemistry)
+    Repo https://github.com/SethWoodbury/quantum_cowboy_biochemistry
+    Base universal.sif
+    NumpyPin 1.26.4
+
+%post
+    set -euxo pipefail
+
+    PIP="/opt/conda/bin/pip --no-cache-dir"
+
+    # ── 1. Pin numpy first — every downstream wheel resolves against it ──
+    # SCINE Chemoton 4.1.0 hard-pins numpy<2; AIMNet/sella/pysis only
+    # *demand* numpy>=2 if you take their full extras. We avoid the extras.
+    $PIP install --upgrade pip
+    $PIP install "numpy==1.26.4" "scipy>=1.11,<1.13"
+
+    # ── 2. Chemistry workflow tools ──────────────────────────────────────
+    $PIP install \
+        "rdkit>=2024.03" \
+        "epam.indigo>=1.27" \
+        "rxnmapper>=0.4" \
+        "CGRtools==4.1.27" \
+        "biotite" \
+        "ase>=3.23" \
+        "matplotlib>=3.7"
+
+    # autodE — only on GitHub, not PyPI. Pin to a tested release.
+    $PIP install "git+https://github.com/duartegroup/autodE.git@v1.4.5"
+
+    # ── 3. Path-search engines (vendor-installed too, but having pip-
+    # versioned copies inside the container makes the runtime hermetic) ──
+    $PIP install \
+        "pysisyphus>=0.7" \
+        "sella>=2.3"
+
+    # ── 4. SCINE Chemoton + ReaDuct + Sparrow (Linux-64 wheels only) ────
+    $PIP install \
+        "scine-chemoton==4.1.0" \
+        "scine-readuct==6.1.0" \
+        "scine-sparrow==5.1.0" \
+        || echo "WARN: scine install hit a snag; container still ships without it"
+
+    # ── 5. MLFF model loaders ───────────────────────────────────────────
+    # mace-torch is already in the base universal.sif (0.3.15). Just add
+    # the openmm-ml integration so we can swap MACE / ANI in OpenMM.
+    $PIP install \
+        "openmm-ml" \
+        "openmm-plumed" \
+        || echo "WARN: openmm-ml/plumed install failed; container still functional"
+
+    # OrbMol via the Orbital Materials package
+    $PIP install "orb-models" || echo "WARN: orb-models install failed"
+
+    # AIMNet without [sella,pysis] extras (those force numpy 2.x which
+    # would break SCINE). Pysisyphus + sella are installed separately above.
+    $PIP install "aimnet" || echo "WARN: aimnet install failed"
+
+    # FairChem (UMA family). Optional.
+    $PIP install "fairchem-core" || echo "WARN: fairchem-core install failed"
+
+    # ── 6. Final sanity check ───────────────────────────────────────────
+    /opt/conda/bin/python <<'PYEOF'
+import importlib
+import numpy
+print("numpy:", numpy.__version__)
+mods = [
+    "torch", "mace", "rdkit", "ase", "biotite",
+    "rxnmapper", "CGRtools", "autode",
+    "pysisyphus", "sella",
+    "scine_chemoton", "scine_readuct",
+    "orb_models", "aimnet",
+]
+for m in mods:
+    try:
+        mod = importlib.import_module(m)
+        v = getattr(mod, "__version__", "?")
+        print(f"  {m:20s} {v}")
+    except Exception as e:
+        print(f"  {m:20s} FAIL: {type(e).__name__}: {e}")
+PYEOF
+
+    # Make /tmp writable inside the container (some packages assume it).
+    mkdir -p /tmp /scratch
+    chmod 1777 /tmp /scratch || true
+
+%environment
+    export QCB_CONTAINER=qcb
+    # Point HuggingFace cache at the lab-shared registry so MACE / OrbMol /
+    # AIMNet checkpoints don't get re-downloaded per-user.
+    export HF_HOME=/net/databases/huggingface
+    export TRANSFORMERS_CACHE=$HF_HOME/hub
+    # No mace-polar graph_electrostatics yet (gbg222's venv only); set this
+    # when we fold that in later.
+
+%runscript
+    exec /opt/conda/bin/python "$@"
+
+%help
+    Apptainer container for the QCB enzyme TS-search pipeline.
+
+    Usage:
+        apptainer exec --nv --bind /net:/net --bind /home:/home \
+            qcb.sif python -m enz_qc_pipelines.mcsa_theozyme.cli ...
+
+    Or as a Python interpreter:
+        apptainer exec --nv --bind /net:/net qcb.sif python script.py
+
+    The QCB git checkout lives under your $HOME and is mounted into the
+    container. Editable install:
+        apptainer exec qcb.sif pip install -e /home/woodbuse/codebase_projects/quantum_cowboy_biochemistry
+
+    See deps/qcb.def for the build recipe and
+    /net/software/containers/users/woodbuse/qcb/ for the .sif.

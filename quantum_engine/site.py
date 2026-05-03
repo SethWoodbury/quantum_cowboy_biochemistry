@@ -13,9 +13,61 @@ from pathlib import Path
 # ══════════════════════════════════════════════════════════════
 
 # Apptainer containers
+#
+# Cluster convention is /net/software/containers/<name>.sif (admin-managed)
+# or /net/software/containers/users/<user>/<project>/<name>.sif (user-built).
+# QCB ships its own self-contained container at the latter — built from
+# deps/qcb.def on top of the admin-managed universal.sif. See deps/qcb.def
+# for the recipe and `apptainer_exec(container, command)` below for the
+# canonical way to invoke a containerised step.
+_QCB_CONTAINERS_USER = "/net/software/containers/users/woodbuse/qcb"
+
+
+def _resolve_qcb_container() -> str:
+    """Pick the newest qcb-YYYYMMDD.sif under the user-container dir,
+    falling back to a generic qcb.sif symlink if present."""
+    import glob as _glob
+    candidates = sorted(_glob.glob(f"{_QCB_CONTAINERS_USER}/qcb-*.sif"),
+                        reverse=True)
+    if candidates:
+        return candidates[0]
+    return f"{_QCB_CONTAINERS_USER}/qcb.sif"
+
+
 CONTAINERS = {
     "universal": "/net/software/containers/universal.sif",
+    "qcb": _resolve_qcb_container(),
 }
+
+
+def apptainer_exec(
+    container: str,
+    command: str,
+    *,
+    gpu: bool = False,
+    binds: tuple[str, ...] = ("/home", "/net", "/mnt"),
+    env: dict[str, str] | None = None,
+) -> str:
+    """Build the canonical ``apptainer exec ...`` shell prefix for a
+    QCB step. Prepends to ``command`` (a free-form shell string) and
+    returns the full string ready for ``subprocess.run`` or SLURM
+    submission.
+
+    ``container`` accepts either a key from :data:`CONTAINERS` or an
+    absolute path to a .sif file. ``binds`` defaults to /home + /net
+    + /mnt — the standard cluster mounts for QCB pipelines.
+    """
+    sif = CONTAINERS.get(container, container)
+    parts = ["apptainer", "exec"]
+    if gpu:
+        parts.append("--nv")
+    for b in binds:
+        parts.extend(["--bind", f"{b}:{b}"])
+    if env:
+        for k, v in env.items():
+            parts.extend(["--env", f"{k}={v}"])
+    parts.append(sif)
+    return " ".join(parts) + " " + command
 
 # MACE / MLFF models — centralised HF-cache layout at
 # /net/databases/huggingface/mlFF_models/ (group `baker`, setgid 2775,

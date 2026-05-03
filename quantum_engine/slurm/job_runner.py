@@ -70,6 +70,13 @@ class JobConfig:
     setup_lines: list[str] = field(default_factory=list)  # extra bash before command
     dependency: str | None = None             # e.g. 'afterok:12345'
 
+    # Optional apptainer wrapping — when set, the script wraps `command`
+    # in `apptainer exec [--nv] --bind <binds> <container> <command>`.
+    # ``container`` accepts a CONTAINERS key (e.g. "qcb") or absolute
+    # .sif path. Binds default to /home + /net + /mnt.
+    container: str | None = None
+    container_binds: tuple[str, ...] = ("/home", "/net", "/mnt")
+
     def resolve_partition(self) -> str:
         """Resolve partition: explicit > env > L40 default for GPU else cpu."""
         if self.partition:
@@ -81,6 +88,16 @@ class JobConfig:
             return env_part
         # DIGS conventional defaults: L40 GPU partition, generic CPU partition
         return "gpu" if self.gpu else "cpu"
+
+    def wrap_command(self) -> str:
+        """Return the actual shell command with optional apptainer prefix."""
+        if not self.container:
+            return self.command
+        from quantum_engine.site import apptainer_exec
+        return apptainer_exec(
+            self.container, self.command,
+            gpu=self.gpu, binds=self.container_binds,
+        )
 
 
 @dataclass
@@ -152,7 +169,7 @@ def _format_sbatch(cfg: JobConfig) -> str:
         body_lines.append(f"module load {mod}")
     body_lines.extend(cfg.setup_lines)
     body_lines.append(f"cd {workdir}")
-    body_lines.append(cfg.command)
+    body_lines.append(cfg.wrap_command())
 
     return "\n".join([
         "#!/usr/bin/env bash",
