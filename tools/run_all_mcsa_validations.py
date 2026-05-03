@@ -108,6 +108,7 @@ class EntryResult:
 def run_one_entry(case: TestCase, root: Path, *,
                   max_stage: int = 99,
                   include_vacuum_ts: bool = True,
+                  skip_refinement: bool = False,
                   log: logging.Logger) -> EntryResult:
     """Run the mcsa_theozyme pipeline on one entry; tolerate per-stage
     NIE and per-entry exceptions."""
@@ -152,6 +153,8 @@ def run_one_entry(case: TestCase, root: Path, *,
 
     if not include_vacuum_ts:
         all_stages = [s for s in all_stages if s[0] != "per_step_vacuum_ts"]
+    if skip_refinement:
+        all_stages = [s for s in all_stages if s[0] != "iterative_refine"]
 
     # Filter by max_stage (1-indexed: stage 1 = fetch, stage 9 = write)
     selected = all_stages[:max_stage]
@@ -314,6 +317,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Stop after stage N (1=fetch, 5=vacuum_ts, 9=write_theozyme)")
     p.add_argument("--no-vacuum-ts", action="store_true",
                    help="Skip Stage 4 (vacuum TS); useful when autodE is broken")
+    p.add_argument("--skip-refinement", action="store_true",
+                   help="Skip Stage 5 (iterative_refine) — useful when MACE / "
+                        "MLFF aren't loadable in this env (gbg222 venv only).")
     p.add_argument("--container", default=None,
                    help="Apptainer container key (e.g. 'quantum_chem'). "
                         "If set, this script must be invoked from a wrapper "
@@ -353,6 +359,7 @@ def main(argv: list[str] | None = None) -> int:
                 case, args.outdir,
                 max_stage=args.max_stage,
                 include_vacuum_ts=not args.no_vacuum_ts,
+                skip_refinement=args.skip_refinement,
                 log=log,
             )
             results.append(r)
