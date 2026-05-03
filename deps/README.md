@@ -14,6 +14,10 @@ Vendored third-party dependencies built from source. Adding a new dep here means
 | `crest/` | Grimme conformer-rotamer ensemble sampler | `build_crest.sh` |
 | `ketcher/` | EPAM 2D molecular / reaction editor (web) | `build_ketcher.sh` (or `tools/ketcher.html` for zero-install) |
 | `openmm/` | OpenMM MD engine + companion ML/PLUMED bindings | `build_openmm.sh` |
+| `scine_chemoton/` | SCINE reaction-network exploration (qcscine/chemoton, BSD-3) | `build_scine.sh` (PyPI install — submodule is tracking only) |
+| `scine_readuct/` | SCINE single/double-ended path search + TS opt (qcscine/readuct, BSD-3) | `build_scine.sh` |
+| `molecularGSM/` | Active-maintained C++ GSM (ZimmermanGroup, MIT) | `build_molecular_gsm.sh` (CMake + MKL) |
+| `pyGSM/` | Python GSM (ZimmermanGroup, MIT) | `pip install -e deps/pyGSM` |
 
 Loose source trees: `graph_longrange_src/`, `mace_polar_src/`, `pyGSM/` — checked-in copies, not submodules.
 

@@ -178,3 +178,72 @@ def _resolve_chemshell() -> str | None:
 
 CREST_BIN = _resolve_crest()
 CHEMSHELL_BIN = _resolve_chemshell()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Lab-shared data + install locations
+# ─────────────────────────────────────────────────────────────────────
+# Two parallel scratch namespaces on DIGS:
+#   * /net/databases — lab-shared scientific data (ChEBI dump, M-CSA
+#     JSON, RGD1 archives, MME55 SI, etc.). Read-mostly; we cache here
+#     when we have write perms, so the next user doesn't re-download.
+#   * /net/software/lab — lab-shared installs (parallel to /net/software,
+#     which is admin-managed). Tools we vendor under deps/ get copied
+#     here when QCB_INSTALL_LAB_SHARED=1 is set during build.
+
+DATABASES_DIR = "/net/databases"
+LAB_SOFTWARE = "/net/software/lab"
+
+# Lab-mounted PDB mirror — hash-bucketed (../pdb/<2-char hash>/<id>.pdb.gz),
+# updated weekly by the cluster. Use this instead of the RCSB FTP to keep
+# pipelines deterministic + offline-friendly. Falls back to None if the
+# mount isn't visible (laptop dev, etc.) — callers should detect and
+# fall back to RCSB HTTP.
+PDB_MIRROR = "/net/databases/rcsb/pdb" if os.path.isdir("/net/databases/rcsb/pdb") else None
+CIF_MIRROR = "/net/databases/rcsb/cif" if os.path.isdir("/net/databases/rcsb/cif") else None
+
+
+def _resolve_cache_dir(name: str) -> Path:
+    """Pick a writable cache dir: prefer DATABASES_DIR/<name>, fall back
+    to <repo>/data/<name>. Lazy — creates the dir on first call only."""
+    shared = Path(DATABASES_DIR) / name
+    try:
+        shared.mkdir(parents=True, exist_ok=True)
+        return shared
+    except (PermissionError, OSError):
+        local = _REPO_ROOT / "data" / name
+        local.mkdir(parents=True, exist_ok=True)
+        return local
+
+
+def mcsa_cache_dir() -> Path:
+    """Cache dir for M-CSA JSON entries (per-entry .json files)."""
+    return _resolve_cache_dir("mcsa_cache")
+
+
+def chebi_cache_dir() -> Path:
+    """Cache dir for ChEBI flat-file dump + per-id SMILES lookups."""
+    return _resolve_cache_dir("chebi_cache")
+
+
+def benchmark_cache_dir() -> Path:
+    """Cache dir for downloaded TS benchmark datasets (RGD1, MME55, …)."""
+    return _resolve_cache_dir("benchmark_cache")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# molecularGSM (ZimmermanGroup) — C++/CMake + MKL source build.
+# Vendored at deps/molecularGSM. No pip/conda path; binary-only tool
+# driven via subprocess. Build with `bash deps/build_molecular_gsm.sh`.
+# ─────────────────────────────────────────────────────────────────────
+
+def _resolve_molecular_gsm() -> str | None:
+    candidates = [
+        os.environ.get("QCB_MOLECULAR_GSM_BIN"),
+        str(_REPO_ROOT / "deps" / "molecularGSM" / "install" / "bin" / "gsm"),
+        f"{LAB_SOFTWARE}/molecularGSM/current/bin/gsm",
+    ]
+    return next((p for p in candidates if p and os.path.isfile(p)), None)
+
+
+MOLECULAR_GSM_BIN = _resolve_molecular_gsm()

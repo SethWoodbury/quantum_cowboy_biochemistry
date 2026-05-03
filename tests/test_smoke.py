@@ -36,6 +36,83 @@ def test_subpackage_imports():
     )
 
 
+def test_new_qm_adapters_import_clean():
+    """Each lazy QM adapter (scine, pygsm, pysisyphus, molecular_gsm,
+    yarp) must import without raising even when the underlying tool is
+    absent — they expose <name>_available() bool checks instead."""
+    from quantum_engine.qm import scine, pygsm, pysisyphus, molecular_gsm, yarp
+    # Each module exposes an availability check that returns bool, not raise.
+    assert isinstance(scine.scine_available(), bool)
+    assert isinstance(pygsm.pygsm_available(), bool)
+    assert isinstance(pysisyphus.pysisyphus_available(), bool)
+    assert isinstance(molecular_gsm.molecular_gsm_available(), bool)
+    assert yarp.yarp_available() is False  # stub: always False
+
+
+def test_mcsa_parser_offline():
+    """MCSAEntry parser must build a valid object from a tiny stub
+    JSON shaped like the API response — no network needed."""
+    from quantum_engine.data.mcsa import _parse_entry, MCSAEntry
+    raw = {
+        "enzyme_name": "test enzyme",
+        "all_ecs": ["1.1.1.1"],
+        "reference_uniprot_id": "P12345",
+        "residues": [
+            {
+                "function_location_abv": "general acid",
+                "residue_chains": [{
+                    "code": "HIS", "auth_resid": 7, "chain_name": "A",
+                    "is_reference": True, "pdb_id": "1xyz",
+                }],
+                "residue_sequences": [{"resid": 7}],
+                "roles_summary": ["proton donor"],
+            },
+            {
+                "function_location_abv": "metal ligand",
+                "residue_chains": [{
+                    "code": "KCX", "auth_resid": 169, "chain_name": "A",
+                    "is_reference": True, "pdb_id": "1xyz",
+                }],
+                "residue_sequences": [{"resid": 169}],
+                "roles_summary": ["metal ligand"],
+            },
+        ],
+        "reaction": {"compounds": [{"chebi_id": 25212}], "mechanisms": []},
+    }
+    entry = _parse_entry(raw, mcsa_id=999)
+    assert isinstance(entry, MCSAEntry)
+    assert entry.enzyme_name == "test enzyme"
+    assert entry.ec == ["1.1.1.1"]
+    assert entry.reference_pdb == "1xyz"
+    assert len(entry.catalytic_residues) == 2
+    assert entry.catalytic_residues[1].is_ptm is True   # KCX flagged
+    assert entry.chebi_ids == [25212]
+
+
+def test_new_pipeline_scaffolds_assemble():
+    """Both new pipeline builders should construct without running.
+    Stages will raise NotImplementedError at run-time; that's fine."""
+    from enz_qc_pipelines.enzyme_ts_design import build_enzyme_ts_design_pipeline
+    from enz_qc_pipelines.mcsa_theozyme import build_mcsa_theozyme_pipeline
+
+    p1 = build_enzyme_ts_design_pipeline(
+        reactant_smiles="CC", product_smiles="CC")
+    assert len(p1.steps) == 9
+    assert [s.name for s in p1.steps] == [
+        "parse_reaction", "vacuum_ts", "active_site_prep",
+        "ts_conformers", "dock_ts", "iterative_refine",
+        "in_protein_path", "polish_ts", "write_cif",
+    ]
+
+    p2 = build_mcsa_theozyme_pipeline(mcsa_id=159)
+    assert len(p2.steps) == 9
+    assert [s.name for s in p2.steps] == [
+        "fetch_mcsa", "resolve_smiles", "crop_active_site",
+        "tier2_expansion", "per_step_vacuum_ts", "iterative_refine",
+        "path_refind_from_arrows", "polish_ts", "write_theozyme",
+    ]
+
+
 def test_units_constants_consistent():
     """Sanity-check the EV_TO_KCAL value used in ~15 files."""
     from quantum_engine.units import EV_TO_KCAL, EV_TO_KJ, KJ_TO_KCAL

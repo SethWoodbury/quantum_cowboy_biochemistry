@@ -1,5 +1,20 @@
 """
-Quantum chemistry: Gaussian, ORCA, xTB input generation and SLURM submission.
+Quantum chemistry adapters.
+
+Eager-imported (always work, no optional deps): Gaussian / ORCA input
+generation + parsing, xTB ASE wrapper, SLURM submit helpers.
+
+Lazy adapters — import directly from their module to avoid pulling
+optional deps into the parent import chain. Each exposes a cheap
+``<tool>_available()`` check before invocation:
+
+  * ``quantum_engine.qm.crest``         — Grimme CREST conformer search
+  * ``quantum_engine.qm.chemshell``     — ChemShell QM/MM (registration-walled)
+  * ``quantum_engine.qm.scine``         — SCINE Chemoton + ReaDuct
+  * ``quantum_engine.qm.pygsm``         — pyGSM single/double-ended GSM
+  * ``quantum_engine.qm.pysisyphus``    — pysisyphus NEB / dimer / IRC
+  * ``quantum_engine.qm.molecular_gsm`` — molecularGSM (C++ binary)
+  * ``quantum_engine.qm.yarp``          — YARP stub (upstream dead — use scine)
 """
 
 from quantum_engine.qm.gaussian import (

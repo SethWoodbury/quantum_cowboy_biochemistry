@@ -27,3 +27,12 @@
 [submodule "deps/openmm"]
 	path = deps/openmm
 	url = https://github.com/openmm/openmm.git
+[submodule "deps/scine_chemoton"]
+	path = deps/scine_chemoton
+	url = https://github.com/qcscine/chemoton.git
+[submodule "deps/scine_readuct"]
+	path = deps/scine_readuct
+	url = https://github.com/qcscine/readuct.git
+[submodule "deps/molecularGSM"]
+	path = deps/molecularGSM
+	url = https://github.com/ZimmermanGroup/molecularGSM.git

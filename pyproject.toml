@@ -28,11 +28,27 @@ chem = [
     "CGRtools>=4.1",           # bond-change / reaction-graph diff
     "autode>=1.4",             # SMILES → reaction profile (defaults to xtb / ORCA)
 ]
+# SCINE Chemoton + ReaDuct (separate group — heavy + Linux-64 wheels only).
+# Installed by deps/build_scine.sh; pinned here too for editable installs.
+# Submodules at deps/scine_chemoton + deps/scine_readuct are source-of-truth
+# tracking only.
+scine = [
+    "scine-chemoton==4.1.0",
+    "scine-readuct==6.1.0",
+    "scine-sparrow==5.1.0",
+]
+# Path-search engines vendored under deps/ (pip-editable installs):
+#   pip install -e deps/pyGSM
+#   pip install -e deps/pysisyphus
+# molecularGSM is CMake/MKL source build — see deps/build_molecular_gsm.sh.
+opt = ["pysisyphus>=0.7"]
 # Everything except cuda-only MLFF stuff.
 all = ["ase>=3.23", "mace-torch>=0.3.10", "sella>=2.3", "biotite>=0.40",
        "scikit-image>=0.22", "pandas>=2.0",
        "rdkit>=2024.03", "epam.indigo>=1.27", "rxnmapper>=0.4",
-       "CGRtools>=4.1", "autode>=1.4"]
+       "CGRtools>=4.1", "autode>=1.4",
+       "scine-chemoton==4.1.0", "scine-readuct==6.1.0", "scine-sparrow==5.1.0",
+       "pysisyphus>=0.7"]
 
 [project.scripts]
 # CLI binary stays `qcb` for backwards compatibility / habit; package is
