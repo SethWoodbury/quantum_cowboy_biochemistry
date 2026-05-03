@@ -50,17 +50,19 @@ mace-torch==0.3.15
 pydantic<2.0
 CONSTRAINTS
 
-    PIP="/usr/local/conda/bin/pip --no-cache-dir --constraint /tmp/qc_constraints.txt"
+    # --constraint is a `pip install` flag, not a global pip flag, so
+    # we keep it separate from $PIP and append it on every install line.
+    PIP="/usr/local/conda/bin/pip --no-cache-dir"
+    C="--constraint /tmp/qc_constraints.txt"
 
-    # Refresh pip itself (constraint file ignored for this one — it's
-    # not a runtime dep).
-    /usr/local/conda/bin/pip install --no-cache-dir --upgrade pip
+    # Refresh pip itself (no constraint — pip's not a runtime dep).
+    $PIP install --upgrade pip
 
     # ── 1. Re-pin numpy explicitly so the constraint takes effect first ──
-    $PIP install "numpy==1.26.4" "scipy<1.13"
+    $PIP install $C "numpy==1.26.4" "scipy<1.13"
 
     # ── 2. Chemistry workflow tools ──────────────────────────────────────
-    $PIP install \
+    $PIP install $C \
         "rdkit>=2024.03" \
         "epam.indigo>=1.27" \
         "rxnmapper>=0.4" \
@@ -70,16 +72,16 @@ CONSTRAINTS
         "matplotlib>=3.7"
 
     # autodE — only on GitHub, not PyPI. Pin to a tested release.
-    $PIP install "git+https://github.com/duartegroup/autodE.git@v1.4.5"
+    $PIP install $C "git+https://github.com/duartegroup/autodE.git@v1.4.5"
 
     # ── 3. Path-search engines (vendor-installed too, but having pip-
     # versioned copies inside the container makes the runtime hermetic) ──
-    $PIP install \
+    $PIP install $C \
         "pysisyphus>=0.7" \
         "sella>=2.3"
 
     # ── 4. SCINE Chemoton + ReaDuct + Sparrow (Linux-64 wheels only) ────
-    $PIP install \
+    $PIP install $C \
         "scine-chemoton==4.1.0" \
         "scine-readuct==6.1.0" \
         "scine-sparrow==5.1.0" \
@@ -88,17 +90,17 @@ CONSTRAINTS
     # ── 5. MLFF model loaders ───────────────────────────────────────────
     # mace-torch is already in the base universal.sif (0.3.15). Just add
     # the openmm-ml integration so we can swap MACE / ANI in OpenMM.
-    $PIP install \
+    $PIP install $C \
         "openmm-ml" \
         "openmm-plumed" \
         || echo "WARN: openmm-ml/plumed install failed; container still functional"
 
     # OrbMol via the Orbital Materials package
-    $PIP install "orb-models" || echo "WARN: orb-models install failed"
+    $PIP install $C "orb-models" || echo "WARN: orb-models install failed"
 
     # AIMNet without [sella,pysis] extras (those force numpy 2.x which
     # would break SCINE). Pysisyphus + sella are installed separately above.
-    $PIP install "aimnet" || echo "WARN: aimnet install failed"
+    $PIP install $C "aimnet" || echo "WARN: aimnet install failed"
 
     # NOTE: fairchem-core was tried but it transitively pulls torch 2.8 +
     # numpy 2.x + new pydantic which breaks the rest of the stack even
