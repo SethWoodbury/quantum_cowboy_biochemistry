@@ -58,6 +58,8 @@ class JobConfig:
     workdir: Path                             # also where logs land
     job_name: str = "qcb_job"
     partition: str | None = None              # falls back to env / L40 default
+    # Default billing: IPD (Institute for Protein Design at UW). Override
+    # with QCB_SLURM_ACCOUNT env var or per-job via the constructor.
     account: str | None = None
     gpu: bool = False                         # adds --gres=gpu:1 if True
     n_gpus: int = 1
@@ -156,8 +158,11 @@ def _format_sbatch(cfg: JobConfig) -> str:
         f"#SBATCH -o {stdout}",
         f"#SBATCH -e {stderr}",
     ]
-    if cfg.account:
-        directives.append(f"#SBATCH -A {cfg.account}")
+    # Resolve account: explicit > env var QCB_SLURM_ACCOUNT > "IPD" default.
+    # Default is "IPD" (Institute for Protein Design at UW) — matches the
+    # lab's default billing account.
+    account = cfg.account or os.environ.get("QCB_SLURM_ACCOUNT") or "IPD"
+    directives.append(f"#SBATCH -A {account}")
     if cfg.gpu:
         directives.append(f"#SBATCH --gres=gpu:{cfg.n_gpus}")
     if cfg.dependency:
