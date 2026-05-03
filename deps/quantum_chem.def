@@ -37,7 +37,7 @@ From: /net/software/containers/universal.sif
     # set -eux is enough — pip already errors out on its own pipe failures.
     set -eux
 
-    PIP="/opt/conda/bin/pip --no-cache-dir"
+    PIP="/usr/local/conda/bin/pip --no-cache-dir"
 
     # ── 1. Pin numpy first — every downstream wheel resolves against it ──
     # SCINE Chemoton 4.1.0 hard-pins numpy<2; AIMNet/sella/pysis only
@@ -90,7 +90,7 @@ From: /net/software/containers/universal.sif
     $PIP install "fairchem-core" || echo "WARN: fairchem-core install failed"
 
     # ── 6. Final sanity check ───────────────────────────────────────────
-    /opt/conda/bin/python <<'PYEOF'
+    /usr/local/conda/bin/python <<'PYEOF'
 import importlib
 import numpy
 print("numpy:", numpy.__version__)
@@ -124,7 +124,7 @@ PYEOF
     # when we fold that in later.
 
 %runscript
-    exec /opt/conda/bin/python "$@"
+    exec /usr/local/conda/bin/python "$@"
 
 %help
     Apptainer container for the QCB enzyme TS-search pipeline.
