@@ -77,6 +77,16 @@ MACE_MODELS = {
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-off-23/MACE-OFF23_large.model",
         "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
     ),
+    # MACE-OFF24 — newer organic-molecule training (still wB97M-D3BJ, no
+    # metals — useful for substrate/residue cleanup).
+    "mace-off-24": _resolve_mace("mace-off-24",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-off-24/MACE-OFF24_medium.model",
+        None,
+    ),
+    "mace-off-24-medium": _resolve_mace("mace-off-24-medium",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-off-24/MACE-OFF24_medium.model",
+        None,
+    ),
 
     # Charge-aware, trained on TS data (wB97M-V, all elements)
     "mace-omol": _resolve_mace("mace-omol",
