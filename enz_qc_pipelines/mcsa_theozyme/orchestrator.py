@@ -1075,11 +1075,22 @@ def _mlff_polish(atoms, outdir: Path, *, model: str, fmax: float,
     elif "polar" in model:
         fallback_chain.append("mace-omol")
 
+    # Auto-detect device — fall back to CPU when CUDA isn't available
+    # (e.g. container without GPU, or scratch dev runs). MACE checkpoints
+    # serialised on a CUDA device error out at torch.load() with
+    # map_location implied as the original device, so an explicit
+    # device='cpu' here is the right thing on a CPU-only host.
+    try:
+        import torch as _torch
+        device = "cuda" if _torch.cuda.is_available() else "cpu"
+    except Exception:
+        device = "cpu"
+
     last_err: Exception | None = None
     for candidate in fallback_chain:
         try:
             calc = make_calc(model=candidate, charge=charge,
-                             device="cuda", default_dtype="float64")
+                             device=device, default_dtype="float64")
         except Exception as e:
             last_err = e
             log.warning(f"    {candidate} not loadable: {type(e).__name__}: {e}")

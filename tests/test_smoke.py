@@ -152,6 +152,65 @@ def test_mcsa_parser_offline():
     assert entry.chebi_ids == [25212]
 
 
+def test_mcsa_theozyme_stage5_and_8_helpers():
+    """Stage 5 (refinement) + Stage 8 (theozyme writer) helpers must
+    work without an MLFF. Pure-Python checks: net-charge inference,
+    CA-atom indexing, plausibility-flag computation."""
+    from enz_qc_pipelines.mcsa_theozyme.orchestrator import (
+        _infer_net_charge_from_smiles, _ca_indices_from_pdb,
+        _compute_plausibility_flags,
+    )
+
+    # Net charge from SMILES
+    assert _infer_net_charge_from_smiles("") == 0
+    assert _infer_net_charge_from_smiles("CCO") == 0
+    assert _infer_net_charge_from_smiles("[OH-]") == -1
+    assert _infer_net_charge_from_smiles("[Na+]") == 1
+    assert _infer_net_charge_from_smiles("[NH4+].[Cl-]") == 0
+    # Paraoxon zwitterionic nitro — formal charges sum to 0
+    assert _infer_net_charge_from_smiles(
+        "CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1.O") == 0
+
+    # CA indices on a tiny synthetic PDB (3 residues with CA atoms)
+    import tempfile
+    pdb_text = (
+        "ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00  0.00           N  \n"
+        "ATOM      2  CA  ALA A   1       1.000   0.000   0.000  1.00  0.00           C  \n"
+        "ATOM      3  C   ALA A   1       2.000   0.000   0.000  1.00  0.00           C  \n"
+        "ATOM      4  O   ALA A   1       3.000   0.000   0.000  1.00  0.00           O  \n"
+        "ATOM      5  N   GLY A   2       4.000   0.000   0.000  1.00  0.00           N  \n"
+        "ATOM      6  CA  GLY A   2       5.000   0.000   0.000  1.00  0.00           C  \n"
+        "ATOM      7  C   GLY A   2       6.000   0.000   0.000  1.00  0.00           C  \n"
+        "HETATM    8  ZN  ZN  A 100       7.000   0.000   0.000  1.00  0.00          ZN  \n"
+        "END\n"
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".pdb", delete=False) as fh:
+        fh.write(pdb_text)
+        pdb_path = fh.name
+    ca_idx = _ca_indices_from_pdb(pdb_path)
+    # Indices 1 (CA of ALA) and 5 (CA of GLY) — ZN is HETATM not CA
+    assert ca_idx == [1, 5], f"expected [1, 5], got {ca_idx}"
+
+    # Plausibility flags from a synthetic history dict
+    class _FakeStep:
+        def __init__(self, **outputs):
+            self.outputs = outputs
+    history = {
+        "tier2_expansion": _FakeStep(n_added_motif=2),
+        "crop_active_site": _FakeStep(cofactors=["ZN", "ZN"]),
+        "per_step_vacuum_ts": _FakeStep(vacuum_barrier_kcal=25.0),
+    }
+
+    class _FakeEntry:
+        ptm_residues = [type("R", (), {"code": "KCX"})()]
+    flags = _compute_plausibility_flags(history, _FakeEntry())
+    assert flags["tier2_motif_filled"] is True
+    assert flags["ptm_residues_present"] is True
+    assert flags["cofactor_metals_observed"] is True
+    assert flags["barrier_in_physical_range"] is True   # 0 < 25 < 60
+    assert flags["frequency_check_passed"] is None      # polish_ts not in history
+
+
 def test_new_pipeline_scaffolds_assemble():
     """Both new pipeline builders should construct without running.
     Stages will raise NotImplementedError at run-time; that's fine."""
