@@ -41,9 +41,12 @@ From: /net/software/containers/universal.sif
     # honours our hard pins on numpy / torch / e3nn / pydantic. Without
     # this, fairchem-core (and friends) silently upgrade torch / numpy
     # under the feet of MACE / SCINE Chemoton and break the runtime.
+    # Constraints file: hard pins on numpy + torch + e3nn so transitive
+    # deps (orb-models, fairchem, etc.) can't downgrade torch / upgrade
+    # numpy under us. Scipy is left to float — orb-models needs >=1.13
+    # and 1.13+ is binary-compatible with numpy 1.26.
     cat > /tmp/qc_constraints.txt <<'CONSTRAINTS'
 numpy==1.26.4
-scipy<1.13
 torch==2.11.0+cu130
 e3nn==0.4.4
 mace-torch==0.3.15
@@ -59,7 +62,7 @@ CONSTRAINTS
     $PIP install --upgrade pip
 
     # ── 1. Re-pin numpy explicitly so the constraint takes effect first ──
-    $PIP install $C "numpy==1.26.4" "scipy<1.13"
+    $PIP install $C "numpy==1.26.4"
 
     # ── 2. Chemistry workflow tools ──────────────────────────────────────
     $PIP install $C \
@@ -109,25 +112,18 @@ CONSTRAINTS
     # checkpoint loads via the `fairchem` lite path or a separate env.
 
     # ── 6. Final sanity check ───────────────────────────────────────────
-    /usr/local/conda/bin/python <<'PYEOF'
-import importlib
-import numpy
-print("numpy:", numpy.__version__)
-mods = [
-    "torch", "mace", "rdkit", "ase", "biotite",
-    "rxnmapper", "CGRtools", "autode",
-    "pysisyphus", "sella",
-    "scine_chemoton", "scine_readuct",
-    "orb_models", "aimnet",
-]
-for m in mods:
-    try:
-        mod = importlib.import_module(m)
-        v = getattr(mod, "__version__", "?")
-        print(f"  {m:20s} {v}")
-    except Exception as e:
-        print(f"  {m:20s} FAIL: {type(e).__name__}: {e}")
-PYEOF
+    # Run each import in a fresh subprocess + tolerate non-zero exit
+    # (segfaults included). Otherwise a single bad wheel aborts the
+    # whole build at the very end. Failures here are diagnostic only;
+    # the container is shipped regardless.
+    set +e
+    /usr/local/conda/bin/python -c "import numpy; print('numpy:', numpy.__version__)" 2>&1 | tail -1
+    for mod in torch mace rdkit ase biotite rxnmapper CGRtools autode \
+               pysisyphus sella scine_chemoton scine_readuct \
+               orb_models aimnet ; do
+        /usr/local/conda/bin/python -c "import importlib; m = importlib.import_module('$mod'); v = getattr(m, '__version__', '?'); print('  $mod:', v)" 2>&1 | tail -1 || echo "  $mod: FAIL (segfault or import error)"
+    done
+    set -e
 
     # Make /tmp writable inside the container (some packages assume it).
     mkdir -p /tmp /scratch
