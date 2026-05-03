@@ -114,6 +114,18 @@ MACE_MODELS = {
         f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-sm/uma_sm.pt",
         "/mnt/projects/ml/mlff/models/fairchem/UMA/uma_sm.pt",
     ),
+
+    # OrbMol (Orbital Materials, OMol25-trained, charge/spin-aware,
+    # Zn-capable, Apache-2.0). Conservative variant — forces are
+    # gradients of a defined energy surface (matters for saddle search).
+    "orb-mol": _resolve_mace("orb-mol",
+        f"{_HF_HUB_BASE}/models--orbital-materials--orb-mol-conservative/orb-v3-conservative-omol-20250820.ckpt",
+        None,
+    ),
+    "orb-mol-conservative": _resolve_mace("orb-mol-conservative",
+        f"{_HF_HUB_BASE}/models--orbital-materials--orb-mol-conservative/orb-v3-conservative-omol-20250820.ckpt",
+        None,
+    ),
 }
 
 # Multi-head default heads
