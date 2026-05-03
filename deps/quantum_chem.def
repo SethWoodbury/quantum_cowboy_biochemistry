@@ -16,13 +16,13 @@ From: /net/software/containers/universal.sif
 #
 # Build:
 #   apptainer build --fakeroot \
-#       /net/software/containers/users/woodbuse/qcb/qcb-$(date +%Y%m%d).sif \
-#       deps/qcb.def
+#       /net/software/containers/users/woodbuse/quantum_chem/quantum_chem-$(date +%Y%m%d).sif \
+#       deps/quantum_chem.def
 #
 # Run (example — explicit binds to /net for shared databases):
 #   apptainer exec --nv \
 #       --bind /home:/home --bind /net:/net --bind /mnt:/mnt \
-#       /net/software/containers/users/woodbuse/qcb/qcb.sif \
+#       /net/software/containers/users/woodbuse/quantum_chem/quantum_chem.sif \
 #       python -m enz_qc_pipelines.mcsa_theozyme.cli --mcsa-id 159 ...
 
 %labels
@@ -115,7 +115,7 @@ PYEOF
     chmod 1777 /tmp /scratch || true
 
 %environment
-    export QCB_CONTAINER=qcb
+    export QCB_CONTAINER=quantum_chem
     # Point HuggingFace cache at the lab-shared registry so MACE / OrbMol /
     # AIMNet checkpoints don't get re-downloaded per-user.
     export HF_HOME=/net/databases/huggingface
@@ -131,14 +131,14 @@ PYEOF
 
     Usage:
         apptainer exec --nv --bind /net:/net --bind /home:/home \
-            qcb.sif python -m enz_qc_pipelines.mcsa_theozyme.cli ...
+            quantum_chem.sif python -m enz_qc_pipelines.mcsa_theozyme.cli ...
 
     Or as a Python interpreter:
-        apptainer exec --nv --bind /net:/net qcb.sif python script.py
+        apptainer exec --nv --bind /net:/net quantum_chem.sif python script.py
 
     The QCB git checkout lives under your $HOME and is mounted into the
     container. Editable install:
-        apptainer exec qcb.sif pip install -e /home/woodbuse/codebase_projects/quantum_cowboy_biochemistry
+        apptainer exec quantum_chem.sif pip install -e /home/woodbuse/codebase_projects/quantum_cowboy_biochemistry
 
-    See deps/qcb.def for the build recipe and
-    /net/software/containers/users/woodbuse/qcb/ for the .sif.
+    See deps/quantum_chem.def for the build recipe and
+    /net/software/containers/users/woodbuse/quantum_chem/ for the .sif.

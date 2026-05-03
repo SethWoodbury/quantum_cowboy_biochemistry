@@ -16,27 +16,28 @@ from pathlib import Path
 #
 # Cluster convention is /net/software/containers/<name>.sif (admin-managed)
 # or /net/software/containers/users/<user>/<project>/<name>.sif (user-built).
-# QCB ships its own self-contained container at the latter — built from
-# deps/qcb.def on top of the admin-managed universal.sif. See deps/qcb.def
-# for the recipe and `apptainer_exec(container, command)` below for the
-# canonical way to invoke a containerised step.
-_QCB_CONTAINERS_USER = "/net/software/containers/users/woodbuse/qcb"
+# QCB ships a self-contained container at the latter — built from
+# deps/quantum_chem.def on top of the admin-managed universal.sif (we use
+# universal.sif for everything it already provides — Python 3.11, torch,
+# MACE, RDKit, biotite — and only pip-add the pieces it lacks). See
+# `apptainer_exec(container, command)` below for the canonical invocation.
+_QC_CONTAINERS_USER = "/net/software/containers/users/woodbuse/quantum_chem"
 
 
-def _resolve_qcb_container() -> str:
-    """Pick the newest qcb-YYYYMMDD.sif under the user-container dir,
-    falling back to a generic qcb.sif symlink if present."""
+def _resolve_quantum_chem_container() -> str:
+    """Pick the newest quantum_chem-YYYYMMDD.sif under the user-container
+    dir, falling back to a plain ``quantum_chem.sif`` symlink if present."""
     import glob as _glob
-    candidates = sorted(_glob.glob(f"{_QCB_CONTAINERS_USER}/qcb-*.sif"),
+    candidates = sorted(_glob.glob(f"{_QC_CONTAINERS_USER}/quantum_chem-*.sif"),
                         reverse=True)
     if candidates:
         return candidates[0]
-    return f"{_QCB_CONTAINERS_USER}/qcb.sif"
+    return f"{_QC_CONTAINERS_USER}/quantum_chem.sif"
 
 
 CONTAINERS = {
     "universal": "/net/software/containers/universal.sif",
-    "qcb": _resolve_qcb_container(),
+    "quantum_chem": _resolve_quantum_chem_container(),
 }
 
 

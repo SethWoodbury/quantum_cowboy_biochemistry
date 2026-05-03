@@ -53,7 +53,7 @@ def test_apptainer_exec_helper():
     """Apptainer exec helper builds the right --nv / --bind / sif sequence."""
     from quantum_engine.site import apptainer_exec, CONTAINERS
     assert "universal" in CONTAINERS
-    assert "qcb" in CONTAINERS
+    assert "quantum_chem" in CONTAINERS
 
     # Generic invocation
     cmd = apptainer_exec("universal", "python --version")
@@ -65,7 +65,7 @@ def test_apptainer_exec_helper():
     assert "--nv" not in cmd  # gpu=False default
 
     # GPU + custom binds + env vars
-    cmd2 = apptainer_exec("qcb", "python -c 'print(42)'",
+    cmd2 = apptainer_exec("quantum_chem", "python -c 'print(42)'",
                           gpu=True, binds=("/home", "/scratch"),
                           env={"QCB_TEST": "1"})
     assert "--nv" in cmd2
