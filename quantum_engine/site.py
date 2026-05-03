@@ -136,6 +136,16 @@ MACE_MODELS = {
         f"{_HF_HUB_BASE}/models--orbital-materials--orb-mol-conservative/orb-v3-conservative-omol-20250820.ckpt",
         None,
     ),
+
+    # AIMNet2-rxn (Isayev lab, organic-only TS-tuned ensemble — H/C/N/O,
+    # 4-member safetensors ensemble + config). Loaded via the aimnet pip
+    # package. Path here points at ensemble member 0; the calculator
+    # walks the dir for the rest. Encoded as a directory because the
+    # safetensors files only resolve as a set with config.json.
+    "aimnet2-rxn": _resolve_mace("aimnet2-rxn",
+        f"{_HF_HUB_BASE}/models--isayevlab--aimnet2-rxn/ensemble_0.safetensors",
+        None,
+    ),
 }
 
 # Multi-head default heads
