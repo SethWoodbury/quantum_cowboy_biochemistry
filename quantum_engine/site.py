@@ -99,6 +99,12 @@ MACE_MODELS = {
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-mh-0/mace-mh-0.model",
         "/home/gbg222/projects/mace_models/mace-mh-0.model",
     ),
+    # MACE-MH-1 — newer multi-head foundation model (broad coverage:
+    # inorganic crystals + molecules + surfaces). Public GitHub release.
+    "mace-mh-1": _resolve_mace("mace-mh-1",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-mh-1/mace-mh-1.model",
+        None,
+    ),
 
     # Polarizable — BETA / EARLY ACCESS (arXiv 2602.19411v1, not Baker Lab).
     # Needs graph_electrostatics → gbg222 venv only.
