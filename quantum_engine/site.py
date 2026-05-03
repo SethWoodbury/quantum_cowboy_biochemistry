@@ -17,32 +17,103 @@ CONTAINERS = {
     "universal": "/net/software/containers/universal.sif",
 }
 
-# MACE model files on DIGS
+# MACE / MLFF models — centralised HF-cache layout at
+# /net/databases/huggingface/mlFF_models/ (group `baker`, setgid 2775,
+# anyone in the lab can add). The HF naming convention is
+# `models--<org>--<name>/<file>`.
+#
+# Per-alias resolution order:
+#   1. `QCB_MACE_<ALIAS>` env override (e.g. QCB_MACE_POLAR=/path/to/file)
+#   2. central HF location
+#   3. original lab paths (/mnt/projects/... and /home/gbg222/...) — kept
+#      as fallback so in-flight runs against old paths don't break.
+#
+# **MACE-POLAR is internal beta access** (arXiv 2602.19411v1; not a Baker
+# Lab model — early access only). Hence the `-beta` suffix in the dir.
+
+_HF_HUB_BASE = "/net/databases/huggingface/mlFF_models"
+
+
+def _resolve_mace(alias: str, *candidates: str | None) -> str | None:
+    """Resolve an MLFF model path by alias.
+
+    Tries env override ``QCB_MACE_<ALIAS_UPPER>`` first, then each
+    ``candidates`` path in order. Returns the first existing file. If
+    none exist, returns the first non-None candidate (so downstream
+    error messages point at the preferred central location). Returns
+    None if every candidate is None.
+    """
+    if not candidates or all(c is None for c in candidates):
+        return None
+    env_key = f"QCB_MACE_{alias.upper().replace('-', '_')}"
+    for p in [os.environ.get(env_key), *candidates]:
+        if p and os.path.isfile(p):
+            return p
+    return next((c for c in candidates if c is not None), None)
+
+
 MACE_MODELS = {
     # General-purpose (r2SCAN, all elements incl. metals)
-    "mace-mp": "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
-    "mace-mp-old": None,  # auto-downloads from HuggingFace
+    "mace-mp": _resolve_mace("mace-mp",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-mp-0/MACE-matpes-r2scan-omat-ft.model",
+        "/mnt/projects/ml/mlff/models/mace_mp/MACE-matpes-r2scan-omat-ft.model",
+    ),
+    "mace-mp-old": None,  # auto-downloads from HuggingFace at run-time
 
     # Organic molecules (wB97M-D3BJ, NO metals)
-    "mace-off-small": "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_small.model",
-    "mace-off-medium": "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_medium.model",
-    "mace-off": "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
-    "mace-off-large": "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
+    "mace-off-small": _resolve_mace("mace-off-small",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-off-23/MACE-OFF23_small.model",
+        "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_small.model",
+    ),
+    "mace-off-medium": _resolve_mace("mace-off-medium",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-off-23/MACE-OFF23_medium.model",
+        "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_medium.model",
+    ),
+    "mace-off": _resolve_mace("mace-off",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-off-23/MACE-OFF23_large.model",
+        "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
+    ),
+    "mace-off-large": _resolve_mace("mace-off-large",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-off-23/MACE-OFF23_large.model",
+        "/mnt/projects/ml/mlff/models/mace_off/MACE-OFF23_large.model",
+    ),
 
     # Charge-aware, trained on TS data (wB97M-V, all elements)
-    "mace-omol": "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
+    "mace-omol": _resolve_mace("mace-omol",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-omol-0/MACE-omol-0-extra-large-1024.model",
+        "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
+    ),
 
     # Multi-head (7 DFT levels in one model)
-    "mace-mh": "/home/gbg222/projects/mace_models/mace-mh-0.model",
+    "mace-mh": _resolve_mace("mace-mh",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-mh-0/mace-mh-0.model",
+        "/home/gbg222/projects/mace_models/mace-mh-0.model",
+    ),
 
-    # Polarizable (needs graph_electrostatics → gbg222 venv only)
-    "mace-polar-s": "/home/gbg222/projects/mace_models/MACE-POLAR-1-S.model",
-    "mace-polar-m": "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
-    "mace-polar-l": "/home/gbg222/projects/mace_models/MACE-POLAR-1-L.model",
-    "mace-polar": "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
+    # Polarizable — BETA / EARLY ACCESS (arXiv 2602.19411v1, not Baker Lab).
+    # Needs graph_electrostatics → gbg222 venv only.
+    "mace-polar-s": _resolve_mace("mace-polar-s",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-polar-1-beta/MACE-POLAR-1-S.model",
+        "/home/gbg222/projects/mace_models/MACE-POLAR-1-S.model",
+    ),
+    "mace-polar-m": _resolve_mace("mace-polar-m",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-polar-1-beta/MACE-POLAR-1-M.model",
+        "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
+    ),
+    "mace-polar-l": _resolve_mace("mace-polar-l",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-polar-1-beta/MACE-POLAR-1-L.model",
+        "/home/gbg222/projects/mace_models/MACE-POLAR-1-L.model",
+    ),
+    "mace-polar": _resolve_mace("mace-polar",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-polar-1-beta/MACE-POLAR-1-M.model",
+        "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
+    ),
 
     # FairChem UMA (different calculator interface)
-    "uma-sm": "/mnt/projects/ml/mlff/models/fairchem/UMA/uma_sm.pt",
+    "uma-sm": _resolve_mace("uma-sm",
+        f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-sm/uma_sm.pt",
+        "/mnt/projects/ml/mlff/models/fairchem/UMA/uma_sm.pt",
+    ),
 }
 
 # Multi-head default heads
