@@ -33,7 +33,9 @@ From: /net/software/containers/universal.sif
     NumpyPin 1.26.4
 
 %post
-    set -euxo pipefail
+    # apptainer's %post runs under /bin/sh (dash), which lacks pipefail.
+    # set -eux is enough — pip already errors out on its own pipe failures.
+    set -eux
 
     PIP="/opt/conda/bin/pip --no-cache-dir"
 
