@@ -124,6 +124,20 @@ MACE_MODELS = {
         f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-sm/uma_sm.pt",
         "/mnt/projects/ml/mlff/models/fairchem/UMA/uma_sm.pt",
     ),
+    # UMA-S-1.2 / UMA-M-1.1 — current FairChem foundation models.
+    # GATED on HuggingFace (FAIR Chemistry License v1) — see the README
+    # in each placeholder dir for the manual download steps. The
+    # _resolve_mace helper returns the central path as the preferred
+    # location even when the file is missing, so error messages from
+    # make_calc(...) point users straight at the placeholder README.
+    "uma-s-1p2": _resolve_mace("uma-s-1p2",
+        f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-s-1p2/uma-s-1p2.pt",
+        None,
+    ),
+    "uma-m-1p1": _resolve_mace("uma-m-1p1",
+        f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-m-1p1/uma-m-1p1.pt",
+        None,
+    ),
 
     # OrbMol (Orbital Materials, OMol25-trained, charge/spin-aware,
     # Zn-capable, Apache-2.0). Conservative variant — forces are
