@@ -8,6 +8,7 @@ Lazy adapters — import directly from their module to avoid pulling
 optional deps into the parent import chain. Each exposes a cheap
 ``<tool>_available()`` check before invocation:
 
+  * ``quantum_engine.qm.autode``        — autodE SMILES → vacuum TS (xtb / g-xtb)
   * ``quantum_engine.qm.crest``         — Grimme CREST conformer search
   * ``quantum_engine.qm.chemshell``     — ChemShell QM/MM (registration-walled)
   * ``quantum_engine.qm.scine``         — SCINE Chemoton + ReaDuct
