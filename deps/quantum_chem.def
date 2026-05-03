@@ -37,13 +37,27 @@ From: /net/software/containers/universal.sif
     # set -eux is enough — pip already errors out on its own pipe failures.
     set -eux
 
-    PIP="/usr/local/conda/bin/pip --no-cache-dir"
+    # Use a constraints file so EVERY install (incl. transitive deps)
+    # honours our hard pins on numpy / torch / e3nn / pydantic. Without
+    # this, fairchem-core (and friends) silently upgrade torch / numpy
+    # under the feet of MACE / SCINE Chemoton and break the runtime.
+    cat > /tmp/qc_constraints.txt <<'CONSTRAINTS'
+numpy==1.26.4
+scipy<1.13
+torch==2.11.0+cu130
+e3nn==0.4.4
+mace-torch==0.3.15
+pydantic<2.0
+CONSTRAINTS
 
-    # ── 1. Pin numpy first — every downstream wheel resolves against it ──
-    # SCINE Chemoton 4.1.0 hard-pins numpy<2; AIMNet/sella/pysis only
-    # *demand* numpy>=2 if you take their full extras. We avoid the extras.
-    $PIP install --upgrade pip
-    $PIP install "numpy==1.26.4" "scipy>=1.11,<1.13"
+    PIP="/usr/local/conda/bin/pip --no-cache-dir --constraint /tmp/qc_constraints.txt"
+
+    # Refresh pip itself (constraint file ignored for this one — it's
+    # not a runtime dep).
+    /usr/local/conda/bin/pip install --no-cache-dir --upgrade pip
+
+    # ── 1. Re-pin numpy explicitly so the constraint takes effect first ──
+    $PIP install "numpy==1.26.4" "scipy<1.13"
 
     # ── 2. Chemistry workflow tools ──────────────────────────────────────
     $PIP install \
@@ -86,8 +100,11 @@ From: /net/software/containers/universal.sif
     # would break SCINE). Pysisyphus + sella are installed separately above.
     $PIP install "aimnet" || echo "WARN: aimnet install failed"
 
-    # FairChem (UMA family). Optional.
-    $PIP install "fairchem-core" || echo "WARN: fairchem-core install failed"
+    # NOTE: fairchem-core was tried but it transitively pulls torch 2.8 +
+    # numpy 2.x + new pydantic which breaks the rest of the stack even
+    # under --constraint. Until UMA-S-1.2 / UMA-M-1.1 are downloadable
+    # (gated), we skip fairchem in the container. The legacy uma-sm
+    # checkpoint loads via the `fairchem` lite path or a separate env.
 
     # ── 6. Final sanity check ───────────────────────────────────────────
     /usr/local/conda/bin/python <<'PYEOF'
