@@ -25,7 +25,11 @@ chem = [
     "rdkit>=2024.03",          # 2D / 3D / format / bond-diff / ETKDGv3
     "epam.indigo>=1.27",       # 2nd format+stereo backend (cross-validate vs RDKit)
     "rxnmapper>=0.4",          # transformer-based atom mapping
-    "CGRtools>=4.1",           # bond-change / reaction-graph diff
+    # CGRtools: pinned to 4.1.27 (last version that builds cleanly via
+    # pyproject.toml on Python 3.11; later 4.1.33–4.1.35 hit a Cython
+    # compile error on containers/_unpack.pyx in qcb-xtb). See
+    # tests/test_smoke.py::test_cgrtools_optional_install.
+    "CGRtools==4.1.27",        # bond-change / reaction-graph diff (CGR delta)
     "autode>=1.4",             # SMILES → reaction profile (defaults to xtb / ORCA)
 ]
 # SCINE Chemoton + ReaDuct (separate group — heavy + Linux-64 wheels only).
@@ -46,7 +50,7 @@ opt = ["pysisyphus>=0.7"]
 all = ["ase>=3.23", "mace-torch>=0.3.10", "sella>=2.3", "biotite>=0.40",
        "scikit-image>=0.22", "pandas>=2.0",
        "rdkit>=2024.03", "epam.indigo>=1.27", "rxnmapper>=0.4",
-       "CGRtools>=4.1", "autode>=1.4",
+       "CGRtools==4.1.27", "autode>=1.4",
        "scine-chemoton==4.1.0", "scine-readuct==6.1.0", "scine-sparrow==5.1.0",
        "pysisyphus>=0.7"]
 
@@ -65,3 +69,9 @@ include = ["quantum_engine*", "enz_qc_pipelines*"]
 [tool.ruff]
 lint.select = ["I", "UP", "F", "E", "W"]
 lint.ignore = ["E501"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: tests that shell out to xTB / autodE / MACE (~minutes)",
+    "optional: tests for optional deps (CGRtools, scine, etc.) — skipped when the dep isn't installed",
+]

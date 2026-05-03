@@ -378,3 +378,49 @@ def test_cli_help_runs():
     # Spot-check a few subcommands appear
     for sub in ("sp", "opt", "md", "neb", "mtd", "ts", "protonate"):
         assert sub in result.stdout, f"missing subcommand {sub!r}"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Test 8 — optional CGRtools install
+# ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.optional
+def test_cgrtools_optional_install():
+    """CGRtools is the canonical reaction-graph (CGR) bond-diff backend.
+
+    We pin to ``CGRtools==4.1.27`` in pyproject.toml — that's the last
+    version that builds cleanly on Python 3.11 (later 4.1.33–4.1.35
+    fail with a Cython compile error on ``containers/_unpack.pyx``).
+    The pipeline keeps RDKit's atom-map-based diff as a fallback that
+    produces equivalent formed/broken bond lists; this test verifies
+    CGRtools-when-installed produces matching results on the textbook
+    Diels-Alder reaction (2 σ-bonds formed, 0 broken).
+
+    Marked ``optional`` — skipped if CGRtools isn't importable rather
+    than failing the smoke suite.
+    """
+    pytest.importorskip("CGRtools")
+    from CGRtools import ReactionContainer, smiles
+
+    # Atom-mapped Diels-Alder: butadiene + ethene → cyclohexene.
+    # CGRtools needs explicit atom maps to compose reactant ↔ product.
+    r = smiles("[CH2:1]=[CH:2][CH:3]=[CH2:4].[CH2:5]=[CH2:6]")
+    p = smiles("[CH2:1]1[CH:2]=[CH:3][CH2:4][CH2:5][CH2:6]1")
+    rxn = ReactionContainer(reactants=[r], products=[p])
+    cgr_graph = rxn.compose()
+
+    bonds_formed = bonds_broken = 0
+    for _n, _m, bond in cgr_graph.bonds():
+        r_order = bond.order
+        p_order = bond.p_order
+        if r_order is None and p_order is not None:
+            bonds_formed += 1
+        elif r_order is not None and p_order is None:
+            bonds_broken += 1
+
+    assert bonds_formed == 2, (
+        f"Diels-Alder should form 2 σ-bonds (CGRtools), got {bonds_formed}"
+    )
+    assert bonds_broken == 0, (
+        f"Diels-Alder breaks no σ-bonds (CGRtools), got {bonds_broken}"
+    )
