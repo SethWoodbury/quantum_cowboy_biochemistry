@@ -351,6 +351,23 @@ def vacuum_ts_from_smiles(
             for sym, (x, y, z) in zip(symbols, positions):
                 fh.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
 
+        # PDB sidecar for PyMOL — bond connectivity from the reactant
+        # SMILES (the TS atom order matches the reactant after autodE's
+        # internal embedding). If this fails (size mismatch, etc.) the
+        # XYZ above is still valid; we just lose bond visualisation.
+        ts_pdb_path = workdir / "vacuum_ts.pdb"
+        try:
+            from quantum_engine.io.smiles_pdb import xyz_to_pdb
+            xyz_to_pdb(ts_xyz_path, ts_pdb_path,
+                       reference_smiles=reactant_smiles,
+                       residue_prefix="TS ")
+        except Exception as e:
+            log.warning(
+                f"  vacuum_ts.pdb sidecar failed ({type(e).__name__}: {e}); "
+                "XYZ output is still valid."
+            )
+            ts_pdb_path = None  # signal to caller
+
         # ── 7. Barrier in kcal/mol (best-effort) ────────────────────
         barrier_kcal: float | None = None
         try:
@@ -388,6 +405,7 @@ def vacuum_ts_from_smiles(
     return {
         "ts_atoms": ts_ase,
         "ts_xyz_path": ts_xyz_path,
+        "ts_pdb_path": ts_pdb_path,
         "barrier_kcal": barrier_kcal,
         "energy_eV": energy_eV,
         "imag_freqs": imag_freqs,

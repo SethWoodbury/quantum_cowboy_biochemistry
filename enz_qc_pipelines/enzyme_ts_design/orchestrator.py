@@ -181,8 +181,11 @@ class ParseReaction:
             f"net_charge={net_charge}"
         )
 
-        # Optionally write a small JSON summary into the step dir for
-        # debugging / re-runs.
+        # Write a small JSON summary into the step dir for debugging /
+        # re-runs, plus PDBs of reactant + product so the human can
+        # inspect the *input* chemistry in PyMOL before autodE chews on
+        # it (the slow Stage 2). PDBs come from RDKit ETKDGv3 + UFF
+        # cleanup — not real geometries, just for visual checks.
         outputs: dict[str, str] = {}
         step_dir = ctx.outdir / self.name
         if step_dir.is_dir():
@@ -202,6 +205,21 @@ class ParseReaction:
                 "mapper_confidence": confidence,
             }, indent=2, default=str))
             outputs["reaction_json"] = str(summary_path)
+
+            from quantum_engine.io.smiles_pdb import smiles_to_pdb
+            try:
+                r_pdb = smiles_to_pdb(self.reactant_smiles,
+                                      step_dir / "reactant.pdb")
+                p_pdb = smiles_to_pdb(self.product_smiles,
+                                      step_dir / "product.pdb")
+                outputs["reactant_pdb"] = str(r_pdb)
+                outputs["product_pdb"] = str(p_pdb)
+            except Exception as e:
+                log.warning(
+                    f"  PDB embed failed for visualisation "
+                    f"({type(e).__name__}: {e}); continuing — XYZ outputs "
+                    "from Stage 2 are still produced."
+                )
 
         return StepResult(
             name=self.name,
