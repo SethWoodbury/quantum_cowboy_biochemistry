@@ -22,11 +22,15 @@ Each stage has a ``tool`` field that picks the adapter; "auto" means
 """
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from quantum_engine.pipelines import Context, Pipeline, Step, StepResult
+
+log = logging.getLogger("enz_qc_pipelines.enzyme_ts_design")
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -48,13 +52,168 @@ class ParseReaction:
     workdir: str | Path | None = None
 
     def run(self, ctx: Context) -> StepResult:
-        raise NotImplementedError(
-            "ParseReaction: wire to "
-            "quantum_engine.io.reaction.parse_reaction_smiles "
-            "(needs the [chem] optional deps: rdkit, epam.indigo, rxnmapper, "
-            "CGRtools). Should set ctx.metadata['atom_map'], "
-            "ctx.metadata['bonds_formed'], ctx.metadata['bonds_broken'], "
-            "ctx.metadata['net_charge']."
+        try:
+            from rdkit import Chem
+        except ImportError as e:
+            raise ImportError(
+                "ParseReaction needs rdkit; install via `pip install rdkit` "
+                "into the qcb-xtb env (also available via the [chem] extra)."
+            ) from e
+
+        if not self.reactant_smiles or not self.product_smiles:
+            raise ValueError(
+                "ParseReaction: both reactant_smiles and product_smiles must "
+                "be non-empty SMILES strings."
+            )
+
+        # Sanity-check both endpoints parse with RDKit before we do anything
+        # expensive (rxnmapper loads a transformer model).
+        r_mol_check = Chem.MolFromSmiles(self.reactant_smiles)
+        p_mol_check = Chem.MolFromSmiles(self.product_smiles)
+        if r_mol_check is None:
+            raise ValueError(f"RDKit could not parse reactant SMILES: {self.reactant_smiles!r}")
+        if p_mol_check is None:
+            raise ValueError(f"RDKit could not parse product SMILES: {self.product_smiles!r}")
+
+        # ── 1. Atom-mapping via RXNMapper ────────────────────────────
+        rxn_smiles = f"{self.reactant_smiles}>>{self.product_smiles}"
+        atom_map: dict[int, int] = {}
+        mapped_reactant = self.reactant_smiles
+        mapped_product = self.product_smiles
+        confidence: float | None = None
+
+        if self.mapper in ("rxnmapper", "auto"):
+            try:
+                # Suppress the noisy pkg_resources DeprecationWarning the
+                # rxnmapper package emits at import time.
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    from rxnmapper import RXNMapper
+                rxn_mapper = RXNMapper()
+                results = rxn_mapper.get_attention_guided_atom_maps([rxn_smiles])
+                mapped_rxn = results[0]["mapped_rxn"]
+                confidence = float(results[0].get("confidence", 0.0))
+                mapped_reactant, mapped_product = mapped_rxn.split(">>")
+                log.info(
+                    f"  RXNMapper: confidence={confidence:.3f} "
+                    f"({len(self.reactant_smiles)} → {len(self.product_smiles)} chars)"
+                )
+            except Exception as e:
+                if self.mapper == "rxnmapper":
+                    raise RuntimeError(
+                        f"RXNMapper failed on {rxn_smiles!r}: {type(e).__name__}: {e}"
+                    ) from e
+                log.warning(f"  RXNMapper failed ({e}); falling back to RDKit-only.")
+
+        # ── 2. Re-parse mapped sides with RDKit and collect bonds ────
+        r_mol = Chem.MolFromSmiles(mapped_reactant)
+        p_mol = Chem.MolFromSmiles(mapped_product)
+        if r_mol is None or p_mol is None:
+            raise ValueError(
+                "RDKit could not re-parse mapped reactant/product after "
+                f"atom-mapping (mapper={self.mapper!r})."
+            )
+
+        def _bonds_by_mapnum(mol) -> dict[tuple[int, int], float]:
+            """Return {(min_mapnum, max_mapnum): bond_order_double} for every
+            bond between two mapped atoms. Atoms with map num 0 are dropped
+            so the diff focuses on the reacting fragment."""
+            bonds: dict[tuple[int, int], float] = {}
+            for b in mol.GetBonds():
+                a1 = b.GetBeginAtom().GetAtomMapNum()
+                a2 = b.GetEndAtom().GetAtomMapNum()
+                if a1 == 0 or a2 == 0:
+                    continue
+                key = (min(a1, a2), max(a1, a2))
+                bonds[key] = b.GetBondTypeAsDouble()
+            return bonds
+
+        r_bonds = _bonds_by_mapnum(r_mol)
+        p_bonds = _bonds_by_mapnum(p_mol)
+
+        # Bond-change diff (RDKit-based — equivalent to CGRtools' CGR delta
+        # for our purposes since we only care about make/break, not order).
+        all_keys = set(r_bonds) | set(p_bonds)
+        bonds_formed: list[tuple[int, int]] = []
+        bonds_broken: list[tuple[int, int]] = []
+        bonds_order_changed: list[tuple[int, int, float, float]] = []
+        for k in sorted(all_keys):
+            in_r = k in r_bonds
+            in_p = k in p_bonds
+            if in_p and not in_r:
+                bonds_formed.append(k)
+            elif in_r and not in_p:
+                bonds_broken.append(k)
+            elif in_r and in_p and r_bonds[k] != p_bonds[k]:
+                bonds_order_changed.append((k[0], k[1], r_bonds[k], p_bonds[k]))
+
+        # ── 3. Net charge from explicit charges on reactant side ─────
+        net_charge = sum(a.GetFormalCharge() for a in r_mol.GetAtoms())
+        net_charge_p = sum(a.GetFormalCharge() for a in p_mol.GetAtoms())
+        if net_charge != net_charge_p:
+            log.warning(
+                f"  net charge mismatch reactant={net_charge}, product={net_charge_p}; "
+                f"using reactant value. Check input SMILES."
+            )
+
+        # ── 4. Atom-map dict {map_num → reactant_atom_idx} ──────────
+        for atom in r_mol.GetAtoms():
+            mn = atom.GetAtomMapNum()
+            if mn:
+                atom_map[mn] = atom.GetIdx()
+
+        # ── 5. Stash everything in ctx.metadata for downstream stages ─
+        ctx.metadata["atom_map"] = atom_map
+        ctx.metadata["bonds_formed"] = bonds_formed
+        ctx.metadata["bonds_broken"] = bonds_broken
+        ctx.metadata["bonds_order_changed"] = bonds_order_changed
+        ctx.metadata["net_charge"] = net_charge
+        ctx.metadata["mapped_reactant_smiles"] = mapped_reactant
+        ctx.metadata["mapped_product_smiles"] = mapped_product
+        ctx.metadata["reactant_smiles"] = self.reactant_smiles
+        ctx.metadata["product_smiles"] = self.product_smiles
+
+        log.info(
+            f"  ParseReaction: |formed|={len(bonds_formed)}, "
+            f"|broken|={len(bonds_broken)}, "
+            f"|order-changed|={len(bonds_order_changed)}, "
+            f"net_charge={net_charge}"
+        )
+
+        # Optionally write a small JSON summary into the step dir for
+        # debugging / re-runs.
+        outputs: dict[str, str] = {}
+        step_dir = ctx.outdir / self.name
+        if step_dir.is_dir():
+            import json
+            summary_path = step_dir / "reaction.json"
+            summary_path.write_text(json.dumps({
+                "reactant_smiles": self.reactant_smiles,
+                "product_smiles": self.product_smiles,
+                "mapped_reactant_smiles": mapped_reactant,
+                "mapped_product_smiles": mapped_product,
+                "atom_map": atom_map,
+                "bonds_formed": bonds_formed,
+                "bonds_broken": bonds_broken,
+                "bonds_order_changed": bonds_order_changed,
+                "net_charge": net_charge,
+                "mapper": self.mapper,
+                "mapper_confidence": confidence,
+            }, indent=2, default=str))
+            outputs["reaction_json"] = str(summary_path)
+
+        return StepResult(
+            name=self.name,
+            status="completed",
+            outputs=outputs,
+            extra={
+                "n_bonds_formed": len(bonds_formed),
+                "n_bonds_broken": len(bonds_broken),
+                "n_bonds_order_changed": len(bonds_order_changed),
+                "net_charge": net_charge,
+                "mapper_confidence": confidence,
+            },
         )
 
 
@@ -71,11 +230,314 @@ class VacuumTSSearch:
     workdir: str | Path | None = None
 
     def run(self, ctx: Context) -> StepResult:
-        raise NotImplementedError(
-            "VacuumTSSearch: dispatch on self.tool to "
-            "quantum_engine.qm.{scine,pygsm,molecular_gsm}.* or "
-            "autode (via [chem] optional deps). Output: ctx.atoms ← TS guess; "
-            "outputs={'vacuum_ts_xyz': ..., 'vacuum_barrier_kcal': ...}."
+        # Resolve which tool to use. Currently only autodE is implemented;
+        # "auto" routes to autodE since it's the cleanest SMILES → TS path.
+        tool = self.tool
+        if tool == "auto":
+            tool = "autode"
+
+        if tool != "autode":
+            raise NotImplementedError(
+                f"VacuumTSSearch: tool={tool!r} not yet wired. Currently only "
+                "tool='autode' (or 'auto') is implemented; scine/pygsm/"
+                "molecularGSM live as stubs in quantum_engine.qm.*."
+            )
+
+        # ── 1. Locate inputs from Stage 1 metadata ────────────────────
+        reactant_smiles = ctx.metadata.get("reactant_smiles")
+        product_smiles = ctx.metadata.get("product_smiles")
+        if not reactant_smiles or not product_smiles:
+            raise RuntimeError(
+                "VacuumTSSearch: no reactant/product SMILES in ctx.metadata; "
+                "did ParseReaction (Stage 1) run first?"
+            )
+        net_charge = int(ctx.metadata.get("net_charge", 0))
+
+        # ── 2. Configure autodE to use the vendored xTB binary ────────
+        try:
+            import autode as ade
+        except ImportError as e:
+            raise ImportError(
+                "VacuumTSSearch(tool='autode') needs the autode package. "
+                "Install via `pip install git+https://github.com/duartegroup/autodE.git` "
+                "into qcb-xtb (the [chem] extra also pulls it in)."
+            ) from e
+
+        from quantum_engine.site import GXTB_BIN, XTB_BIN, XTB_LIB_DIRS
+
+        # autodE's XTB wrapper drives a stock xtb binary; g-xTB is a
+        # superset of upstream xtb, so we can point at GXTB_BIN when the
+        # user asks for qm_method='g-xtb'. Both are recognised by autodE
+        # as the same wrapper class.
+        if self.qm_method.lower() in ("g-xtb", "gxtb"):
+            xtb_path = GXTB_BIN if os.path.isfile(GXTB_BIN) else XTB_BIN
+        else:
+            xtb_path = XTB_BIN
+
+        if not os.path.isfile(xtb_path):
+            raise FileNotFoundError(
+                f"VacuumTSSearch: xtb binary not found at {xtb_path}. "
+                "Build via `bash deps/build_xtb.sh` or `bash deps/bump_gxtb.sh`."
+            )
+
+        # Make sure the vendored libxtb / libquadmath are reachable when
+        # autodE shells out to xtb.
+        ld_path_existing = os.environ.get("LD_LIBRARY_PATH", "")
+        ld_extra = ":".join(p for p in XTB_LIB_DIRS if p)
+        if ld_extra and ld_extra not in ld_path_existing:
+            os.environ["LD_LIBRARY_PATH"] = (
+                ld_extra + (":" + ld_path_existing if ld_path_existing else "")
+            )
+
+        ade.Config.XTB.path = xtb_path
+        ade.Config.lcode = "xtb"   # low-level (opt / freq)
+        # autodE's stock h_methods are all DFT engines (ORCA / Gaussian /
+        # QChem / NWChem). We want to keep everything at the xTB level
+        # for cheap SMILES → TS searches per Seth's "no DFT in the
+        # default loop" rule (see docs/plans/enzyme_ts_design.md DFT
+        # policy). Monkey-patch ``autode.methods.get_hmethod`` to
+        # return an XTB instance — also patch every module that has
+        # already imported get_hmethod into its own namespace via
+        # ``from autode.methods import get_hmethod``.
+        import sys as _sys
+        import autode.methods as _ade_methods
+
+        ade.Config.hcode = None
+
+        def _xtb_as_hmethod():
+            return _ade_methods.XTB()
+
+        _ade_methods.get_hmethod = _xtb_as_hmethod
+        # Also overwrite already-imported references in any
+        # autode.* submodule that did `from autode.methods import
+        # get_hmethod` at import time. Otherwise those modules see
+        # the original function.
+        for _modname, _mod in list(_sys.modules.items()):
+            if not _modname.startswith("autode") or _mod is None:
+                continue
+            if getattr(_mod, "get_hmethod", None) is not None:
+                _mod.get_hmethod = _xtb_as_hmethod
+
+        ade.Config.n_cores = max(1, int(os.environ.get("OMP_NUM_THREADS", "4")))
+        ade.Config.num_complex_sphere_points = 4
+        ade.Config.num_complex_random_rotations = 4
+
+        # ── 3. Set up workdir & run reaction profile ──────────────────
+        workdir = (
+            Path(self.workdir).resolve()
+            if self.workdir is not None
+            else (ctx.outdir / self.name).resolve()
+        )
+        workdir.mkdir(parents=True, exist_ok=True)
+
+        log.info(
+            f"  VacuumTSSearch(tool=autode, qm={self.qm_method}, charge={net_charge}) "
+            f"→ {workdir}"
+        )
+
+        # autodE expects to run inside the workdir (it scatters subdirs
+        # everywhere). Save/restore cwd around the call.
+        prev_cwd = Path.cwd()
+        try:
+            os.chdir(workdir)
+
+            # autodE rejects '.' on a single Reactant constructor (it
+            # parses SMILES at the atom-level itself, no RDKit). Split
+            # fragment SMILES on '.' and instantiate one Reactant /
+            # Product per fragment. autodE then handles the
+            # reactant/product Complex assembly internally.
+            #
+            # Note: explicit per-fragment charges aren't recoverable from
+            # the joint SMILES without re-parsing each fragment with
+            # RDKit. For neutral organics this doesn't matter; for
+            # charged systems the user would have to assign charges to
+            # the right fragment. We compute per-fragment charges from
+            # the formal charges in the input SMILES via RDKit.
+            from rdkit import Chem as _Chem
+
+            def _split_with_charges(smi: str) -> list[tuple[str, int]]:
+                """Split joint SMILES into (fragment_smiles, charge) pairs."""
+                out: list[tuple[str, int]] = []
+                for frag_smi in smi.split("."):
+                    frag_smi = frag_smi.strip()
+                    if not frag_smi:
+                        continue
+                    m = _Chem.MolFromSmiles(frag_smi)
+                    q = sum(a.GetFormalCharge() for a in m.GetAtoms()) if m else 0
+                    out.append((frag_smi, q))
+                return out
+
+            r_frags = _split_with_charges(reactant_smiles)
+            p_frags = _split_with_charges(product_smiles)
+            if not r_frags or not p_frags:
+                raise ValueError(
+                    "VacuumTSSearch: empty fragment list after SMILES split"
+                )
+
+            # Sanity: total charges should agree (redundant with
+            # ParseReaction's check but cheap and protects against
+            # someone instantiating Stage 2 standalone).
+            sum_r = sum(q for _, q in r_frags)
+            sum_p = sum(q for _, q in p_frags)
+            if sum_r != sum_p:
+                log.warning(
+                    f"  per-fragment charge sums differ: r={sum_r}, p={sum_p}"
+                )
+
+            reactants = [
+                ade.Reactant(name=f"R{i}", smiles=s, charge=q)
+                for i, (s, q) in enumerate(r_frags)
+            ]
+            products = [
+                ade.Product(name=f"P{i}", smiles=s, charge=q)
+                for i, (s, q) in enumerate(p_frags)
+            ]
+
+            rxn = ade.Reaction(
+                *reactants, *products,
+                name="vacuum_ts",
+                solvent_name=None,  # gas phase
+            )
+
+            # locate_transition_state alone is the cheapest path (no
+            # full thermo / single-point sweep).
+            try:
+                rxn.locate_transition_state()
+            except Exception as e:
+                # autodE often raises after partial success — try to
+                # capture whatever TS it did find, otherwise re-raise.
+                ts = getattr(rxn, "ts", None)
+                if ts is None:
+                    raise RuntimeError(
+                        f"autodE locate_transition_state failed: "
+                        f"{type(e).__name__}: {e}"
+                    ) from e
+                log.warning(
+                    f"  autodE raised {type(e).__name__}; partial TS recovered: {e}"
+                )
+
+            ts = getattr(rxn, "ts", None)
+            ts_source = "rxn.ts"
+            ts_xyz_disk: Path | None = None
+
+            # Fallback: if autodE rejected the optimised TS (e.g. wrong
+            # # imag modes at xTB level — common for cycloadditions where
+            # the saddle is shallow), recover the highest-quality TS guess
+            # autodE wrote to disk. This still gives downstream stages a
+            # usable starting geometry; the polish step (Stage 8) will
+            # re-optimise to a proper saddle with MACE-POLAR-1M + Sella.
+            if ts is None or getattr(ts, "atoms", None) is None:
+                ts_dir = workdir / "transition_states"
+                # Prefer the *_optts_xtb.xyz files (post-saddle-opt) over
+                # the NEB-only path images.
+                candidates = sorted(ts_dir.glob("TS_*_optts_xtb.xyz")) if ts_dir.is_dir() else []
+                if not candidates:
+                    candidates = sorted(ts_dir.rglob("*_optts_xtb.xyz")) if ts_dir.is_dir() else []
+                if candidates:
+                    ts_xyz_disk = candidates[0]
+                    log.warning(
+                        f"  autodE rejected its TS (no/wrong imag modes); "
+                        f"falling back to on-disk guess {ts_xyz_disk.name}. "
+                        "Stage 8 polish will re-optimise."
+                    )
+                    ts_source = f"disk:{ts_xyz_disk.name}"
+                else:
+                    raise RuntimeError(
+                        "autodE finished but produced no TS geometry "
+                        "(rxn.ts is None and no TS_*_optts_xtb.xyz on "
+                        f"disk). Inspect logs in {workdir} for diagnostic hints."
+                    )
+
+            # ── 4. Convert TS → ASE Atoms + write XYZ ──────────────
+            from ase import Atoms as ASEAtoms
+            from ase.io import read as ase_read
+            if ts is not None and getattr(ts, "atoms", None) is not None:
+                symbols = [str(a.label) for a in ts.atoms]
+                positions = [(float(a.coord[0]), float(a.coord[1]), float(a.coord[2]))
+                             for a in ts.atoms]
+                ts_ase = ASEAtoms(symbols=symbols, positions=positions)
+            else:
+                # Read from disk (xyz format)
+                ts_ase = ase_read(str(ts_xyz_disk))  # type: ignore[arg-type]
+                symbols = ts_ase.get_chemical_symbols()
+                positions = ts_ase.get_positions().tolist()
+            ts_ase.info["charge"] = net_charge
+            ts_ase.info["ts_source"] = ts_source
+
+            ts_xyz_path = workdir / "vacuum_ts.xyz"
+            with ts_xyz_path.open("w") as fh:
+                fh.write(f"{len(ts_ase)}\n")
+                fh.write(f"vacuum TS guess from autodE (source={ts_source})\n")
+                for sym, (x, y, z) in zip(symbols, positions):
+                    fh.write(f"{sym} {x:.6f} {y:.6f} {z:.6f}\n")
+
+            # ── 5. Barrier in kcal/mol (best-effort) ────────────────
+            barrier_kcal: float | None = None
+            try:
+                # rxn.delta('E_ts') returns ΔE‡ in Hartree at the low-level
+                # method. Convert to kcal/mol.
+                de_ts = rxn.delta("E‡")
+                if de_ts is not None:
+                    # autodE returns ade.values.Energy with .to('kcal mol-1')
+                    if hasattr(de_ts, "to"):
+                        barrier_kcal = float(de_ts.to("kcal mol-1"))
+                    else:
+                        barrier_kcal = float(de_ts) * 627.5094740631
+            except Exception as e:
+                log.warning(f"  could not extract autodE barrier: {e}")
+
+            # Energy in eV for the StepResult.energy_eV field
+            energy_eV: float | None = None
+            try:
+                if ts is not None and ts.energy is not None:
+                    if hasattr(ts.energy, "to"):
+                        energy_eV = float(ts.energy.to("eV"))
+                    else:
+                        energy_eV = float(ts.energy) * 27.211386245988
+            except Exception:
+                pass
+
+            # Imaginary frequencies, if available
+            imag_freqs: list[float] = []
+            try:
+                if ts is not None and ts.imaginary_frequencies is not None:
+                    imag_freqs = [float(f) for f in ts.imaginary_frequencies]
+            except Exception:
+                pass
+
+        finally:
+            os.chdir(prev_cwd)
+
+        # Advance ctx.atoms to the vacuum TS guess
+        ctx.atoms = ts_ase
+
+        log.info(
+            f"  VacuumTSSearch: TS xyz → {ts_xyz_path}, "
+            f"barrier={barrier_kcal!r} kcal/mol, "
+            f"|imag freqs|={len(imag_freqs)}"
+        )
+
+        outputs = {"vacuum_ts_xyz": str(ts_xyz_path)}
+        if barrier_kcal is not None:
+            # StepResult.outputs is dict[str, str] per the contract; stash
+            # the float in extra. Also keep it accessible via the
+            # documented key as a stringified value.
+            outputs["vacuum_barrier_kcal"] = f"{barrier_kcal:.4f}"
+
+        return StepResult(
+            name=self.name,
+            status="completed",
+            atoms=ts_ase,
+            energy_eV=energy_eV,
+            outputs=outputs,
+            extra={
+                "vacuum_barrier_kcal": barrier_kcal,
+                "imag_frequencies_cm-1": imag_freqs,
+                "tool": tool,
+                "qm_method": self.qm_method,
+                "xtb_path": xtb_path,
+                "ts_source": ts_source,
+            },
         )
 
 
