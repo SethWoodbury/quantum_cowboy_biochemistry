@@ -164,9 +164,20 @@ def _parse_entry(raw: dict[str, Any], mcsa_id: int) -> MCSAEntry:
     catalytic: list[CatalyticResidue] = []
     ref_pdb: str | None = None
     for r in raw.get("residues", []) or []:
-        role = r.get("function_location_abv") or (
-            ", ".join(r.get("roles_summary", []) or []) or None
-        )
+        # role precedence: function_location_abv (a single string like
+        # 'ptm', 'metal ligand'), then roles_summary. roles_summary may
+        # be a list OR a single string — handle both.
+        role: str | None = r.get("function_location_abv") or None
+        if not role:
+            rs = r.get("roles_summary")
+            if isinstance(rs, list):
+                role = ", ".join(rs) or None
+            elif isinstance(rs, str):
+                role = rs or None
+        # M-CSA flags PTMs in two ways: the role field == 'ptm', and a
+        # standalone 'ptm' boolean on the residue. Either signals it.
+        ptm_flag_in_role = role is not None and role.lower() == "ptm"
+        ptm_field = bool(r.get("ptm"))
         chains = r.get("residue_chains", []) or []
         seqs = r.get("residue_sequences", []) or []
         uniprot_seq = seqs[0].get("resid") if seqs else None
@@ -174,6 +185,12 @@ def _parse_entry(raw: dict[str, Any], mcsa_id: int) -> MCSAEntry:
             if c.get("is_reference") and not ref_pdb:
                 ref_pdb = c.get("pdb_id")
             code = (c.get("code") or "").upper()
+            # Note: M-CSA stores the canonical UNMODIFIED residue code
+            # (e.g. LYS for the carbamylated Lys169 in PTE). The PDB
+            # uses KCX. We track both: code stays canonical for slicing
+            # by (chain, seq); is_ptm flags the residue as a PTM so
+            # downstream prep/topology stages can substitute the right
+            # KCX/SEP/etc. fragment.
             catalytic.append(CatalyticResidue(
                 code=code,
                 chain=c.get("chain_name") or "",
@@ -181,7 +198,7 @@ def _parse_entry(raw: dict[str, Any], mcsa_id: int) -> MCSAEntry:
                 uniprot_seq=uniprot_seq,
                 pdb_id=c.get("pdb_id"),
                 role=role,
-                is_ptm=code in PTM_CODES,
+                is_ptm=(code in PTM_CODES) or ptm_flag_in_role or ptm_field,
             ))
 
     # Cofactors — M-CSA doesn't store metals as residues. We infer them

@@ -100,7 +100,9 @@ def _lookup_in_dump(chebi_id: int) -> Optional[str]:
 
 def _lookup_via_ols(chebi_id: int) -> Optional[str]:
     """Hit OLS4 for a single compound. SMILES lives under
-    ``annotation['SMILES']`` (a list of one)."""
+    ``annotation['smiles_string']`` (a list of one) — verified against
+    the live API. Older clients sometimes used 'SMILES' but OLS4
+    canonicalises to lowercase + '_string' suffix."""
     import urllib.request
     url = OLS_URL.format(id=chebi_id)
     try:
@@ -113,11 +115,13 @@ def _lookup_via_ols(chebi_id: int) -> Optional[str]:
     if not embedded:
         return None
     annot = embedded[0].get("annotation", {}) or {}
-    smiles_list = annot.get("SMILES") or annot.get("smiles") or []
-    if isinstance(smiles_list, list) and smiles_list:
-        return smiles_list[0]
-    if isinstance(smiles_list, str):
-        return smiles_list
+    # Try the canonical OLS4 key first, then fall back to legacy variants.
+    for key in ("smiles_string", "SMILES", "smiles"):
+        v = annot.get(key)
+        if isinstance(v, list) and v:
+            return v[0]
+        if isinstance(v, str) and v:
+            return v
     return None
 
 
