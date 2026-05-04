@@ -21,17 +21,19 @@ Decisions made here, made explicit:
   * **No other HETATMs** — drop EDO (cryoprotectant), FMT (formate),
     PEL (ligands from co-crystal), all on both chains. None are
     catalytic.
-  * **Waters** — keep only those whose oxygen sits within ``shell_A``
-    (default 4.5 Å) of any catalytic-residue heavy atom OR either
-    chain-A Zn. Bias toward keeping the bridging hydroxide candidate.
+  * **Waters** — excluded by default. They can be included explicitly
+    for diagnostics with ``--include-waters``; otherwise the bridging
+    hydroxide/nucleophile should be built as a deliberate mechanistic
+    species rather than inherited from crystallographic waters.
   * **Carbamylation of LYS 169** — append the missing CX, OQ1, OQ2
     carbamate atoms to LYS 169's NZ, then rename the residue from
     LYS → KCX. Use literature carbamate geometry (NZ–CX 1.40 Å,
     CX=O 1.25 Å, NZ–CX–O 120°). Place the new atoms so CX bridges
     the two Zn ions.
 
-Then runs the codebase's ``consensus_protonate`` (chimera + propka +
-pdbfixer + rules) with KCX carbamate as a hardcoded rule.
+The old consensus protonation path can still be run explicitly with
+``--run-consensus-protonation`` for debugging, but it is not the default:
+template-based H placement is not metal-aware enough for PTE.
 
 Usage:
     python tools/pte_159_theozyme.py --outdir runs/PTE_159
@@ -112,7 +114,8 @@ def crop_active_site(
     pdb_path: Path,
     out_path: Path,
     *,
-    shell_A: float = 4.5,
+    include_waters: bool = False,
+    water_shell_A: float = 4.5,
     log: logging.Logger,
 ) -> dict:
     """Crop a single PTE active site from chain A. Returns a summary
@@ -127,9 +130,9 @@ def crop_active_site(
          (sanity check; chain A Zn401/Zn402 are ~4 Å from active-site
          residues in 1hzy).
       4. Discard ALL other HETATMs except waters (HOH/WAT).
-      5. Keep waters whose O is within ``shell_A`` Å of any kept atom
-         (catalytic residue or kept Zn). The bridging-hydroxide
-         candidate sits ~2.0 Å from each Zn — well within shell_A.
+      5. By default, discard all crystallographic waters. If requested,
+         keep waters whose O is within ``water_shell_A`` Å of any kept
+         atom (catalytic residue or kept Zn).
       6. Write a clean PDB with HEADER + filtered lines + END.
 
     Reports:
@@ -185,12 +188,13 @@ def crop_active_site(
     # Filter waters by shell distance from catalytic + Zn
     anchor = catalytic_atoms + kept_zn
     kept_waters: list[AtomLine] = []
-    for w in waters:
-        if w.name not in ("O", "OW"):
-            continue
-        d_min = min((_dist(a, w.x, w.y, w.z) for a in anchor), default=1e9)
-        if d_min <= shell_A:
-            kept_waters.append(w)
+    if include_waters:
+        for w in waters:
+            if w.name not in ("O", "OW"):
+                continue
+            d_min = min((_dist(a, w.x, w.y, w.z) for a in anchor), default=1e9)
+            if d_min <= water_shell_A:
+                kept_waters.append(w)
 
     # Final ordered list — atom serial renumbered for cleanliness
     ordered = catalytic_atoms + kept_zn + kept_waters
@@ -201,7 +205,12 @@ def crop_active_site(
     lines_out.append(f"REMARK  Source: {pdb_path.name}\n")
     lines_out.append(f"REMARK  Catalytic residues: {len(catalytic_atoms)} atoms\n")
     lines_out.append(f"REMARK  Chain-A Zn pair:    {len(kept_zn)} atoms\n")
-    lines_out.append(f"REMARK  Shell waters (≤{shell_A} Å): {len(kept_waters)} atoms\n")
+    if include_waters:
+        lines_out.append(
+            f"REMARK  Shell waters (<={water_shell_A} A): {len(kept_waters)} atoms\n"
+        )
+    else:
+        lines_out.append("REMARK  Shell waters: excluded by default\n")
     lines_out.append(f"REMARK  Discarded: see crop_log.txt\n")
     for serial, a in enumerate(ordered, start=1):
         # Replace cols 7-11 (atom serial) with the new index, keep
@@ -408,11 +417,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pdb", type=Path,
                    default=Path("runs/PTE_159/1hzy.pdb"),
                    help="Source PDB (1hzy)")
-    p.add_argument("--shell-A", type=float, default=4.5,
-                   help="Water shell radius around catalytic + Zn")
-    p.add_argument("--skip-protonation", action="store_true",
-                   help="Skip the consensus_protonate step (useful for "
-                        "fast iteration on the cropping logic only)")
+    p.add_argument("--include-waters", action="store_true",
+                   help="Include crystallographic waters within --water-shell-A")
+    p.add_argument("--water-shell-A", type=float, default=4.5,
+                   help="Water shell radius around catalytic + Zn when "
+                        "--include-waters is set")
+    p.add_argument("--run-consensus-protonation", action="store_true",
+                   help="Run the old template/consensus protonation path. "
+                        "Not recommended for PTE metal sites.")
     return p.parse_args()
 
 
@@ -439,7 +451,11 @@ def main() -> int:
     log.info("--- Step 1: crop chain A active site ---")
     cropped = args.outdir / "step1_cropped.pdb"
     crop_summary = crop_active_site(
-        args.pdb, cropped, shell_A=args.shell_A, log=log,
+        args.pdb,
+        cropped,
+        include_waters=args.include_waters,
+        water_shell_A=args.water_shell_A,
+        log=log,
     )
     log.info(f"  → {crop_summary['output_pdb']}")
     log.info(f"  catalytic atoms:  {crop_summary['n_catalytic_atoms']}")
@@ -458,10 +474,7 @@ def main() -> int:
     log.info(f"  → {kcx_summary['output_pdb']}")
 
     # Step 3: protonate via consensus_protonate
-    if args.skip_protonation:
-        log.info("--- Step 3 SKIPPED (--skip-protonation) ---")
-        final_pdb = kcx_pdb
-    else:
+    if args.run_consensus_protonation:
         log.info("--- Step 3: consensus protonation ---")
         final_pdb = args.outdir / "step3_protonated.pdb"
         try:
@@ -483,13 +496,16 @@ def main() -> int:
             log.error(f"  protonation failed: {type(e).__name__}: {e}")
             log.error("  shipping unprotonated KCX file as final.")
             final_pdb = kcx_pdb
+    else:
+        log.info("--- Step 3 SKIPPED (consensus protonation rejected for PTE metal sites) ---")
+        final_pdb = kcx_pdb
 
     # Final summary
     log.info("=" * 70)
     log.info("PTE 159 theozyme build complete.")
     log.info(f"  step 1 (cropped):        {cropped}")
     log.info(f"  step 2 (KCX-added):      {kcx_pdb}")
-    log.info(f"  step 3 (protonated):     {final_pdb}")
+    log.info(f"  review structure:        {final_pdb}")
     log.info("")
     log.info("Open in PyMOL:")
     log.info(f"  pymol {final_pdb}")
