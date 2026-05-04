@@ -122,14 +122,30 @@ def _cache_path(mcsa_id: int) -> Path:
 
 
 def fetch_entry(mcsa_id: int, *, refresh: bool = False) -> MCSAEntry:
-    """Fetch one M-CSA entry. Reads from cache if present unless
-    ``refresh=True``. Returns a parsed :class:`MCSAEntry`."""
+    """Fetch one M-CSA entry. Resolution order (unless ``refresh=True``):
+      1. **Lab-shared mirror** at ``site.MCSA_LOCAL_ROOT/original_<date>/entries/entry_<id>.json``
+         (preferred — reproducible + offline).
+      2. Per-user cache at ``site.mcsa_cache_dir()/entry_<id>.json``.
+      3. EBI REST API (last resort; populates the per-user cache).
+    """
+    # 1. Lab-shared mirror (newest original_<date>/)
+    if not refresh:
+        from quantum_engine.site import mcsa_local_original_dir
+        mirror = mcsa_local_original_dir()
+        if mirror is not None:
+            mirror_path = mirror / "entries" / f"entry_{mcsa_id}.json"
+            if mirror_path.is_file():
+                log.debug(f"M-CSA mirror hit: {mirror_path}")
+                raw = json.loads(mirror_path.read_text())
+                return _parse_entry(raw, mcsa_id)
+
+    # 2. Per-user cache
     cache = _cache_path(mcsa_id)
     if cache.is_file() and not refresh:
-        log.debug(f"M-CSA cache hit: {cache}")
+        log.debug(f"M-CSA per-user cache hit: {cache}")
         raw = json.loads(cache.read_text())
     else:
-        log.info(f"M-CSA fetch: entry {mcsa_id}")
+        log.info(f"M-CSA fetch (no mirror entry): {mcsa_id}")
         raw = _http_get_entry(mcsa_id)
         cache.write_text(json.dumps(raw, indent=2))
     return _parse_entry(raw, mcsa_id)

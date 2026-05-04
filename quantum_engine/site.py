@@ -370,6 +370,24 @@ CHEMSHELL_BIN = _resolve_chemshell()
 DATABASES_DIR = "/net/databases"
 LAB_SOFTWARE = "/net/software/lab"
 
+# M-CSA local mirror (lab-shared, baker group, setgid 2775).
+# Layout: /net/databases/lab/m_csa__embl_ebi/{original_<date>/, custom_annotated/}
+# Loader: quantum_engine.data.mcsa reads from the newest original_<date>/
+# first; falls back to the EBI REST API if the entry isn't present.
+MCSA_LOCAL_ROOT = "/net/databases/lab/m_csa__embl_ebi"
+
+
+def mcsa_local_original_dir() -> Path | None:
+    """Return the newest ``original_<YYYY-MM-DD>/`` dir under
+    MCSA_LOCAL_ROOT, or None if the mirror isn't present."""
+    import glob as _glob
+    candidates = sorted(_glob.glob(
+        f"{MCSA_LOCAL_ROOT}/original_*"), reverse=True)
+    for c in candidates:
+        if Path(c).is_dir():
+            return Path(c)
+    return None
+
 # Lab-mounted PDB mirror — hash-bucketed (../pdb/<2-char hash>/<id>.pdb.gz),
 # updated weekly by the cluster. Use this instead of the RCSB FTP to keep
 # pipelines deterministic + offline-friendly. Falls back to None if the
