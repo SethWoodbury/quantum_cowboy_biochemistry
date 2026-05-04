@@ -342,16 +342,16 @@ def add_carbamate_to_lys169(in_path: Path, out_path: Path,
             new_line = line[:17] + "KCX" + line[20:]
             out_lines.append(new_line)
             if i == last_lys169_idx:
-                # Insert the carbamate atoms, with serial 9999/9998/9997 —
-                # consensus_protonate / pdbfixer will renumber on output.
+                # Insert the carbamate atoms. Serial numbers are normalized
+                # across the whole PDB before writing.
                 # Use ATOM record (not HETATM) since KCX is a modified
                 # standard residue (some tools complain otherwise).
                 out_lines.append(_format_atom(
-                    9001, "CX", "KCX", "A", 169, *cx_pos, "C"))
+                    0, "CX", "KCX", "A", 169, *cx_pos, "C"))
                 out_lines.append(_format_atom(
-                    9002, "OQ1", "KCX", "A", 169, *o1_pos, "O"))
+                    0, "OQ1", "KCX", "A", 169, *o1_pos, "O"))
                 out_lines.append(_format_atom(
-                    9003, "OQ2", "KCX", "A", 169, *o2_pos, "O"))
+                    0, "OQ2", "KCX", "A", 169, *o2_pos, "O"))
                 inserted = True
         else:
             out_lines.append(line)
@@ -360,7 +360,7 @@ def add_carbamate_to_lys169(in_path: Path, out_path: Path,
         raise RuntimeError("Failed to insert KCX carbamate atoms")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text("".join(out_lines))
+    out_path.write_text("".join(_renumber_atom_serials(out_lines)))
     return {
         "nz_xyz": nz,
         "cx_xyz": cx_pos,
@@ -369,6 +369,19 @@ def add_carbamate_to_lys169(in_path: Path, out_path: Path,
         "zn_midpoint": (mx, my, mz),
         "output_pdb": str(out_path),
     }
+
+
+def _renumber_atom_serials(lines: list[str]) -> list[str]:
+    """Return PDB lines with contiguous ATOM/HETATM serial numbers."""
+    out: list[str] = []
+    serial = 1
+    for line in lines:
+        if line.startswith(("ATOM", "HETATM")):
+            out.append(f"{line[:6]}{serial:>5}{line[11:]}")
+            serial += 1
+        else:
+            out.append(line)
+    return out
 
 
 def _format_atom(serial: int, name: str, resname: str, chain: str,
