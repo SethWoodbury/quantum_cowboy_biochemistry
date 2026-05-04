@@ -63,8 +63,6 @@ def make_calc(
     Returns:
         ASE-compatible MACE calculator
     """
-    from mace.calculators import MACECalculator
-
     models = list_models()
 
     # 1. Direct file path
@@ -120,6 +118,8 @@ def make_calc(
         )
 
     log.info(f"Loading '{model}' from {model_path}" + (f" (head={head})" if head else ""))
+
+    from mace.calculators import MACECalculator
 
     kwargs = dict(
         model_paths=model_path,

@@ -32,7 +32,7 @@ Usage
         pH=7.0,
         ligand_charges={"YYL": -1, "ZN": 2},
         methods=["chimera", "propka", "pdbfixer", "rules"],
-        rules={"HIS:254": "neutral", "LYS:139": "carbamylated"},
+        rules={"HIS:254": "neutral", "KCX:169": "deprotonated"},
     )
     print(result.consensus_states)   # {(chain, resnum, resname): "protonated|neutral|deprotonated"}
     print(result.disagreements)      # list of residues where methods disagreed
@@ -254,8 +254,262 @@ def _infer_states_from_pdb(pdb_path: Path) -> dict[tuple[str, int, str], str]:
             states[key] = "protonated" if "HG" in atoms else "deprotonated"
         elif rn == "TYR":
             states[key] = "protonated" if "HH" in atoms else "deprotonated"
+        elif rn == "KCX":
+            carbamate_h = {"HQ1", "HQ2", "HOQ1", "HOQ2", "OQ1H", "OQ2H"}
+            states[key] = "protonated" if atoms & carbamate_h else "deprotonated"
         # Other residues: skip (not pH-sensitive)
     return states
+
+
+def _residue_keys_from_pdb(pdb_path: Path) -> set[tuple[str, int, str]]:
+    """Return residue keys present in a PDB.
+
+    Used to expand wildcard rule keys (for example KCX:169) even when
+    no external protonation method knows how to classify that residue.
+    """
+    keys: set[tuple[str, int, str]] = set()
+    with open(pdb_path) as f:
+        for line in f:
+            if not line.startswith(("ATOM", "HETATM")):
+                continue
+            res_name = line[17:20].strip()
+            chain_id = line[21:22].strip() or "A"
+            try:
+                res_id = int(line[22:26].strip())
+            except ValueError:
+                continue
+            keys.add((chain_id, res_id, res_name))
+    return keys
+
+
+def _expand_rule_keys(
+    rule_states: dict[tuple[str, int, str], str],
+    residue_keys: set[tuple[str, int, str]],
+) -> set[tuple[str, int, str]]:
+    expanded: set[tuple[str, int, str]] = set()
+    for chain, resid, resname in rule_states:
+        if chain == "*":
+            matches = {
+                key for key in residue_keys
+                if key[1] == resid and key[2] == resname
+            }
+            expanded.update(matches or {(chain, resid, resname)})
+        else:
+            expanded.add((chain, resid, resname))
+    return expanded
+
+
+def _atom_xyz(line: str) -> tuple[float, float, float]:
+    return (
+        float(line[30:38]),
+        float(line[38:46]),
+        float(line[46:54]),
+    )
+
+
+def _sub(
+    a: tuple[float, float, float],
+    b: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _norm(v: tuple[float, float, float]) -> tuple[float, float, float]:
+    mag = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) ** 0.5
+    if mag < 1e-6:
+        return (1.0, 0.0, 0.0)
+    return (v[0] / mag, v[1] / mag, v[2] / mag)
+
+
+def _place_hydrogen(
+    atoms: dict[str, str],
+    center_name: str,
+    neighbor_names: tuple[str, ...],
+    *,
+    bond_length: float = 1.0,
+) -> tuple[float, float, float] | None:
+    """Place a hydrogen opposite the heavy-atom bond vectors.
+
+    This is a deterministic repair coordinate, not a force-field
+    optimized proton placement. It is good enough for making the final
+    PDB match the chosen residue state before a later relaxation step.
+    """
+    center_line = atoms.get(center_name)
+    if center_line is None:
+        return None
+    center = _atom_xyz(center_line)
+    direction = (0.0, 0.0, 0.0)
+    for name in neighbor_names:
+        line = atoms.get(name)
+        if line is None:
+            continue
+        vec = _norm(_sub(_atom_xyz(line), center))
+        direction = (
+            direction[0] - vec[0],
+            direction[1] - vec[1],
+            direction[2] - vec[2],
+        )
+    unit = _norm(direction)
+    return (
+        center[0] + bond_length * unit[0],
+        center[1] + bond_length * unit[1],
+        center[2] + bond_length * unit[2],
+    )
+
+
+def _format_h_atom(
+    template_line: str,
+    atom_name: str,
+    xyz: tuple[float, float, float],
+) -> str:
+    record = template_line[:6].strip() or "ATOM"
+    resname = template_line[17:20].strip()
+    chain = template_line[21:22] or " "
+    seq = template_line[22:26]
+    icode = template_line[26:27] if len(template_line) > 26 else " "
+    if len(atom_name) >= 4:
+        atom_field = atom_name[:4]
+    else:
+        atom_field = f" {atom_name:<3}"
+    return (
+        f"{record:<6}{0:>5} {atom_field} "
+        f"{resname:>3} {chain}{seq}{icode}   "
+        f"{xyz[0]:>8.3f}{xyz[1]:>8.3f}{xyz[2]:>8.3f}"
+        f"  1.00  0.00           H  \n"
+    )
+
+
+def _renumber_pdb_atoms(lines: list[str]) -> list[str]:
+    out: list[str] = []
+    serial = 1
+    for line in lines:
+        if line.startswith(("ATOM", "HETATM")):
+            out.append(f"{line[:6]}{serial:>5}{line[11:]}")
+            serial += 1
+        else:
+            out.append(line)
+    return out
+
+
+def _reconcile_pdb_to_consensus(
+    pdb_path: Path,
+    consensus_states: dict[tuple[str, int, str], str],
+) -> list[str]:
+    """Edit final PDB hydrogens so the file matches consensus states."""
+    lines = pdb_path.read_text().splitlines(keepends=True)
+    residue_lines: dict[tuple[str, int, str], list[int]] = {}
+    residue_atoms: dict[tuple[str, int, str], dict[str, str]] = {}
+
+    for idx, line in enumerate(lines):
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
+        atom_name = line[12:16].strip()
+        res_name = line[17:20].strip()
+        chain_id = line[21:22].strip() or "A"
+        try:
+            res_id = int(line[22:26].strip())
+        except ValueError:
+            continue
+        key = (chain_id, res_id, res_name)
+        residue_lines.setdefault(key, []).append(idx)
+        residue_atoms.setdefault(key, {})[atom_name] = line
+
+    remove: set[int] = set()
+    additions_after: dict[int, list[str]] = {}
+
+    def schedule_add(key: tuple[str, int, str], atom_name: str,
+                     xyz: tuple[float, float, float] | None) -> None:
+        if xyz is None or key not in residue_lines:
+            return
+        atoms = residue_atoms.get(key, {})
+        if atom_name in atoms:
+            return
+        insert_after = residue_lines[key][-1]
+        template = lines[insert_after]
+        additions_after.setdefault(insert_after, []).append(
+            _format_h_atom(template, atom_name, xyz)
+        )
+
+    def schedule_remove(key: tuple[str, int, str], names: set[str]) -> None:
+        for idx in residue_lines.get(key, []):
+            if lines[idx][12:16].strip() in names:
+                remove.add(idx)
+
+    for key, state in consensus_states.items():
+        atoms = residue_atoms.get(key)
+        if not atoms:
+            continue
+        resname = key[2]
+
+        if resname == "HIS":
+            if state == "doubly_protonated":
+                schedule_add(key, "HD1", _place_hydrogen(atoms, "ND1", ("CG", "CE1")))
+                schedule_add(key, "HE2", _place_hydrogen(atoms, "NE2", ("CD2", "CE1")))
+            elif state == "neutral":
+                has_hd1 = "HD1" in atoms
+                has_he2 = "HE2" in atoms
+                if has_hd1 and has_he2:
+                    schedule_remove(key, {"HE2"})
+                elif not has_hd1 and not has_he2:
+                    schedule_add(key, "HD1", _place_hydrogen(atoms, "ND1", ("CG", "CE1")))
+            elif state == "deprotonated":
+                schedule_remove(key, {"HD1", "HE2"})
+
+        elif resname == "ASP":
+            if state == "deprotonated":
+                schedule_remove(key, {"HD1", "HD2"})
+            elif state == "protonated":
+                schedule_add(key, "HD2", _place_hydrogen(atoms, "OD2", ("CG",)))
+
+        elif resname == "GLU":
+            if state == "deprotonated":
+                schedule_remove(key, {"HE1", "HE2"})
+            elif state == "protonated":
+                schedule_add(key, "HE2", _place_hydrogen(atoms, "OE2", ("CD",)))
+
+        elif resname == "LYS":
+            if state == "neutral":
+                schedule_remove(key, {"HZ", "HZ1", "HZ2", "HZ3"})
+            elif state == "protonated":
+                schedule_add(key, "HZ1", _place_hydrogen(atoms, "NZ", ("CE",)))
+
+        elif resname == "CYS":
+            if state == "deprotonated":
+                schedule_remove(key, {"HG"})
+            elif state == "protonated":
+                schedule_add(key, "HG", _place_hydrogen(atoms, "SG", ("CB",), bond_length=1.34))
+
+        elif resname == "TYR":
+            if state == "deprotonated":
+                schedule_remove(key, {"HH"})
+            elif state == "protonated":
+                schedule_add(key, "HH", _place_hydrogen(atoms, "OH", ("CZ",)))
+
+        elif resname == "KCX":
+            if state in {"deprotonated", "carbamylated_deprotonated"}:
+                schedule_remove(key, {"HQ1", "HQ2", "HOQ1", "HOQ2", "OQ1H", "OQ2H"})
+
+    edited: list[str] = []
+    changed: list[str] = []
+    for idx, line in enumerate(lines):
+        if idx in remove:
+            changed.append(
+                f"removed {line[12:16].strip()} {line[17:20].strip()} "
+                f"{line[21:22].strip() or 'A'}:{line[22:26].strip()}"
+            )
+            continue
+        edited.append(line)
+        if idx in additions_after:
+            edited.extend(additions_after[idx])
+            for added in additions_after[idx]:
+                changed.append(
+                    f"added {added[12:16].strip()} {added[17:20].strip()} "
+                    f"{added[21:22].strip() or 'A'}:{added[22:26].strip()}"
+                )
+
+    if changed:
+        pdb_path.write_text("".join(_renumber_pdb_atoms(edited)))
+    return changed
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -381,6 +635,10 @@ def consensus_protonate(
     all_keys: set[tuple[str, int, str]] = set()
     for r in method_results.values():
         all_keys.update(r.states.keys())
+    input_residue_keys = _residue_keys_from_pdb(input_pdb)
+    rules_result = method_results.get("rules")
+    if rules_result and rules_result.success:
+        all_keys.update(_expand_rule_keys(rules_result.states, input_residue_keys))
 
     consensus_states: dict[tuple[str, int, str], str] = {}
     audit: list[str] = []
@@ -434,6 +692,17 @@ def consensus_protonate(
         log.warning("  No method produced a usable PDB; copying input as fallback")
         import shutil
         shutil.copy2(str(input_pdb), str(output_pdb))
+
+    reconciliation = _reconcile_pdb_to_consensus(output_pdb, consensus_states)
+    if reconciliation:
+        log.info(
+            f"  Reconciled final PDB to consensus with "
+            f"{len(reconciliation)} hydrogen edit(s)"
+        )
+        for line in reconciliation[:20]:
+            log.info(f"    {line}")
+        if len(reconciliation) > 20:
+            log.info(f"    ... and {len(reconciliation) - 20} more edits")
 
     # Print audit summary
     log.info("=" * 60)
