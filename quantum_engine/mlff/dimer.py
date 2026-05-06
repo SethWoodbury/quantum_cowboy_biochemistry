@@ -77,7 +77,9 @@ def run_dimer_search(
 
     # Set up the dimer atoms object
     dimer_atoms = MinModeAtoms(atoms, dimer_control)
-    dimer_atoms.displace(displacement_vector=displacement.ravel())
+    # ASE's MinModeAtoms.displace adds the vector to positions, which are
+    # shape (N, 3). Pass the unraveled (N, 3) array — ravel() broke this.
+    dimer_atoms.displace(displacement_vector=displacement)
 
     # Run the dimer translation (finds the TS)
     e0 = atoms.get_potential_energy()

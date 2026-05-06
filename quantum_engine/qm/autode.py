@@ -57,8 +57,13 @@ def autode_available() -> bool:
 def _require() -> None:
     if not autode_available():
         raise ImportError(
-            "autodE not installed. `pip install autode>=1.4` into qcb-xtb "
-            "(also pulled in by the [chem] extra)."
+            "autodE not installed. autodE is GitHub-only (NOT on PyPI). "
+            "Install via:\n"
+            "  pip install --target deps/.local_pkgs "
+            "git+https://github.com/duartegroup/autodE.git\n"
+            "Verified with v1.4.5 (2026-05-05). Note: autodE is for organic "
+            "small-molecule reactions; charged species in vacuum and "
+            "metalloenzyme active sites (binuclear Zn etc.) are out of scope."
         )
 
 

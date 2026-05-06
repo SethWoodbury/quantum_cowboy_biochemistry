@@ -10,6 +10,8 @@ Complete documentation for the QCB pipeline: from raw PDB to validated reaction 
 | [Protonation Guide](protonation_guide.md) | Active-site protonation pipeline: pdbfixer, reduce, propka, xTB, edge cases, net charge calculation |
 | [Models Guide](models_guide.md) | MACE model comparison: paths on DIGS, GPU requirements, DFT levels, when to use which, dual-model strategy |
 | [Protocols](protocols.md) | Standard operating protocols for screening, production, mechanistic investigation, chimeric structures |
+| [structure_io + polish_ts_v3](structure_io_and_polish_v3.md) | **(experimental)** universal PDB/CIF I/O with REMARK 665/666 + condensed `REMARK QCB <NNN>` lineage, format validation, multi-MODEL trajectory writer; generalizable polish driver with `--free-residues`, `--prune-residue-keep`, `--fix-distance/angle/dihedral`, `--snapshot-stride` |
+| [Experimental results 2026-05-05](EXPERIMENTAL_RESULTS_2026-05-05.md) | **(experimental)** PTE/paraoxon TS-finding 6h benchmark campaign: 16 strategies, 3 upstream codebase bug fixes, forward barrier reduced 34.22 → 20.68 kcal/mol (within 5–7 of literature) |
 
 ## Quick Reference
 

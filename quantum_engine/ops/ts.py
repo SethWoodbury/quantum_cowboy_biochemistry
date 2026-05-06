@@ -60,6 +60,81 @@ def _energy_consistent(atoms_a, atoms_b, tolerance_eV: float = 1.0) -> bool:
         return True  # if either can't compute, don't flag
 
 
+def assert_frame_consistency(
+    candidate: Atoms,
+    source_atoms: Atoms,
+    constraint=None,
+    *,
+    anchor_tol: float = 0.01,
+    max_anchor_neighbor_dist: float = 2.5,
+    com_drift_warn: float = 5.0,
+    label: str = "stage",
+) -> None:
+    """Hard frame-consistency gate. RAISES RuntimeError if a stage produced
+    a geometry where FixAtoms anchors are decoupled from the rest of the
+    molecule (the geodesic-vs-FixAtoms frame-shift bug).
+
+    Use after every stage that builds or modifies images/endpoints.
+
+    Checks (when a FixAtoms constraint is present):
+      (1) anchors at template positions: max(|cand[anchor] - src[anchor]|) < anchor_tol
+      (2) no anchor-rest decoupling: every anchor has at least one non-anchor
+          atom within max_anchor_neighbor_dist Å (anchor not floating in vacuum)
+      (3) COM drift warning: ||COM(free) - COM(fixed)|| - source_value
+          (rate-limited warning if exceeds com_drift_warn)
+    """
+    from ase.constraints import FixAtoms
+    cs = constraint if isinstance(constraint, list) else ([constraint] if constraint else [])
+    fix_idx = None
+    for c in cs:
+        if isinstance(c, FixAtoms):
+            fix_idx = np.asarray(c.index, dtype=int)
+            break
+    if fix_idx is None or len(fix_idx) == 0:
+        return
+
+    p_cand = candidate.get_positions()
+    p_src = source_atoms.get_positions()
+
+    # (1) anchors didn't move
+    d_anchor = np.linalg.norm(p_cand[fix_idx] - p_src[fix_idx], axis=1)
+    if d_anchor.max() > anchor_tol:
+        raise RuntimeError(
+            f"[{label}] FixAtoms anchors moved {d_anchor.max():.3f} Å "
+            f"(> {anchor_tol} Å); FixAtoms invariant violated."
+        )
+
+    # (2) anchor-to-rest decoupling — the smoking-gun frame-shift bug check
+    free_idx = np.array([i for i in range(len(candidate)) if i not in set(fix_idx.tolist())])
+    if len(free_idx) > 0:
+        dmin_to_free = np.min(
+            np.linalg.norm(p_cand[fix_idx][:, None, :] - p_cand[free_idx][None, :, :], axis=2),
+            axis=1,
+        )
+        bad = np.where(dmin_to_free > max_anchor_neighbor_dist)[0]
+        if len(bad):
+            worst_local = int(bad[np.argmax(dmin_to_free[bad])])
+            worst_global = int(fix_idx[worst_local])
+            raise RuntimeError(
+                f"[{label}] {len(bad)} FixAtoms anchors are >{max_anchor_neighbor_dist} Å "
+                f"from any free atom (DECOUPLED). Worst: anchor index {worst_global}, "
+                f"min-d-to-free = {dmin_to_free.max():.2f} Å. This is the "
+                "geodesic-vs-FixAtoms frame-shift bug; do NOT trust "
+                "energies/barriers from this stage."
+            )
+
+    # (3) COM-drift warning
+    if len(free_idx):
+        delta_cand = float(np.linalg.norm(p_cand[free_idx].mean(axis=0) - p_cand[fix_idx].mean(axis=0)))
+        delta_src = float(np.linalg.norm(p_src[free_idx].mean(axis=0) - p_src[fix_idx].mean(axis=0)))
+        drift = abs(delta_cand - delta_src)
+        if drift > com_drift_warn:
+            log.warning(
+                f"[{label}] COM(free)-COM(fixed) drift {drift:.2f} Å vs source "
+                f"({delta_src:.2f} → {delta_cand:.2f}); possible frame inconsistency."
+            )
+
+
 def run(
     input_atoms: Atoms,
     calculator_fn,
@@ -127,6 +202,9 @@ def run(
     # Attach calc + constraint to input
     input_atoms = input_atoms.copy()
     _setup_calc_and_constraint(input_atoms, calculator_fn, charge, constraint)
+    # Snapshot the source frame BEFORE any stage touches the geometry.
+    # Used by assert_frame_consistency to detect frame-shift bugs.
+    _source_atoms = input_atoms.copy()
 
     log.info("=" * 60)
     log.info(f"qcb ts: strategy={strategy}, charge={charge:+d}, n_atoms={len(input_atoms)}")
@@ -159,6 +237,10 @@ def run(
             log.error("  IRC did not produce full (R, TS, P). Returning partial result.")
             result["status"] = "failed"
             return result
+
+        # FRAME-CONSISTENCY GATE — refuse to ship a decoupled-anchor structure
+        for a, lbl in [(reactant, "irc/reactant"), (ts, "irc/ts"), (product, "irc/product")]:
+            assert_frame_consistency(a, _source_atoms, constraint, label=lbl)
 
         # Rebuild atoms with a single consistent calc for final energy eval
         for a in (reactant, ts, product):
@@ -230,6 +312,10 @@ def run(
             )
         # mtd case: reactant, product already set
 
+        # FRAME-CONSISTENCY GATE on endpoints (catches cv-spring drive failures)
+        assert_frame_consistency(reactant, _source_atoms, constraint, label=f"{strategy}/reactant")
+        assert_frame_consistency(product,  _source_atoms, constraint, label=f"{strategy}/product")
+
         # Run NEB
         from quantum_engine.ops import neb
         # Ensure endpoints have their own calc instances with charge set
@@ -252,6 +338,13 @@ def run(
             result["status"] = "failed"
             result["error"] = "NEB did not produce TS"
             return result
+
+        # FRAME-CONSISTENCY GATE on every NEB image (catches the
+        # geodesic-vs-FixAtoms frame-shift bug; see interpolation.py fix).
+        for i, img in enumerate(images or []):
+            assert_frame_consistency(img, _source_atoms, constraint,
+                                     label=f"{strategy}/NEB-image-{i}")
+        assert_frame_consistency(ts, _source_atoms, constraint, label=f"{strategy}/TS")
 
         # Critical: ensure TS has same calc setup as endpoints for consistent energy
         # This is what the legacy pipeline got wrong.
@@ -319,6 +412,11 @@ def _cv_spring_endpoints(
     """Drive input to reactant (s=s_reactant) and product (s=s_product) via CV spring."""
     from quantum_engine.mlff.cv_spring import BondDifferenceCVSpring
 
+    # Snapshot the source frame BEFORE any drive runs — used to gate frame
+    # consistency at every drive/polish boundary so a runaway spring or
+    # geodesic-style frame shift can't propagate into NEB.
+    _source_for_gate = input_atoms.copy()
+
     def _drive(s_target: float, label: str):
         a = input_atoms.copy()
         _setup_calc_and_constraint(a, calc_fn, charge, constraint)
@@ -334,11 +432,18 @@ def _cv_spring_endpoints(
         # Log-only; final geometry is what we care about.
         opt = LBFGS(a, logfile=str(outdir / f"cv-drive-{label}.log"))
         opt.run(fmax=spring_drive_fmax, steps=300)
+        # Frame-consistency gate immediately after drive (catches a spring that
+        # ran away). Defense in depth: the polish step might mask symptoms.
+        assert_frame_consistency(a, _source_for_gate, constraint,
+                                 label=f"cv-drive/{label}")
         # Remove CV spring, keep opt constraint, polish (now safe to use trajectory)
         a.set_constraint(base_cs)
         opt2 = LBFGS(a, logfile=str(outdir / f"cv-polish-{label}.log"),
                      trajectory=str(outdir / f"cv-polish-{label}.traj"))
         opt2.run(fmax=opt_final_fmax, steps=200)
+        # Gate again after polish.
+        assert_frame_consistency(a, _source_for_gate, constraint,
+                                 label=f"cv-polish/{label}")
         return a
 
     reactant = _drive(s_reactant, "reactant")

@@ -185,7 +185,8 @@ def _cmd_irc(args):
     return irc.run(atoms, calc, outdir, constraint,
                    refine_ts=not args.no_refine_ts,
                    saddle_fmax=args.saddle_fmax,
-                   irc_step=args.step, irc_fmax=args.fmax)
+                   irc_step=args.step, irc_fmax=args.fmax,
+                   irc_max_steps=args.max_steps)
 
 
 def _cmd_neb(args):
@@ -540,7 +541,11 @@ def main(argv=None):
     p_irc.add_argument("--no-refine-ts", action="store_true", help="Skip Sella refinement")
     p_irc.add_argument("--saddle-fmax", type=float, default=0.02)
     p_irc.add_argument("--step", type=float, default=0.1, help="Displacement along imag mode")
-    p_irc.add_argument("--fmax", type=float, default=0.03)
+    p_irc.add_argument("--fmax", type=float, default=0.05,
+                       help="IRC endpoint LBFGS convergence (eV/Å). 0.03 is often "
+                            "too tight for ML potentials; 0.05 is a robust default.")
+    p_irc.add_argument("--max-steps", type=int, default=400,
+                       help="LBFGS iteration cap per IRC direction.")
 
     # neb
     p_neb = sub.add_parser("neb", help="NEB + CI-NEB")

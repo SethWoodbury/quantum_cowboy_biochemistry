@@ -39,6 +39,10 @@ BOND_BREAKING_DEFS: dict[str, list[tuple[str, str, float, str]]] = {
         ("P1", "O1", 1.4, "attractive"),
         ("P1", "O5", 3.5, "repulsive"),
     ],
+    "SUB": [
+        ("P1", "O3", 1.4, "attractive"),
+        ("P1", "O7", 3.5, "repulsive"),
+    ],
     # ─── Non-PTE ───
     "PT4": [
         ("C7", "C8", 2.5, "repulsive"),

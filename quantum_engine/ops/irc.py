@@ -23,7 +23,8 @@ def run(
     refine_ts: bool = True,
     saddle_fmax: float = 0.02,
     irc_step: float = 0.1,
-    irc_fmax: float = 0.03,
+    irc_fmax: float = 0.05,
+    irc_max_steps: int = 400,
     reactant_hint_bonds: dict | None = None,
     **kwargs,
 ) -> dict:
@@ -52,13 +53,15 @@ def run(
         res = irc_from_ts_guess(
             atoms, outdir=outdir, constraint=constraint,
             saddle_fmax=saddle_fmax, irc_step=irc_step, irc_fmax=irc_fmax,
+            irc_max_steps=irc_max_steps,
             reactant_hint_bonds=reactant_hint_bonds,
         )
     else:
         from quantum_engine.mlff.irc import run_irc
         res = run_irc(
             atoms, outdir=outdir,
-            step_size=irc_step, fmax=irc_fmax, constraint=constraint,
+            step_size=irc_step, fmax=irc_fmax, max_steps=irc_max_steps,
+            constraint=constraint,
             reactant_hint_bonds=reactant_hint_bonds,
         )
         # Wrap to match irc_from_ts_guess schema

@@ -45,6 +45,7 @@ from pathlib import Path
 import numpy as np
 from quantum_engine.units import EV_TO_KCAL
 from ase import Atoms
+from ase.calculators.singlepoint import SinglePointCalculator
 from ase.io import read, write
 from ase.optimize import LBFGS
 
@@ -245,8 +246,8 @@ def run_irc(
     outdir: str | Path,
     direction: str = "both",
     step_size: float = 0.1,
-    max_steps: int = 200,
-    fmax: float = 0.03,
+    max_steps: int = 400,
+    fmax: float = 0.05,
     constraint=None,
     reactant_hint_bonds: dict | None = None,
 ) -> dict:
@@ -327,8 +328,18 @@ def run_irc(
         try:
             dyn = LBFGS(atoms_side, trajectory=str(traj_file), logfile=str(log_file))
             dyn.run(fmax=fmax, steps=max_steps)
-            e_end = atoms_side.get_potential_energy()
+            # Force a fresh evaluation at the final geometry — LBFGS may have
+            # left atoms_side.calc.results stale from an internal trial step.
+            e_end = float(atoms_side.get_potential_energy())
+            f_end = atoms_side.get_forces().copy()
             dE = (e_end - e_ts) * EV_TO_KCAL
+
+            # CRITICAL: detach a per-endpoint SinglePointCalculator snapshot.
+            # Without this, both atoms_side objects share ts_atoms.calc, and
+            # whichever side runs LAST overwrites .calc.results — so reactant.xyz
+            # and product.xyz get byte-identical extxyz metadata (energy/forces).
+            snap = SinglePointCalculator(atoms_side, energy=e_end, forces=f_end)
+            atoms_side.calc = snap
 
             log.info(f"  IRC {side_tag}-direction converged: E = E_TS {dE:+.2f} kcal/mol")
             descended[side_tag] = (atoms_side, dE)
@@ -405,7 +416,8 @@ def irc_from_ts_guess(
     constraint=None,
     saddle_fmax: float = 0.02,
     irc_step: float = 0.1,
-    irc_fmax: float = 0.03,
+    irc_fmax: float = 0.05,
+    irc_max_steps: int = 400,
     reactant_hint_bonds: dict | None = None,
 ) -> dict:
     """Full IRC-from-TS workflow: Sella saddle search + IRC descent both ways.
@@ -437,6 +449,7 @@ def irc_from_ts_guess(
         direction="both",
         step_size=irc_step,
         fmax=irc_fmax,
+        max_steps=irc_max_steps,
         constraint=constraint,
         reactant_hint_bonds=reactant_hint_bonds,
     )

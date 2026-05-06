@@ -160,21 +160,46 @@ def geodesic_interpolate(
         log.warning(f"  Geodesic.smooth failed ({e}), using redistribute-only path")
         X_final = X_init
 
+    # CRITICAL FRAME-CONSISTENCY FIX (2026-05-05):
+    # The Geodesic library re-centers the path internally (COM(image 0) → origin)
+    # and may rotate it. If the constrained `reactant` template carries FixAtoms
+    # pinning anchors at SOURCE-FRAME positions, then `img.set_positions(X)`
+    # triggers FixAtoms.adjust_positions which snaps fixed indices back to
+    # source-frame coords while non-fixed atoms accept the centered-frame coords
+    # — producing a mixed-frame structure where anchors are decoupled from the
+    # rest of the molecule (~64 Å gap on PTE; mace's 5 Å cutoff makes them
+    # invisible to one another). Documented in
+    # ~/.claude/projects/.../memory/pte_pipeline_2026-05-04.md.
+    # Fix: Kabsch-align every geodesic image back onto the source frame using
+    # the reactant's positions as the alignment target.
+    src_positions = reactant.get_positions()
+    cs = src_positions.mean(axis=0)
+    aligned: list[np.ndarray] = []
+    for X in X_final:
+        cx = X.mean(axis=0)
+        Xc = X - cx
+        Sc = src_positions - cs
+        H = Xc.T @ Sc
+        U, _, Vt = np.linalg.svd(H)
+        sign = np.sign(np.linalg.det(Vt.T @ U.T))
+        R = Vt.T @ np.diag([1.0, 1.0, sign]) @ U.T
+        aligned.append((Xc @ R.T) + cs)
+
     # Convert back to Atoms objects, preserving calc and other attributes
     images = []
-    for i, X in enumerate(X_final):
+    for i, X in enumerate(aligned):
         img = reactant.copy()
         img.set_positions(X)
         # Endpoints keep their calculators; middle images get reactant's for NEB
         if i == 0:
             img.calc = reactant.calc
-        elif i == len(X_final) - 1:
+        elif i == len(aligned) - 1:
             img.calc = product.calc
         else:
             img.calc = reactant.calc
         images.append(img)
 
-    log.info(f"  Geodesic converged: {len(images)} images")
+    log.info(f"  Geodesic converged: {len(images)} images (frame-aligned to source)")
     return images
 
 
