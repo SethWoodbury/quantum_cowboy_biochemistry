@@ -33,6 +33,7 @@ from structure_io import (    # noqa: E402
     parse_pdb_lineage, write_pdb_lineage, validate_pdb_format,
     write_cif_lineage, write_trajectory_pdb,
     autoadd_protein_matcher_remarks, qcb_remark, qcb_legend_remarks,
+    compute_mulliken_charges_xtb, _normalize_element, _guess_element,
 )
 
 log = logging.getLogger("polish_ts_v3")
@@ -311,6 +312,12 @@ def apply_prune_backbone(lineage, residues: list[int]) -> tuple:
 
 # ===== the main pipeline ====================================================
 def run_polish(spec: RunSpec) -> int:
+    # D14: fail fast on missing or empty input before doing any work.
+    if not spec.input_pdb.exists():
+        raise SystemExit(f"input PDB not found: {spec.input_pdb}")
+    if spec.input_pdb.stat().st_size == 0:
+        raise SystemExit(f"input PDB is empty: {spec.input_pdb}")
+
     spec.out_dir.mkdir(parents=True, exist_ok=True)
     log.info(f"=== polish_ts_v3  in={spec.input_pdb}  out={spec.out_dir} ===")
 
@@ -321,12 +328,26 @@ def run_polish(spec: RunSpec) -> int:
     # 1. Read with lineage
     lineage = parse_pdb_lineage(spec.input_pdb)
     log.info(f"  loaded {len(lineage.atoms)} atoms; {len(lineage.matcher_remarks)} REMARK 666")
+    if len(lineage.atoms) == 0:
+        raise SystemExit(
+            f"input PDB {spec.input_pdb} has 0 ATOM/HETATM records — "
+            "is it a malformed file or PDB with only headers?"
+        )
 
     # 1a. Auto-add REMARK 666 for protein residues that don't have one
+    n_chain_a = sum(1 for a in lineage.atoms if a.chain == "A")
     autoadd_protein_matcher_remarks(lineage,
                                      target_chain="X",
                                      target_name=spec.p_res,
                                      target_resi=0)
+    if n_chain_a == 0 and not lineage.matcher_remarks:
+        # D15: surface the no-chain-A case so the user knows REMARK 666 was
+        # NOT auto-populated. Don't crash — single-chain non-A inputs are
+        # legitimate (e.g. ligand-only systems for SMILES → vacuum-TS).
+        log.warning("  no chain-A protein residues detected and no REMARK 666 "
+                    "entries from the input — output will lack matcher anchors. "
+                    "If you expected matcher entries, check chain ID convention "
+                    "or pre-populate REMARK 666 lines in the input PDB.")
     log.info(f"  after auto-add: {len(lineage.matcher_remarks)} REMARK 666 entries")
 
     # 2. Apply pruning if requested — use the cap-aware util that places HP
@@ -430,10 +451,10 @@ def run_polish(spec: RunSpec) -> int:
         # If we pruned, reload from pruned coords + pruned element list
         if len(atoms) != len(lineage.atoms):
             from ase import Atoms as ASEAtoms
-            elements = []
-            for a in lineage.atoms:
-                from structure_io import _guess_element
-                elements.append(a.element if a.element else _guess_element(a.name))
+            elements = [
+                a.element if a.element else _guess_element(a.name)
+                for a in lineage.atoms
+            ]
             atoms = ASEAtoms(symbols=elements, positions=coords)
         else:
             atoms.set_positions(coords)
@@ -536,9 +557,6 @@ def run_polish(spec: RunSpec) -> int:
     #    `_qcb_atom_charge.partial_charge` loop.
     partial_charges_arr: np.ndarray | None = None
     if spec.compute_mulliken:
-        # Imports up-front to avoid NameError if a.element is empty for any atom
-        from structure_io import (compute_mulliken_charges_xtb,
-                                    _normalize_element, _guess_element)
         try:
             elements_for_xtb = [
                 _normalize_element(a.element) if a.element else _guess_element(a.name)

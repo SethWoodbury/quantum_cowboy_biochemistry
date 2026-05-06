@@ -233,8 +233,21 @@ def apply_prune_with_caps(
         # atom names in this residue (e.g. PDB already has HP1 from a prior run)
         existing = existing_hp_per_residue.setdefault(key, set())
         per_resseq_counter[key] = per_resseq_counter.get(key, 0) + 1
+        # PDB atom-name field is 4 chars (cols 13-16). With a 2-char "HP"
+        # prefix we can fit HP1..HP99; HP100+ would silently truncate to
+        # "HP10". Guard explicitly (D3 fix). Realistic protein residues
+        # have ≤ ~15 atoms so >99 caps in one residue is essentially
+        # impossible — but raise cleanly if it ever happens.
+        max_idx = 10 ** (4 - len(cap_atom_name_prefix)) - 1
         while True:
             cap_no = per_resseq_counter[key]
+            if cap_no > max_idx:
+                raise RuntimeError(
+                    f"cap_no={cap_no} for {key} exceeds max {max_idx} "
+                    f"that fits in 4-char PDB atom-name field with prefix "
+                    f"{cap_atom_name_prefix!r}; pass a shorter "
+                    "cap_atom_name_prefix or audit your input."
+                )
             cap_name = f"{cap_atom_name_prefix}{cap_no}"
             if cap_name not in existing:
                 existing.add(cap_name)

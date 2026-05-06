@@ -247,6 +247,111 @@ def t5_remap_after_prune():
             _fail("  no-op prune mapping", m, "identity or absent")
 
 
+# ---- T6: empty-input PDB fast-fail (D14) ------------------------------------
+def t6_empty_input_fastfail():
+    print("T6. empty-input fast-fail (D14)")
+    import tempfile, polish_ts_v3 as p3
+    # missing file
+    parser = p3.build_parser()
+    args = parser.parse_args([
+        "--input", "/tmp/THIS_FILE_DOES_NOT_EXIST_XYZZY.pdb",
+        "--out", "/tmp/p3_test_missing",
+    ])
+    spec = p3.resolve_args(args)
+    try:
+        p3.run_polish(spec)
+        _fail("  missing input should raise SystemExit", "no exception", "SystemExit")
+    except SystemExit as e:
+        if "not found" in str(e):
+            _ok("  missing input → SystemExit('not found')")
+        else:
+            _fail("  missing-input SystemExit message", str(e), "...not found...")
+
+    # empty file
+    with tempfile.NamedTemporaryFile(suffix=".pdb", mode="w", delete=False) as fh:
+        empty = fh.name
+    args = parser.parse_args(["--input", empty, "--out", "/tmp/p3_test_empty"])
+    spec = p3.resolve_args(args)
+    try:
+        p3.run_polish(spec)
+        _fail("  empty input should raise SystemExit", "no exception", "SystemExit")
+    except SystemExit as e:
+        if "empty" in str(e):
+            _ok("  empty file → SystemExit('empty')")
+        else:
+            _fail("  empty-input SystemExit message", str(e), "...empty...")
+
+    # PDB with only headers (no ATOM records)
+    with tempfile.NamedTemporaryFile(suffix=".pdb", mode="w", delete=False) as fh:
+        fh.write("HEADER  test\nREMARK 1  no atoms\nEND\n")
+        no_atoms = fh.name
+    args = parser.parse_args(["--input", no_atoms, "--out", "/tmp/p3_test_noatoms"])
+    spec = p3.resolve_args(args)
+    try:
+        p3.run_polish(spec)
+        _fail("  zero-atom input should SystemExit", "no exception", "SystemExit")
+    except SystemExit as e:
+        if "0 ATOM/HETATM" in str(e):
+            _ok("  zero-atom file → SystemExit('0 ATOM/HETATM records')")
+        else:
+            _fail("  zero-atom SystemExit message", str(e), "...0 ATOM/HETATM...")
+
+
+# ---- T7: cap_no overflow guard (D3) -----------------------------------------
+def t7_cap_no_overflow():
+    print("T7. cap_no overflow guard (D3)")
+    from prune_utils import apply_prune_with_caps
+    from structure_io import PdbAtom, StructureLineage
+    # Use a 4-char prefix so max_idx = 10^(4-4)-1 = 0; any cap_no >= 1
+    # will exceed, exercising the overflow guard. (Geometric realism makes
+    # >99 caps with the default 2-char "HP" prefix essentially impossible
+    # in a single residue, so this is the cleanest way to test the guard.)
+    atoms = [
+        PdbAtom(raw=" "*80, serial=1, name="C0", altloc=" ",
+                resname="MOL", chain="A", resseq=1, icode=" ",
+                x=0.0, y=0.0, z=0.0, occ=1.0, bfac=0.0,
+                element="C", charge_field=""),
+        PdbAtom(raw=" "*80, serial=2, name="C1", altloc=" ",
+                resname="MOL", chain="A", resseq=1, icode=" ",
+                x=1.5, y=0.0, z=0.0, occ=1.0, bfac=0.0,
+                element="C", charge_field=""),
+    ]
+    lin = StructureLineage(atoms=atoms, raw_remarks=[])
+    try:
+        apply_prune_with_caps(
+            lin, prune_keep_specs={1: ["C0"]},
+            do_xtb_relax=False, cap_atom_name_prefix="XXXX",  # 4 chars → max_idx=0
+        )
+        _fail("  4-char-prefix overflow should raise RuntimeError", "no error", "RuntimeError")
+    except RuntimeError as e:
+        if "exceeds max" in str(e):
+            _ok(f"  4-char-prefix overflow → RuntimeError('exceeds max ...')")
+        else:
+            _fail("  cap_no overflow message", str(e), "...exceeds max...")
+
+
+# ---- T8: no-chain-A warning (D15) -------------------------------------------
+def t8_no_chain_a_warning():
+    print("T8. no-chain-A autoadd warning (D15)")
+    from structure_io import (PdbAtom, StructureLineage,
+                                autoadd_protein_matcher_remarks)
+    # Build a structure with chain B residues, no chain A.
+    atoms = [
+        PdbAtom(raw=" "*80, serial=1, name="N", altloc=" ",
+                resname="HIS", chain="B", resseq=10, icode=" ",
+                x=0.0, y=0.0, z=0.0, occ=1.0, bfac=0.0,
+                element="N", charge_field=""),
+    ]
+    lin = StructureLineage(atoms=atoms, raw_remarks=[])
+    autoadd_protein_matcher_remarks(lin, target_chain="X", target_name="SUB",
+                                     target_resi=0)
+    # Currently: function only auto-adds for chain A; non-A is left alone.
+    if len(lin.matcher_remarks) == 0:
+        _ok("  chain-B-only input gets 0 auto-added matchers (correct)")
+    else:
+        _fail("  non-chain-A autoadd", len(lin.matcher_remarks), 0)
+
+
 def main() -> int:
     t1_parse_charge_matrix()
     t1b_normalize_element()
@@ -254,6 +359,9 @@ def main() -> int:
     t3_cap_h_synthetic()
     t4_polish_v3_import()
     t5_remap_after_prune()
+    t6_empty_input_fastfail()
+    t7_cap_no_overflow()
+    t8_no_chain_a_warning()
     print()
     print(f"=== {PASSED} passed, {FAILED} failed ===")
     return 0 if FAILED == 0 else 1
