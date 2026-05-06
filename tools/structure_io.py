@@ -356,6 +356,47 @@ def validate_pdb_format(path: Path) -> dict:
 
 
 # ===== CIF writer (delegates to existing write_ts_cif) ======================
+def parse_pdb_charge_field(charge_field: str) -> int:
+    """Parse PDB cols 79-80 charge field ('2+', '1-', '') into an int.
+
+    Empty / unparseable strings → 0. Handles both '2+' and '+2' orderings.
+    """
+    s = (charge_field or "").strip()
+    if not s:
+        return 0
+    digits = "".join(c for c in s if c.isdigit()) or "1"
+    sign = -1 if "-" in s else 1
+    try:
+        return sign * int(digits)
+    except ValueError:
+        return 0
+
+
+def lineage_formal_charges(lineage: StructureLineage,
+                            metal_oxidation_overrides: dict[str, int] | None = None,
+                            ) -> np.ndarray:
+    """Build a (N,) integer array of formal charges from a lineage.
+
+    Sources, in priority order:
+      1. ``metal_oxidation_overrides`` — caller-provided dict {element: charge}
+         for known oxidation states (e.g. {'Zn': 2, 'Fe': 3, 'Cu': 1}). Applied
+         to atoms whose element matches.
+      2. PDB column 79-80 charge field (``PdbAtom.charge_field``), parsed by
+         :func:`parse_pdb_charge_field`.
+      3. Default 0.
+    """
+    overrides = metal_oxidation_overrides or {}
+    overrides_norm = {_normalize_element(k): int(v) for k, v in overrides.items()}
+    charges = np.zeros(len(lineage.atoms), dtype=int)
+    for i, a in enumerate(lineage.atoms):
+        elem = _normalize_element(a.element) if a.element else _guess_element(a.name)
+        if elem in overrides_norm:
+            charges[i] = overrides_norm[elem]
+        else:
+            charges[i] = parse_pdb_charge_field(a.charge_field)
+    return charges
+
+
 def write_cif_lineage(lineage: StructureLineage,
                       coords: np.ndarray,
                       out_path: Path,
@@ -363,10 +404,17 @@ def write_cif_lineage(lineage: StructureLineage,
                       total_charge: int = 0,
                       partial_charges: np.ndarray | None = None,
                       formal_charges: np.ndarray | None = None,
+                      metal_oxidation_overrides: dict[str, int] | None = None,
                       energy_eV: float | None = None,
                       extra_qcb: list[str] | None = None,
                       ) -> Path:
-    """Write CIF via atomworks (delegating to quantum_engine.io.cif)."""
+    """Write CIF via atomworks (delegating to quantum_engine.io.cif).
+
+    Formal charges, if not explicitly passed, are auto-extracted from the
+    lineage's PDB charge fields (cols 79-80) plus optional metal-oxidation
+    overrides. Pass ``metal_oxidation_overrides={'Zn': 2, 'Fe': 3}`` to
+    enforce known oxidation states regardless of what the PDB carries.
+    """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -407,6 +455,16 @@ def write_cif_lineage(lineage: StructureLineage,
     if energy_eV is not None:
         # Stash on Atoms.info so write_ts_cif can pick it up if its API changes
         atoms.info["energy_eV"] = energy_eV
+
+    # Auto-build formal charges from PDB col 79-80 + metal-oxidation overrides
+    # if the caller didn't supply them explicitly.
+    if formal_charges is None:
+        fc = lineage_formal_charges(lineage, metal_oxidation_overrides)
+        if np.any(fc != 0):
+            formal_charges = fc
+            n_charged = int(np.sum(fc != 0))
+            log.info(f"  CIF formal charges: {n_charged} non-zero atoms "
+                     f"(sum = {int(fc.sum()):+d})")
 
     from quantum_engine.io.cif import write_ts_cif
     write_ts_cif(

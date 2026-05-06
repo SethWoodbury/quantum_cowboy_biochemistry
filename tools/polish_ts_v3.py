@@ -116,6 +116,7 @@ class RunSpec:
     cap_h_bond: float
     prune_xtb_relax: bool
     prune_xtb_max_steps: int
+    metal_oxidation: dict[str, int]
     dry_run: bool
     seed: int
 
@@ -179,6 +180,14 @@ def build_parser() -> argparse.ArgumentParser:
                       action="store_false")
     cap.add_argument("--prune-xtb-max-steps", type=int, default=100)
 
+    chrg = p.add_argument_group("metal oxidation states (CIF formal_charge)")
+    chrg.add_argument("--metal-oxidation", nargs="+", default=[], metavar="ELEM:CHARGE",
+                       help="Override per-element formal charge for metals "
+                            "(e.g. 'Zn:+2' 'Fe:+3' 'Cu:+1'). Applies to ALL "
+                            "atoms whose element matches; overrides PDB cols "
+                            "79-80. For systems where PDB charge col is "
+                            "missing/inconsistent on metals.")
+
     p.add_argument("--dry-run", action="store_true",
                    help="Resolve constraints and write README; skip optimization.")
     p.add_argument("--seed", type=int, default=0)
@@ -217,9 +226,21 @@ def resolve_args(args: argparse.Namespace) -> RunSpec:
         cap_h_bond=args.cap_h_bond,
         prune_xtb_relax=args.prune_xtb_relax,
         prune_xtb_max_steps=args.prune_xtb_max_steps,
+        metal_oxidation=_parse_metal_oxidation(args.metal_oxidation),
         dry_run=args.dry_run,
         seed=args.seed,
     )
+
+
+def _parse_metal_oxidation(specs: list[str]) -> dict[str, int]:
+    """Parse `--metal-oxidation Zn:+2 Fe:+3` into {'Zn': 2, 'Fe': 3}."""
+    out: dict[str, int] = {}
+    for s in specs or []:
+        if ":" not in s:
+            raise SystemExit(f"--metal-oxidation needs ELEM:CHARGE; got {s!r}")
+        elem, charge_s = s.split(":", 1)
+        out[elem.strip().capitalize()] = int(charge_s.replace("+", ""))
+    return out
 
 
 # ===== topology utilities (prune + cap) =====================================
@@ -483,9 +504,14 @@ def run_polish(spec: RunSpec) -> int:
 
     if spec.emit_cif:
         cif_out = spec.out_dir / f"{spec.out_basename}.cif"
+        # Default metal-oxidation overrides — Zn always +2 (only valid ox state
+        # in PTE/biology); user can extend or override via --metal-oxidation.
+        metal_ox = {"Zn": 2}
+        metal_ox.update(spec.metal_oxidation or {})
         try:
             write_cif_lineage(lineage, coords, cif_out,
                                total_charge=spec.charge,
+                               metal_oxidation_overrides=metal_ox,
                                energy_eV=e_final if not spec.dry_run else None,
                                extra_qcb=extra_qcb)
             log.info(f"  CIF output: {cif_out}")
