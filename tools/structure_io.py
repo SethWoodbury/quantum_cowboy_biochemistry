@@ -356,6 +356,55 @@ def validate_pdb_format(path: Path) -> dict:
 
 
 # ===== CIF writer (delegates to existing write_ts_cif) ======================
+def compute_mulliken_charges_xtb(
+    elements: list[str],
+    coords: np.ndarray,
+    total_charge: int = 0,
+    method: str = "gfn2",
+    timeout_s: int = 120,
+) -> np.ndarray | None:
+    """Compute per-atom Mulliken partial charges via a fast xTB single-point.
+
+    Returns None on failure (xtb not found, SCF didn't converge, etc.).
+    """
+    import subprocess, tempfile, shutil
+    XTB_BIN = REPO / "deps" / "xtb" / "install" / "bin" / "xtb"
+    if not XTB_BIN.exists():
+        log.warning(f"xtb binary not found at {XTB_BIN}; skipping Mulliken")
+        return None
+    work = Path(tempfile.mkdtemp(prefix="mulliken_"))
+    try:
+        n = len(coords)
+        with (work / "input.xyz").open("w") as fh:
+            fh.write(f"{n}\nMulliken charges chrg={total_charge}\n")
+            for el, (x, y, z) in zip(elements, coords):
+                fh.write(f"{_normalize_element(el):<2s} {x:>14.8f} {y:>14.8f} {z:>14.8f}\n")
+        proc = subprocess.run(
+            [str(XTB_BIN), "input.xyz", "--gfn", method[3:] if method.startswith("gfn") else "2",
+             "--chrg", str(total_charge), "--sp"],
+            cwd=str(work), capture_output=True, text=True, timeout=timeout_s,
+        )
+        if proc.returncode != 0:
+            log.warning(f"xtb Mulliken SP exited {proc.returncode}: "
+                        f"{proc.stderr[-300:]}")
+            return None
+        # xtb writes a "charges" file: one float per line
+        ch_file = work / "charges"
+        if not ch_file.exists():
+            log.warning(f"xtb did not produce charges file at {ch_file}")
+            return None
+        charges = np.array([float(x) for x in ch_file.read_text().split()])
+        if len(charges) != n:
+            log.warning(f"xtb charges count {len(charges)} != n_atoms {n}")
+            return None
+        return charges
+    except subprocess.TimeoutExpired:
+        log.warning(f"xtb Mulliken SP timed out after {timeout_s}s")
+        return None
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def parse_pdb_charge_field(charge_field: str) -> int:
     """Parse PDB cols 79-80 charge field ('2+', '1-', '') into an int.
 

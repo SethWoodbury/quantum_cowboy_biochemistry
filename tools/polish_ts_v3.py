@@ -117,6 +117,7 @@ class RunSpec:
     prune_xtb_relax: bool
     prune_xtb_max_steps: int
     metal_oxidation: dict[str, int]
+    compute_mulliken: bool
     dry_run: bool
     seed: int
 
@@ -187,6 +188,13 @@ def build_parser() -> argparse.ArgumentParser:
                             "atoms whose element matches; overrides PDB cols "
                             "79-80. For systems where PDB charge col is "
                             "missing/inconsistent on metals.")
+    chrg.add_argument("--compute-mulliken", action="store_true", default=True,
+                       help="Run a fast xTB-GFN2 single-point on the final "
+                            "geometry to compute Mulliken partial charges. "
+                            "Written to CIF _qcb_atom_charge.partial_charge "
+                            "loop AND to PDB B-factor column. Default ON.")
+    chrg.add_argument("--no-compute-mulliken", dest="compute_mulliken",
+                       action="store_false")
 
     p.add_argument("--dry-run", action="store_true",
                    help="Resolve constraints and write README; skip optimization.")
@@ -227,6 +235,7 @@ def resolve_args(args: argparse.Namespace) -> RunSpec:
         prune_xtb_relax=args.prune_xtb_relax,
         prune_xtb_max_steps=args.prune_xtb_max_steps,
         metal_oxidation=_parse_metal_oxidation(args.metal_oxidation),
+        compute_mulliken=args.compute_mulliken,
         dry_run=args.dry_run,
         seed=args.seed,
     )
@@ -485,14 +494,57 @@ def run_polish(spec: RunSpec) -> int:
                                      f"fmax_eV_per_A={fmax_final:.6f}",
                                      f"converged={bool(converged)}"))
 
-    # 7. Write outputs
+    # 7. Compute Mulliken partial charges via fast xTB-GFN2 single-point
+    #    on the final geometry. Used for both PDB B-factor column AND CIF
+    #    `_qcb_atom_charge.partial_charge` loop.
+    partial_charges_arr: np.ndarray | None = None
+    if spec.compute_mulliken:
+        # Imports up-front to avoid NameError if a.element is empty for any atom
+        from structure_io import (compute_mulliken_charges_xtb,
+                                    _normalize_element, _guess_element)
+        try:
+            elements_for_xtb = [
+                _normalize_element(a.element) if a.element else _guess_element(a.name)
+                for a in lineage.atoms
+            ]
+            partial_charges_arr = compute_mulliken_charges_xtb(
+                elements=elements_for_xtb,
+                coords=coords,
+                total_charge=spec.charge,
+                method="gfn2",
+                timeout_s=180,
+            )
+            # Sanity gate: Mulliken charges should sum to total system charge
+            if partial_charges_arr is not None:
+                summed = float(partial_charges_arr.sum())
+                if abs(summed - spec.charge) > 0.5:
+                    log.warning(
+                        f"  Mulliken sum {summed:+.4f} differs from total_charge "
+                        f"{spec.charge:+d} by >0.5 e — possible SCF or input issue; "
+                        "still writing but flag for review")
+            if partial_charges_arr is not None:
+                log.info(f"  Mulliken (xTB-GFN2): sum={partial_charges_arr.sum():+.4f} "
+                         f"(target {spec.charge:+d}), max|q|={abs(partial_charges_arr).max():.3f}")
+                extra_qcb.append(qcb_remark(
+                    "B_FACTOR_MEANING",
+                    "column=B-factor", "value=Mulliken_partial_charge_au",
+                    "method=xTB-GFN2_gas-phase",
+                    f"sum={partial_charges_arr.sum():+.4f}",
+                ))
+        except Exception as e:
+            log.warning(f"Mulliken computation failed (continuing without): {e}")
+            partial_charges_arr = None
+
     out_paths = {}
 
     if spec.emit_pdb:
         pdb_out = spec.out_dir / f"{spec.out_basename}.pdb"
+        # Write Mulliken charges to PDB B-factor column (cols 61-66) so PyMOL
+        # can color by partial charge: `spectrum b, blue_white_red`.
         write_pdb_lineage(lineage, coords, pdb_out,
                            drop_old_qcb=False, preserve_other_remarks=True,
                            extra_qcb=extra_qcb,
+                           bfactor=partial_charges_arr,
                            title=f"polish_ts_v3 {spec.out_basename}")
         # validate
         v = validate_pdb_format(pdb_out)
@@ -511,6 +563,7 @@ def run_polish(spec: RunSpec) -> int:
         try:
             write_cif_lineage(lineage, coords, cif_out,
                                total_charge=spec.charge,
+                               partial_charges=partial_charges_arr,
                                metal_oxidation_overrides=metal_ox,
                                energy_eV=e_final if not spec.dry_run else None,
                                extra_qcb=extra_qcb)
