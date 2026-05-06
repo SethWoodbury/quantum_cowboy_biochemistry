@@ -112,6 +112,30 @@ def apply_prune_with_caps(
     if not prune_keep_specs and not prune_backbone_residues:
         return lineage, _coords_array(lineage.atoms), []
 
+    # D11 fix: validate that requested residues actually exist + keep-lists
+    # contain only atom names that exist in those residues. Non-existent
+    # residues raise; unknown atom names log a warning (chemically sensible
+    # to allow over-specification).
+    present_resids: dict[int, set[str]] = {}
+    for a in lineage.atoms:
+        present_resids.setdefault(a.resseq, set()).add(a.name)
+    for rid in prune_backbone_residues:
+        if rid not in present_resids:
+            raise ValueError(f"--prune-backbone-residues {rid}: no such residue "
+                             f"in input (have: {sorted(present_resids.keys())[:20]}...)")
+    for rid, keep_names in prune_keep_specs.items():
+        if rid not in present_resids:
+            raise ValueError(f"--prune-residue-keep {rid}: no such residue "
+                             f"in input")
+        if not keep_names:
+            log.warning(f"  --prune-residue-keep {rid}: empty atom list "
+                         "(will drop ALL heavy atoms in this residue)")
+        unknown = [n for n in keep_names if n not in present_resids[rid]]
+        if unknown:
+            log.warning(f"  --prune-residue-keep {rid}: atom name(s) {unknown} "
+                         f"not found in residue (present: "
+                         f"{sorted(present_resids[rid])[:10]}...)")
+
     coords_full = _coords_array(lineage.atoms)
     neighbors = _detect_neighbors(coords_full, COVALENT_BOND_CUTOFF)
 
@@ -132,14 +156,19 @@ def apply_prune_with_caps(
                     continue
             else:
                 # H atom: keep iff its parent heavy atom is kept. Parent =
-                # nearest non-H neighbor.
-                heavy_parents = [j for j in neighbors[i]
-                                  if lineage.atoms[j].element != "H"
-                                  and not lineage.atoms[j].name.startswith("H")]
-                if not heavy_parents:
+                # MINIMUM-distance non-H neighbor (D8 fix: first-by-index can
+                # mis-assign parent on puckered rings).
+                heavy_with_dist = [
+                    (float(np.linalg.norm(coords_full[i] - coords_full[j])), j)
+                    for j in neighbors[i]
+                    if lineage.atoms[j].element != "H"
+                    and not lineage.atoms[j].name.startswith("H")
+                ]
+                if not heavy_with_dist:
                     keep_mask[i] = False
                     continue
-                parent = heavy_parents[0]
+                heavy_with_dist.sort()
+                parent = heavy_with_dist[0][1]
                 parent_name = lineage.atoms[parent].name
                 # If parent is also in this residue and is allowed, keep H
                 if (lineage.atoms[parent].resseq == a.resseq
@@ -179,8 +208,13 @@ def apply_prune_with_caps(
         new_atoms.append(lineage.atoms[i])
         new_coords.append(coords_full[i])
 
-    # Per-residue cap counter for atom-name uniqueness
+    # Per-residue cap counter for atom-name uniqueness — pre-populate from
+    # the existing kept atoms so we don't collide with prior names like 'HP1'
+    # already in the input PDB (D10: HP collision).
     per_resseq_counter: dict[tuple[str, int], int] = {}
+    existing_hp_per_residue: dict[tuple[str, int], set[str]] = {}
+    for a in new_atoms:
+        existing_hp_per_residue.setdefault((a.chain, a.resseq), set()).add(a.name)
     hp_indices: list[int] = []
 
     for kept_old_i, dropped_old_j in cap_records:
@@ -195,9 +229,17 @@ def apply_prune_with_caps(
         cap_xyz = kept_xyz + (v / n) * cap_h_bond
 
         key = (kept_a.chain, kept_a.resseq)
+        # Find the next free cap-name index that doesn't collide with existing
+        # atom names in this residue (e.g. PDB already has HP1 from a prior run)
+        existing = existing_hp_per_residue.setdefault(key, set())
         per_resseq_counter[key] = per_resseq_counter.get(key, 0) + 1
-        cap_no = per_resseq_counter[key]
-        cap_name = f"{cap_atom_name_prefix}{cap_no}"
+        while True:
+            cap_no = per_resseq_counter[key]
+            cap_name = f"{cap_atom_name_prefix}{cap_no}"
+            if cap_name not in existing:
+                existing.add(cap_name)
+                break
+            per_resseq_counter[key] += 1
         # craft a synthetic PDB record for the cap H — use same residue
         # annotation as the parent
         # PDB columns: 1-6 record  7-11 serial  13-16 atom name (with leading
@@ -272,6 +314,9 @@ def apply_prune_with_caps(
         qcb_lines=lineage.qcb_lines,
         other_remarks=lineage.other_remarks,
     )
+    # Stash old→new index mapping on the lineage so callers can remap
+    # user-supplied atom serials (D12: --fix-atoms / --fix-distance / etc.).
+    new_lineage.old_to_new_index = old_to_new   # type: ignore[attr-defined]
 
     # ---- Step 4: xTB relax of cap H atoms (others FixAtoms'd) ----
     if do_xtb_relax and len(hp_indices) > 0:
@@ -351,11 +396,34 @@ def _xtb_relax_caps(lineage: StructureLineage,
         opt_xyz = work / "xtbopt.xyz"
         if not opt_xyz.exists():
             return coords
-        # Parse xtbopt.xyz
+        # Parse xtbopt.xyz with strict bounds + element-column verification
+        # (D4 fix: prior version silently misaligned if xtb dropped an atom).
         lines = opt_xyz.read_text().splitlines()
+        if len(lines) < 2 + n:
+            log.warning(f"xtbopt.xyz has {len(lines)} lines; expected ≥ {2+n}; "
+                         f"discarding cap-relax result")
+            return coords
+        try:
+            written_n = int(lines[0].strip())
+        except (ValueError, IndexError):
+            log.warning("xtbopt.xyz first line not an int — discarding")
+            return coords
+        if written_n != n:
+            log.warning(f"xtbopt.xyz declares {written_n} atoms; expected {n}; "
+                         "discarding cap-relax result")
+            return coords
         new_coords = []
-        for ln in lines[2 : 2 + n]:
+        for k, ln in enumerate(lines[2 : 2 + n]):
             toks = ln.split()
+            if len(toks) < 4:
+                log.warning(f"xtbopt.xyz line {k+2} too short: {ln!r}; discarding")
+                return coords
+            # element-column sanity: must match input order
+            expected = _normalize_element(elements[k])
+            if _normalize_element(toks[0]) != expected:
+                log.warning(f"xtbopt.xyz atom {k+1} element mismatch "
+                             f"({toks[0]} vs expected {expected}); discarding")
+                return coords
             new_coords.append([float(toks[1]), float(toks[2]), float(toks[3])])
         return np.array(new_coords)
     finally:

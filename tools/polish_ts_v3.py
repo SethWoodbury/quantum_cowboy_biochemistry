@@ -332,6 +332,7 @@ def run_polish(spec: RunSpec) -> int:
     # 2. Apply pruning if requested — use the cap-aware util that places HP
     #    atoms at cut bonds and (optionally) xTB-relaxes them
     hp_indices: list[int] = []
+    old_to_new_idx: dict[int, int] | None = None
     if spec.prune_residue_keep or spec.prune_backbone_residues:
         log.info(f"  pruning (with cap H placement): residue_keep="
                  f"{list(spec.prune_residue_keep.keys())}, "
@@ -348,8 +349,19 @@ def run_polish(spec: RunSpec) -> int:
             xtb_charge=spec.charge,
             xtb_solvent=None,    # gas phase for cap relax (fast)
         )
+        # Get the old→new index mapping that prune_utils stashed on the lineage
+        old_to_new_idx = getattr(lineage, "old_to_new_index", None)
     else:
         coords = np.array([[a.x, a.y, a.z] for a in lineage.atoms])
+
+    # Helper to remap user-supplied 1-based PDB serials through the prune
+    # mapping. If the atom was pruned, return None.
+    def _remap(serial: int) -> int | None:
+        if old_to_new_idx is None:
+            return serial
+        old0 = serial - 1
+        new0 = old_to_new_idx.get(old0)
+        return new0 + 1 if new0 is not None else None
 
     # 3. Find reactive atoms
     def find(name, res):
@@ -443,14 +455,26 @@ def run_polish(spec: RunSpec) -> int:
                     rigid_bonds.append([float(np.linalg.norm(positions[i] - positions[j])), [i, j]])
 
         # User --fix-angle and --fix-dihedral go into the SAME FixInternals
-        # call (1-based PDB serials → 0-based ASE indices).
+        # call (1-based PDB serials → 0-based ASE indices). After pruning,
+        # remap original serials through the old→new mapping; skip + warn if
+        # any atom was pruned away (D12 fix).
         rigid_angles_deg = []
         for (i, j, k, deg) in spec.fix_angle:
-            rigid_angles_deg.append([float(deg), [i - 1, j - 1, k - 1]])
+            mapped = [_remap(i), _remap(j), _remap(k)]
+            if any(m is None for m in mapped):
+                log.warning(f"  user fix-angle ({i},{j},{k}) references pruned "
+                             "atom(s); skipping")
+                continue
+            rigid_angles_deg.append([float(deg), [m - 1 for m in mapped]])
             log.info(f"  user fix-angle: ({i},{j},{k}) → {deg}°")
         rigid_dihedrals_deg = []
         for (i, j, k, l, deg) in spec.fix_dihedral:
-            rigid_dihedrals_deg.append([float(deg), [i - 1, j - 1, k - 1, l - 1]])
+            mapped = [_remap(i), _remap(j), _remap(k), _remap(l)]
+            if any(m is None for m in mapped):
+                log.warning(f"  user fix-dihedral ({i},{j},{k},{l}) references "
+                             "pruned atom(s); skipping")
+                continue
+            rigid_dihedrals_deg.append([float(deg), [m - 1 for m in mapped]])
             log.info(f"  user fix-dihedral: ({i},{j},{k},{l}) → {deg}°")
 
         if rigid_bonds or rigid_angles_deg or rigid_dihedrals_deg:
@@ -465,15 +489,28 @@ def run_polish(spec: RunSpec) -> int:
         # (separate constraint type, stiffer than FixInternals bonds).
         bondlength_pairs = [(P_i, ON_i), (P_i, OL_i)]
         for (i, j, _d) in spec.fix_distance:
-            bondlength_pairs.append((i - 1, j - 1))
+            ii, jj = _remap(i), _remap(j)
+            if ii is None or jj is None:
+                log.warning(f"  user fix-distance ({i},{j}) references pruned "
+                             "atom(s); skipping")
+                continue
+            bondlength_pairs.append((ii - 1, jj - 1))
             log.info(f"  user fix-distance: ({i},{j}) → {_d} Å")
         constraints.append(FixBondLengths(bondlength_pairs))
 
-        # User --fix-atoms (Cartesian pin)
+        # User --fix-atoms (Cartesian pin) — also remapped through prune
         if spec.fix_atoms:
-            fix_indices_0 = [s - 1 for s in spec.fix_atoms]
-            constraints.append(FixAtoms(indices=fix_indices_0))
-            log.info(f"  user FixAtoms: {len(fix_indices_0)} atoms")
+            fix_indices_0 = []
+            for s in spec.fix_atoms:
+                m = _remap(s)
+                if m is None:
+                    log.warning(f"  --fix-atoms {s} references pruned atom; "
+                                 "skipping")
+                    continue
+                fix_indices_0.append(m - 1)
+            if fix_indices_0:
+                constraints.append(FixAtoms(indices=fix_indices_0))
+                log.info(f"  user FixAtoms: {len(fix_indices_0)} atoms")
 
         atoms.set_constraint(constraints)
 

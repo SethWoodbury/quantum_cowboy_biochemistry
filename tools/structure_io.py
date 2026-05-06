@@ -388,6 +388,11 @@ def compute_mulliken_charges_xtb(
             log.warning(f"xtb Mulliken SP exited {proc.returncode}: "
                         f"{proc.stderr[-300:]}")
             return None
+        # SCF convergence check (D5: xtb sometimes returns 0 even on failed SCF)
+        out = proc.stdout
+        if "FAILED CONVERGENCE" in out or "SCF NOT CONVERGED" in out:
+            log.warning("xtb reported SCF non-convergence; charges suspect")
+            return None
         # xtb writes a "charges" file: one float per line
         ch_file = work / "charges"
         if not ch_file.exists():
@@ -397,6 +402,13 @@ def compute_mulliken_charges_xtb(
         if len(charges) != n:
             log.warning(f"xtb charges count {len(charges)} != n_atoms {n}")
             return None
+        # Sum-vs-target check (D5 fix): Mulliken should sum to net charge to
+        # within 0.1 e for a converged SCF
+        diff = abs(float(charges.sum()) - total_charge)
+        if diff > 0.5:
+            log.warning(f"xtb Mulliken sum {charges.sum():+.4f} differs from "
+                         f"target {total_charge:+d} by {diff:.3f} e — possible "
+                         "SCF or input issue; returning anyway")
         return charges
     except subprocess.TimeoutExpired:
         log.warning(f"xtb Mulliken SP timed out after {timeout_s}s")
