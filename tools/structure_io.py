@@ -370,9 +370,18 @@ def write_cif_lineage(lineage: StructureLineage,
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build an ASE Atoms with the requested coords + read template biotite struct
+    # Build an ASE Atoms with the requested coords + read template biotite struct.
+    # NOTE: PDB stores element symbols in cols 77-78 LEFT-justified and is
+    # often UPPERCASE ("ZN", "FE", "MG", "CL") — but ASE's `atomic_numbers`
+    # table is *case-sensitive* and expects the canonical IUPAC form
+    # ("Zn", "Fe", "Mg", "Cl"). Without normalization, ASEAtoms() raises
+    # KeyError: 'ZN' for any metallo / halide system. Title-case fixes
+    # 1- and 2-letter symbols uniformly.
     from ase import Atoms as ASEAtoms
-    elements = [a.element if a.element else _guess_element(a.name) for a in lineage.atoms]
+    elements = [
+        _normalize_element(a.element) if a.element else _guess_element(a.name)
+        for a in lineage.atoms
+    ]
     atoms = ASEAtoms(symbols=elements, positions=coords)
 
     # Try to use the original PDB as the biotite template (so residue names
@@ -425,6 +434,25 @@ def write_cif_lineage(lineage: StructureLineage,
         cif_content += "\n".join(extra) + "\n"
         out_path.write_text(cif_content)
     return out_path
+
+
+def _normalize_element(symbol: str) -> str:
+    """Coerce a PDB-style element symbol to ASE/IUPAC capitalization.
+
+    PDB cols 77-78 are commonly uppercase ("ZN", "FE", "CL"); ASE's
+    `atomic_numbers` dict (and most CIF readers) require canonical
+    capitalization ("Zn", "Fe", "Cl"). Single-letter symbols ("C", "N",
+    "O", "H") are unchanged by .capitalize(); multi-letter become Xx.
+    Also strips charge suffixes like '2+' that some PDBs leak in.
+    """
+    s = (symbol or "").strip()
+    if not s:
+        return "C"
+    # Strip trailing charge characters (e.g. "ZN2+", "MG+")
+    s = s.rstrip("+-0123456789")
+    if not s:
+        return "C"
+    return s.capitalize()
 
 
 def _guess_element(atom_name: str) -> str:

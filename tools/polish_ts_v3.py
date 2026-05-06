@@ -113,6 +113,9 @@ class RunSpec:
     fix_distance: list[tuple[int, int, float]]
     fix_angle: list[tuple[int, int, int, float]]
     fix_dihedral: list[tuple[int, int, int, int, float]]
+    cap_h_bond: float
+    prune_xtb_relax: bool
+    prune_xtb_max_steps: int
     dry_run: bool
     seed: int
 
@@ -166,6 +169,16 @@ def build_parser() -> argparse.ArgumentParser:
     constr.add_argument("--fix-angle", nargs="+", default=[], metavar="i,j,k,deg")
     constr.add_argument("--fix-dihedral", nargs="+", default=[], metavar="i,j,k,l,deg")
 
+    cap = p.add_argument_group("pruning H-cap behavior")
+    cap.add_argument("--cap-h-bond", type=float, default=1.09,
+                      help="Initial bond length (Å) of cap H placed at cut bonds.")
+    cap.add_argument("--prune-xtb-relax", action="store_true", default=True,
+                      help="After H-cap placement, run a fast xTB-GFN2 opt with all "
+                           "non-cap atoms FixAtoms'd to relax cap H positions.")
+    cap.add_argument("--no-prune-xtb-relax", dest="prune_xtb_relax",
+                      action="store_false")
+    cap.add_argument("--prune-xtb-max-steps", type=int, default=100)
+
     p.add_argument("--dry-run", action="store_true",
                    help="Resolve constraints and write README; skip optimization.")
     p.add_argument("--seed", type=int, default=0)
@@ -201,6 +214,9 @@ def resolve_args(args: argparse.Namespace) -> RunSpec:
         fix_distance=_parse_distance_specs(args.fix_distance),
         fix_angle=_parse_angle_specs(args.fix_angle),
         fix_dihedral=_parse_dihedral_specs(args.fix_dihedral),
+        cap_h_bond=args.cap_h_bond,
+        prune_xtb_relax=args.prune_xtb_relax,
+        prune_xtb_max_steps=args.prune_xtb_max_steps,
         dry_run=args.dry_run,
         seed=args.seed,
     )
@@ -283,25 +299,25 @@ def run_polish(spec: RunSpec) -> int:
                                      target_resi=0)
     log.info(f"  after auto-add: {len(lineage.matcher_remarks)} REMARK 666 entries")
 
-    # 2. Apply pruning if requested
+    # 2. Apply pruning if requested — use the cap-aware util that places HP
+    #    atoms at cut bonds and (optionally) xTB-relaxes them
+    hp_indices: list[int] = []
     if spec.prune_residue_keep or spec.prune_backbone_residues:
-        log.info(f"  pruning: residue_keep={list(spec.prune_residue_keep.keys())}, "
-                 f"backbone_drop={spec.prune_backbone_residues}")
-        new_atoms, new_coords, _ = apply_prune_keep(lineage, spec.prune_residue_keep)
-        # rebuild lineage with pruned atoms
-        from structure_io import StructureLineage
-        lineage = StructureLineage(
-            atoms=new_atoms, raw_remarks=lineage.raw_remarks,
-            matcher_remarks=lineage.matcher_remarks, qcb_lines=lineage.qcb_lines,
-            other_remarks=lineage.other_remarks,
+        log.info(f"  pruning (with cap H placement): residue_keep="
+                 f"{list(spec.prune_residue_keep.keys())}, "
+                 f"backbone_drop={spec.prune_backbone_residues}, "
+                 f"xtb_relax={spec.prune_xtb_relax}")
+        from prune_utils import apply_prune_with_caps
+        lineage, coords, hp_indices = apply_prune_with_caps(
+            lineage,
+            prune_keep_specs=spec.prune_residue_keep,
+            prune_backbone_residues=spec.prune_backbone_residues,
+            cap_h_bond=spec.cap_h_bond,
+            do_xtb_relax=spec.prune_xtb_relax,
+            xtb_max_steps=spec.prune_xtb_max_steps,
+            xtb_charge=spec.charge,
+            xtb_solvent=None,    # gas phase for cap relax (fast)
         )
-        new_atoms2, new_coords2, _ = apply_prune_backbone(lineage, spec.prune_backbone_residues)
-        lineage = StructureLineage(
-            atoms=new_atoms2, raw_remarks=lineage.raw_remarks,
-            matcher_remarks=lineage.matcher_remarks, qcb_lines=lineage.qcb_lines,
-            other_remarks=lineage.other_remarks,
-        )
-        coords = new_coords2
     else:
         coords = np.array([[a.x, a.y, a.z] for a in lineage.atoms])
 
@@ -382,31 +398,52 @@ def run_polish(spec: RunSpec) -> int:
         atoms.info["charge"] = spec.charge
         atoms.calc = make_calc(spec.model, device=spec.device, charge=spec.charge)
 
-        # Build FixInternals over CA-CA pair distances (rigid scaffold)
+        # Build constraints — combine CA-rigid scaffold + reactive bonds +
+        # user-supplied fix-atoms / fix-distance / fix-angle / fix-dihedral.
+        # ASE's FixInternals supports angles_deg and dihedrals_deg natively.
         constraints = []
+        positions = atoms.get_positions()
+
+        # CA-rigid scaffold pairwise distances → FixInternals(bonds=...)
+        rigid_bonds = []
         if len(ca_idx) >= 2:
-            positions = atoms.get_positions()
-            bonds = []
             for ii in range(len(ca_idx)):
-                for jj in range(ii+1, len(ca_idx)):
+                for jj in range(ii + 1, len(ca_idx)):
                     i, j = ca_idx[ii], ca_idx[jj]
-                    bonds.append([float(np.linalg.norm(positions[i] - positions[j])), [i, j]])
-            constraints.append(FixInternals(bonds=bonds, epsilon=1e-7))
-        # FixBondLengths on reactive distances
-        constraints.append(FixBondLengths([(P_i, ON_i), (P_i, OL_i)]))
-        # User-supplied fix-atoms (1-based serials → 0-based indices)
+                    rigid_bonds.append([float(np.linalg.norm(positions[i] - positions[j])), [i, j]])
+
+        # User --fix-angle and --fix-dihedral go into the SAME FixInternals
+        # call (1-based PDB serials → 0-based ASE indices).
+        rigid_angles_deg = []
+        for (i, j, k, deg) in spec.fix_angle:
+            rigid_angles_deg.append([float(deg), [i - 1, j - 1, k - 1]])
+            log.info(f"  user fix-angle: ({i},{j},{k}) → {deg}°")
+        rigid_dihedrals_deg = []
+        for (i, j, k, l, deg) in spec.fix_dihedral:
+            rigid_dihedrals_deg.append([float(deg), [i - 1, j - 1, k - 1, l - 1]])
+            log.info(f"  user fix-dihedral: ({i},{j},{k},{l}) → {deg}°")
+
+        if rigid_bonds or rigid_angles_deg or rigid_dihedrals_deg:
+            constraints.append(FixInternals(
+                bonds=rigid_bonds or None,
+                angles_deg=rigid_angles_deg or None,
+                dihedrals_deg=rigid_dihedrals_deg or None,
+                epsilon=1e-7,
+            ))
+
+        # Reactive distances + user --fix-distance → FixBondLengths
+        # (separate constraint type, stiffer than FixInternals bonds).
+        bondlength_pairs = [(P_i, ON_i), (P_i, OL_i)]
+        for (i, j, _d) in spec.fix_distance:
+            bondlength_pairs.append((i - 1, j - 1))
+            log.info(f"  user fix-distance: ({i},{j}) → {_d} Å")
+        constraints.append(FixBondLengths(bondlength_pairs))
+
+        # User --fix-atoms (Cartesian pin)
         if spec.fix_atoms:
             fix_indices_0 = [s - 1 for s in spec.fix_atoms]
             constraints.append(FixAtoms(indices=fix_indices_0))
             log.info(f"  user FixAtoms: {len(fix_indices_0)} atoms")
-        # User-supplied fix-distance — append to existing FixBondLengths via additional constraint
-        for (i, j, d) in spec.fix_distance:
-            constraints.append(FixBondLengths([(i-1, j-1)]))
-            log.info(f"  user fix-distance: ({i},{j}) → {d} Å")
-        # NOTE: fix-angle and fix-dihedral support deferred — ASE FixInternals takes those too
-        # but the 0-based-index conversion + degree→radian is a sharp edge for tonight.
-        if spec.fix_angle or spec.fix_dihedral:
-            log.warning("  --fix-angle / --fix-dihedral parsed but NOT YET WIRED (use FixInternals manually)")
 
         atoms.set_constraint(constraints)
 
@@ -454,7 +491,7 @@ def run_polish(spec: RunSpec) -> int:
             log.info(f"  CIF output: {cif_out}")
             out_paths["cif"] = str(cif_out)
         except Exception as e:
-            log.error(f"CIF write failed: {e}")
+            log.error(f"CIF write failed: {e}", exc_info=True)
 
     # 8. Trajectory snapshots
     if not spec.dry_run and spec.snapshot_stride > 0:

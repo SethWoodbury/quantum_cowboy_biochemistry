@@ -135,15 +135,36 @@ python tools/polish_ts_v3.py --input ... --out ... --dry-run
 
 ## Caveats
 
-- **CIF write currently has issues with Zn-containing systems** (atomworks element
-  table issue). PDB output is unaffected. CIF support is being iterated.
-- **`--fix-angle` / `--fix-dihedral`** flags are parsed but not yet wired through
-  the constraint setup — falls back to a warning. Use `FixInternals` directly in
-  Python if you need angle/dihedral pinning today.
-- **Pruning** (`--prune-residue-keep`, `--prune-backbone-residues`) creates
-  dangling bonds without H caps in this initial implementation. The downstream
-  optimizer is robust to small clashes but consider a manual H-cap for
-  publishable structures.
+- **`--fix-angle` / `--fix-dihedral`** are now wired through `FixInternals(angles_deg=, dihedrals_deg=)` natively (1-based PDB serials → 0-based ASE indices).
+- **CIF write fixed** for Zn-containing systems (case-normalize element symbols
+  via `_normalize_element` — ASE's element table is case-sensitive: `"ZN"` ≠
+  `"Zn"`). RDKit bond cross-check still warns on metals (atomworks issue) but
+  CIF output is produced without it; bonds + per-atom charges are written
+  natively by atomworks.
+
+## Pruning H-cap behavior
+
+When `--prune-residue-keep` or `--prune-backbone-residues` produces cut bonds,
+the new module `tools/prune_utils.py:apply_prune_with_caps()`:
+
+1. Detects all KEPT-atom→DROPPED-atom covalent bonds (distance < 1.8 Å).
+2. Places a cap H at the kept atom along the cut bond direction (`--cap-h-bond`,
+   default 1.09 Å — typical C-H).
+3. Names cap H atoms `HP1`, `HP2`, … with a per-residue counter, inheriting the
+   parent residue's resname/chain/resseq. Element column = "H". Atom name
+   conflicts with existing H atoms are avoided by the `HP` prefix.
+4. Optionally runs a fast xTB-GFN2 opt with all non-cap atoms FixAtoms'd
+   (`--prune-xtb-relax`, default ON; `--no-prune-xtb-relax` to skip;
+   `--prune-xtb-max-steps` controls budget). This relaxes cap H positions to
+   chemically sensible values before the main polish stage starts.
+5. Skips capping when the dropped atom was a metal-coordinating ligand (the
+   kept atom would be Zn, not capable of H-capping). Cap creation is
+   restricted to kept C/N/O/S/P atoms.
+
+Example: `--prune-residue-keep 169:CD,CE,NZ` on PTE LYS169 drops the
+backbone N/C/O + CB/HBx + CG/HGx (14 atoms), keeps CD/CE/NZ + their Hs
+(7 heavy + 7 H), and adds 1 cap H named `HP1 LYS A 169` along the
+former CD–CG bond direction.
 
 ## Universal validator (`structure_io.validate_pdb_format`)
 
