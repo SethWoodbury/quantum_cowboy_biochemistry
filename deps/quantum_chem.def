@@ -90,6 +90,92 @@ CONSTRAINTS
         "scine-sparrow==5.1.0" \
         || echo "WARN: scine install hit a snag; container still ships without it"
 
+    # ── 4b. SCINE Puffin + xTB-wrapper + Parrot (added 2026-05-06) ──────
+    # Puffin: the SCINE calculation daemon. Pulls jobs out of the
+    # MongoDB queue Chemoton writes to and runs them through whichever
+    # backend is selected (Sparrow PM6/PM7, xTB-GFN2, Parrot/MACE-MP).
+    # No bridge/op call works without it once we move past the
+    # in-process Steering Wheel demo.
+    #
+    # xtb-wrapper: SCINE bridge that lets Sparrow / Chemoton dispatch
+    # to xTB-GFN2 as a `Module`. Plan B for Zn-coordination chemistry
+    # if PM6/PM7 misbehave — and fast enough to be the cheap-tier
+    # exploration backend in its own right (~1-2s/gradient on 60 atoms).
+    #
+    # scine-parrot: SCINE's official ML-FF wrapper. Ships MACE-MP and
+    # MACE-OFF *foundation* models out of the box (ANI, M3GNet, lMLP
+    # also available). Custom QCB-trained MACE (mace-polar-m / mace-omol)
+    # is downstream — extending Parrot's model entry list is a
+    # ~200-400 LOC follow-up.
+    #
+    # Note: scine-parrot and scine-puffin are sdists (no wheel) on
+    # PyPI 2026-05-06 — they will compile from source. scine-xtb-wrapper
+    # has a manylinux cp311 wheel.
+    #
+    # CAVEAT (2026-05-06): scine-parrot 1.0.0's PyPI metadata pins
+    # torch<=2.2.0 (a 2024-vintage upper bound). Our universal.sif
+    # ships torch 2.11.0+cu130 — that's far above the pin and pip's
+    # resolver REFUSES to install. We bypass with `--no-deps` for the
+    # parrot install: at runtime parrot only calls into mace-torch
+    # 0.3.15 (which our base provides) so the metadata pin is bogus
+    # for our use case. Re-evaluate when scine-parrot 1.1+ ships.
+    #
+    # Puffin + xTB-wrapper install normally first so a parrot bust
+    # doesn't cost us them. xTB-wrapper has a cp311 wheel; Puffin is
+    # an sdist that compiles from source.
+    $PIP install $C \
+        "scine-puffin==2.1.0" \
+        "scine-xtb-wrapper==3.0.2" \
+        || echo "WARN: scine-puffin/xtb-wrapper install failed; chemoton multi-step disabled"
+
+    # Parrot — separate, with --no-deps to dodge the torch<=2.2 pin.
+    # We still pass --constraint so transitive numpy/torch upgrades
+    # (if any leak through) get blocked. Tolerate failure: ML-FF
+    # foundation models can be loaded directly via mace-torch as a
+    # fallback, just without the SCINE Calculator wrapper.
+    #
+    # Then re-install parrot's runtime deps WITHOUT --no-deps so they
+    # actually land in site-packages — torchani in particular is
+    # eager-imported by scine_parrot's __init__.py and the ANI/M3GNet
+    # Calculators won't load without it. matgl provides M3GNet. Skip
+    # torch (already pinned 2.11+cu130 by our constraints).
+    $PIP install $C --no-deps \
+        "scine-parrot==1.0.0" \
+        || echo "WARN: scine-parrot install failed; MACE-MP via SCINE Calculator unavailable (mace-torch direct load still works)"
+    # Re-install parrot's runtime deps loosely. Use --no-deps so we
+    # don't drag in torchani's own torch<=2.2 pin transitively. Goal
+    # here: get the import chain to load. If individual Calculators
+    # fail at *runtime*, the user will see clear errors then.
+    $PIP install $C --no-deps \
+        "torchani" \
+        "matgl" \
+        || echo "WARN: parrot runtime deps (torchani/matgl) failed; ANI/M3GNet Calculators inside parrot disabled"
+    # torchani's own runtime needs h5py + lark — those are usually
+    # transitive deps but with --no-deps above they won't get pulled.
+    # Tack them on with regular resolution (pip is fine choosing).
+    $PIP install $C \
+        "h5py" \
+        "lark" \
+        || echo "WARN: torchani extras (h5py/lark) install failed"
+
+    # ── 4c. Static MongoDB binary (added 2026-05-06) ────────────────────
+    # Chemoton requires MongoDB for any multi-step exploration (no
+    # SQLite / file-based fallback exists upstream). Ship a static
+    # binary inside the container so we don't depend on a host-installed
+    # mongod or per-cluster module loads. ubuntu2204 7.0.14 build runs
+    # cleanly on the noble (24.04) base — libssl3 is ABI-compatible.
+    # Native ubuntu2404 7.0.x builds were not available at build time;
+    # 8.0.x has a 2404 variant if we ever need to upgrade.
+    #
+    # We extract into /usr/local (with --strip-components=1 so files
+    # land at /usr/local/bin/mongod, /usr/local/bin/mongosh, etc.).
+    curl -fsSL https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-7.0.14.tgz \
+        | tar -xz -C /usr/local --strip-components=1 \
+        || echo "WARN: mongodb tarball install failed; chemoton multi-step exploration disabled"
+    # Sanity-check: print mongod version. Tolerate failure (the WARN
+    # above already noted it).
+    /usr/local/bin/mongod --version 2>&1 | head -2 || true
+
     # ── 5. MLFF model loaders ───────────────────────────────────────────
     # mace-torch is already in the base universal.sif (0.3.15). Just add
     # the openmm-ml integration so we can swap MACE / ANI in OpenMM.
@@ -119,10 +205,13 @@ CONSTRAINTS
     set +e
     /usr/local/conda/bin/python -c "import numpy; print('numpy:', numpy.__version__)" 2>&1 | tail -1
     for mod in torch mace rdkit ase biotite rxnmapper CGRtools autode \
-               pysisyphus sella scine_chemoton scine_readuct \
+               pysisyphus sella scine_chemoton scine_readuct scine_sparrow \
+               scine_utilities scine_database scine_molassembler \
+               scine_puffin scine_xtb_wrapper scine_parrot \
                orb_models aimnet ; do
         /usr/local/conda/bin/python -c "import importlib; m = importlib.import_module('$mod'); v = getattr(m, '__version__', '?'); print('  $mod:', v)" 2>&1 | tail -1 || echo "  $mod: FAIL (segfault or import error)"
     done
+    /usr/local/bin/mongod --version 2>&1 | head -1 || echo "  mongod: FAIL"
     set -e
 
     # Make /tmp writable inside the container (some packages assume it).
@@ -135,6 +224,10 @@ CONSTRAINTS
     # AIMNet checkpoints don't get re-downloaded per-user.
     export HF_HOME=/net/databases/huggingface
     export TRANSFORMERS_CACHE=$HF_HOME/hub
+    # Make /usr/local/bin first on PATH so mongod (installed as a tarball
+    # at /usr/local/bin/mongod) and any other static binaries dropped
+    # there beat the conda copies, if they conflict.
+    export PATH=/usr/local/bin:$PATH
     # No mace-polar graph_electrostatics yet (gbg222's venv only); set this
     # when we fold that in later.
 

@@ -36,6 +36,7 @@ def run(
     relax_other: bool = True,
     fmax: float = 0.05,
     max_opt_steps: int = 300,
+    backend: str = "ase-lbfgs",
     **kwargs,
 ) -> dict:
     """1D coordinate scan.
@@ -50,6 +51,11 @@ def run(
         relax_other: if True, at each scan point relax all atoms except the
                      scan coordinate (constrained). If False, single-point only.
         fmax: relaxation convergence threshold
+        backend: optimizer backend (default ``"ase-lbfgs"`` — same as the
+                 historical hardcoded LBFGS). Other choices include
+                 ``"ase-fire"``, ``"torch-sim-fire"`` (single-system, no
+                 constraints — currently incompatible with this scan
+                 because of the FixBondLength constraint, will raise).
     """
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -102,9 +108,21 @@ def run(
         n_opt = 0
         if relax_other:
             log_path = outdir / f"opt-step{step_idx:03d}.log"
-            opt = LBFGS(atoms, logfile=str(log_path))
-            opt.run(fmax=fmax, steps=max_opt_steps)
-            n_opt = opt.nsteps if hasattr(opt, "nsteps") else -1
+            if backend == "ase-lbfgs":
+                # Fast path: stay on the legacy ASE LBFGS object so we
+                # don't pay factory overhead per scan-point. Functionally
+                # identical to make_optimizer("ase-lbfgs", ...).run().
+                opt = LBFGS(atoms, logfile=str(log_path))
+                opt.run(fmax=fmax, steps=max_opt_steps)
+                n_opt = opt.nsteps if hasattr(opt, "nsteps") else -1
+            else:
+                from quantum_engine.opt import make_optimizer
+                opt_obj = make_optimizer(
+                    backend, fmax=fmax, max_steps=max_opt_steps,
+                    logfile=log_path,
+                )
+                res = opt_obj.run(atoms)
+                n_opt = int(res.n_steps)
 
         e = float(atoms.get_potential_energy())
         energies.append(e)

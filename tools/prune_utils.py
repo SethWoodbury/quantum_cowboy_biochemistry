@@ -38,7 +38,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "tools"))
 
-from structure_io import PdbAtom, StructureLineage, _guess_element  # noqa: E402
+from structure_io import (  # noqa: E402
+    PdbAtom, StructureLineage, _guess_element, _normalize_element,
+)
 
 log = logging.getLogger("prune_utils")
 
@@ -392,10 +394,22 @@ def _xtb_relax_caps(lineage: StructureLineage,
             ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
             fh.write(",".join(ranges) + "\n")
             fh.write("$end\n")
-        # Run xtb
+        # Run xtb. NOTE: prior to 2026-05-07 ``xtb_max_steps`` was logged but
+        # never propagated to xtb itself; we now pass --cycles so the API knob
+        # actually does something.
+        # Compute uhf so xtb does not abort with the "unpaired electrons
+        # inconsistent with total" error when pruning flips parity.
+        uhf_cap = 0
+        try:
+            from tools.crest_funnel import _xyz_uhf  # noqa: WPS433
+            uhf_cap = _xyz_uhf(work / "input.xyz", int(xtb_charge))
+        except Exception:
+            pass
         cmd = [str(XTB_BIN), "input.xyz",
                "--gfn", "2", "--opt", "loose",
+               "--cycles", str(int(xtb_max_steps)),
                "--chrg", str(xtb_charge),
+               "--uhf", str(uhf_cap),
                "--input", "constraints.inp"]
         if xtb_solvent:
             cmd += ["--alpb", xtb_solvent]

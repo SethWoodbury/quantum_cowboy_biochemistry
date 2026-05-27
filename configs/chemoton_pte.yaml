@@ -1,0 +1,59 @@
+# PTE-specific defaults for `qcb chemoton-explore`.
+#
+# Usage:
+#   qcb chemoton-explore <input.pdb> --config configs/chemoton_pte.yaml
+#
+# Any CLI flag still wins over a value here; values here win over the
+# hard-coded defaults in quantum_engine/ops/chemoton_explore.py.
+#
+# Tuned for the PTE binuclear Zn²⁺ active site hydrolyzing paraoxon. Update
+# central_metal / charge / multiplicity for other metallohydrolases.
+
+# Reactive-atom hint (not yet wired into filter rules — currently logged
+# only as a record of the user's intent). Format: "<RES>:<atom-name>" or
+# bare atom name.
+reactive_atoms:
+  - Zn1
+  - Zn2
+  - "SUB:P1"
+  - "SUB:O3"
+  - "OHX:O3"
+
+# Cluster selection. "auto" = residues within 5Å of HETATM (LIG, SUB, ...).
+# Future grammar (v0.2): "site 5.0 SUB OHX KCX1 KCX2".
+cluster_spec: "site 5.0 SUB OHX KCX1 KCX2"
+
+# Cheap-tier backend for Chemoton exploration. Options:
+#   xtb-gfn2     (default; most accurate, ships in container via scine-xtb-wrapper)
+#   sparrow-pm6  (BROKEN — scine-sparrow 5.1.0 wheel aborts at import in the
+#                 current container. Re-enable once the upstream wheel is fixed.)
+#   sparrow-pm7  (BROKEN — same import abort)
+backend: xtb-gfn2
+
+# Per-step bond modification cap. PTE one-bond breaks + one-bond forms = 2.
+max_bond_modifications: 2
+
+# Number of expansion rounds beyond the input geometry.
+max_depth: 2
+
+# Barrier filter for Step 3 (gas-phase electronic, kcal/mol). Set 60 to
+# accommodate PM6 systematic over-binding; experimental PTE is ~14 kcal/mol.
+barrier_cap_kcal: 60.0
+
+# How many lowest-barrier elementary steps to export back as PDB for
+# downstream MACE refinement.
+top_n_export: 5
+
+# Net charge and spin multiplicity of the QM cluster.
+# PTE active site with two Zn²⁺ + one bridging OH⁻ + carbamylated Lys + ...
+# typical net charge ≈ +1 (depends on protonation state). Verify with
+# `qcb info <input.pdb>` and the consensus protonation pipeline first.
+charge: 1
+multiplicity: 1   # closed-shell singlet (Zn²⁺ is d¹⁰)
+
+# Catalytic metal symbol for CentralSiteFilter / CentralMetalSelection.
+central_metal: Zn
+
+# Default Mongo URI. Override on the CLI to point at a SLURM compute node
+# (e.g. `--mongodb-uri mongodb://${HOSTNAME}:27017/run_$(date +%s)`).
+mongodb_uri: "mongodb://localhost:27017/"

@@ -183,12 +183,16 @@ MACE_MODELS = {
         f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-sm/uma_sm.pt",
         "/mnt/projects/ml/mlff/models/fairchem/UMA/uma_sm.pt",
     ),
-    # UMA-S-1.2 / UMA-M-1.1 — current FairChem foundation models.
-    # GATED on HuggingFace (FAIR Chemistry License v1) — see the README
-    # in each placeholder dir for the manual download steps. The
-    # _resolve_mace helper returns the central path as the preferred
-    # location even when the file is missing, so error messages from
-    # make_calc(...) point users straight at the placeholder README.
+    # UMA-S-1.1 / UMA-S-1.2 / UMA-M-1.1 — current FairChem foundation models.
+    # GATED on HuggingFace (FAIR Chemistry License v1) — run
+    # /net/databases/huggingface/mlFF_models/download_uma_models.sh with an
+    # HF_TOKEN to populate. The _resolve_mace helper returns the central path
+    # as the preferred location even when the file is missing, so error
+    # messages from make_calc(...) point users at the right directory.
+    "uma-s-1p1": _resolve_mace("uma-s-1p1",
+        f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-s-1p1/uma-s-1p1.pt",
+        None,
+    ),
     "uma-s-1p2": _resolve_mace("uma-s-1p2",
         f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-s-1p2/uma-s-1p2.pt",
         None,

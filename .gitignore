@@ -46,6 +46,7 @@ deps/pyGSM/
 # Source-only copies installed into deps/.local_pkgs (do not commit large source trees)
 deps/mace_polar_src/
 deps/graph_longrange_src/
+deps/torch_sim_src/
 
 # Vendored-submodule build artefacts (xtb, plumed2, etc.) — submodule pin is
 # tracked, build outputs shouldn't be.

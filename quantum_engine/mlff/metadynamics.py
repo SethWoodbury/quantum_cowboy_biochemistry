@@ -542,6 +542,17 @@ def run_metadynamics_rescue(
         if a is not None:
             ase_write(os.path.join(outdir, f"basin_{cls}.xyz"), a)
 
+    # Multi-frame trajectory of every CV-sampled snapshot. Tiny relative to
+    # the Hessian/MACE state on disk (a 200-atom system at 500 frames is
+    # ~5 MB) and indispensable for downstream clustering / TS-starter mining.
+    if sampled_frames:
+        traj_path = os.path.join(outdir, "trajectory.xyz")
+        ase_write(traj_path,
+                  [fr[1] for fr in sampled_frames],
+                  format="xyz")
+        np.save(os.path.join(outdir, "sampled_cv.npy"),
+                np.asarray([fr[0] for fr in sampled_frames]))
+
     meta = {
         "cv_definition": "s = d(P-O_LG) - d(P-O_nuc)",
         "p_idx": p_idx, "nuc_idx": nuc_idx, "lg_idx": lg_idx,
@@ -554,6 +565,7 @@ def run_metadynamics_rescue(
         "bias_factor": bias_factor,
         "friction_per_ps": friction_per_ps,
         "n_hills": len(history.centers),
+        "n_sampled_frames": len(sampled_frames),
         "basins_found": {k: (v is not None) for k, v in result_atoms.items()},
         "basin_cv_values": {k: (basins_by_class[k][0]
                                 if basins_by_class[k] is not None else None)

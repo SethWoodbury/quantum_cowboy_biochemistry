@@ -74,6 +74,8 @@ QCB_CODES: dict[str, int] = {
     "CONVERGENCE":          17,
     "B_FACTOR_MEANING":     18,
     "PROVENANCE":           19,
+    "AUTODETECT":           20,
+    "GRAFTBACK":            21,
     "NOTE":                 99,
 }
 
@@ -574,16 +576,51 @@ def _normalize_element(symbol: str) -> str:
     return s.capitalize()
 
 
+# Full IUPAC element symbols — used by _guess_element for atom-name parsing.
+# Built once at module load. Kept as a frozenset for O(1) lookup.
+try:
+    from ase.data import chemical_symbols as _ASE_SYMBOLS
+    _TWO_LETTER_ELEMENTS = frozenset(
+        s.upper() for s in _ASE_SYMBOLS if len(s) == 2
+    )
+except ImportError:
+    # Fallback: hand-curated 2-letter elements (full periodic table).
+    _TWO_LETTER_ELEMENTS = frozenset({
+        "HE", "LI", "BE", "NE", "NA", "MG", "AL", "SI", "CL", "AR", "CA",
+        "SC", "TI", "CR", "MN", "FE", "CO", "NI", "CU", "ZN", "GA", "GE",
+        "AS", "SE", "BR", "KR", "RB", "SR", "ZR", "NB", "MO", "TC", "RU",
+        "RH", "PD", "AG", "CD", "IN", "SN", "SB", "TE", "XE", "CS", "BA",
+        "LA", "CE", "PR", "ND", "PM", "SM", "EU", "GD", "TB", "DY", "HO",
+        "ER", "TM", "YB", "LU", "HF", "TA", "RE", "OS", "IR", "PT", "AU",
+        "HG", "TL", "PB", "BI", "PO", "AT", "RN", "FR", "RA", "AC", "TH",
+        "PA", "NP", "PU", "AM", "CM", "BK", "CF", "ES", "FM", "MD", "NO",
+        "LR", "RF", "DB", "SG", "BH", "HS", "MT", "DS", "RG", "CN", "NH",
+        "FL", "MC", "LV", "TS", "OG",
+    })
+
+
 def _guess_element(atom_name: str) -> str:
-    """Best-effort element from PDB atom name. Pseudo-PDB convention."""
+    """Best-effort element symbol inference from a PDB atom name.
+
+    Heuristic ordering (PDB conventions are not fully consistent):
+    1. Empty / whitespace → 'C'.
+    2. Leading digit (e.g. '1HB') → second char is element.
+    3. Two-letter prefix matches a known element (full periodic table) →
+       use it (so 'PD1' → 'Pd', 'AG2' → 'Ag', not 'P' / 'A').
+    4. Otherwise → first character.
+
+    Note: PDB atom names DO leak ambiguities — e.g. 'NA' could be a sodium
+    ion or backbone N labeled awkwardly. We trust the residue context (TIP
+    ions usually have resname matching the element) to disambiguate via
+    `_normalize_element` on the explicit element column when present;
+    `_guess_element` is only the fallback.
+    """
     s = atom_name.strip()
     if not s:
         return "C"
     if s[0].isdigit() and len(s) > 1:
         return s[1].upper()
-    if len(s) >= 2 and s[:2].upper() in {"FE", "ZN", "MG", "MN", "CA",
-                                           "NA", "CL", "BR", "CU", "NI",
-                                           "CO"}:
+    if len(s) >= 2 and s[:2].upper() in _TWO_LETTER_ELEMENTS:
         return s[:2].capitalize()
     return s[0].upper()
 

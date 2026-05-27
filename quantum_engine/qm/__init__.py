@@ -13,7 +13,9 @@ optional deps into the parent import chain. Each exposes a cheap
   * ``quantum_engine.qm.chemshell``     — ChemShell QM/MM (registration-walled)
   * ``quantum_engine.qm.scine``         — SCINE Chemoton + ReaDuct
   * ``quantum_engine.qm.pygsm``         — pyGSM single/double-ended GSM
-  * ``quantum_engine.qm.pysisyphus``    — pysisyphus NEB / dimer / IRC
+  * ``quantum_engine.qm.pysisyphus``    — pysisyphus RS-P-RFO / dimer / NEB
+  * ``quantum_engine.qm.sella``         — Sella saddle search (Hessian-eigvec)
+  * ``quantum_engine.qm.dimer``         — ASE improved-dimer saddle search
   * ``quantum_engine.qm.molecular_gsm`` — molecularGSM (C++ binary)
   * ``quantum_engine.qm.yarp``          — YARP stub (upstream dead — use scine)
 """

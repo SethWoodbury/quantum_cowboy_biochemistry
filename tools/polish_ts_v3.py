@@ -20,6 +20,7 @@ import json
 import logging
 import shutil
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -99,11 +100,13 @@ class RunSpec:
     model: str
     device: str
     charge: int
-    p_name: str; p_res: str
-    nuc_name: str; nuc_res: str
-    lg_name: str; lg_res: str
-    target_d_p_onuc: float
-    target_d_p_olg: float
+    # Reactive triplet — None values trigger auto-detect at runtime
+    p_name: str | None; p_res: str | None
+    nuc_name: str | None; nuc_res: str | None
+    lg_name: str | None; lg_res: str | None
+    # Target reactive distances — None → use input-geometry distance (no shift)
+    target_d_p_onuc: float | None
+    target_d_p_olg: float | None
     fmax: float
     max_steps: int
     snapshot_stride: int
@@ -117,10 +120,17 @@ class RunSpec:
     cap_h_bond: float
     prune_xtb_relax: bool
     prune_xtb_max_steps: int
+    graft_back: bool
+    graft_relax_max_steps: int
+    graft_xtb_relax: bool
     metal_oxidation: dict[str, int]
     compute_mulliken: bool
     dry_run: bool
     seed: int
+    # Modular optimizer backend (default ase-lbfgs = legacy behaviour).
+    # Kept at the END so the existing positional / keyword construction
+    # of RunSpec(...) stays bit-for-bit compatible.
+    optimizer_backend: str = "ase-lbfgs"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -145,18 +155,33 @@ def build_parser() -> argparse.ArgumentParser:
     calc.add_argument("--charge", type=int, default=1)
 
     react = p.add_argument_group("reactive atoms")
-    react.add_argument("--p-name", default="P1")
-    react.add_argument("--p-res", default="SUB")
-    react.add_argument("--nuc-name", default="O3")
-    react.add_argument("--nuc-res", default="OHX")
-    react.add_argument("--lg-name", default="O7")
-    react.add_argument("--lg-res", default="SUB")
-    react.add_argument("--target-d-p-onuc", type=float, default=2.00)
-    react.add_argument("--target-d-p-olg", type=float, default=2.25)
+    # Defaults are None → trigger auto-detect from ligand residue
+    # (reactive_autodetect._autodetect_reactive_triplet). Pass any subset
+    # explicitly to override.
+    react.add_argument("--p-name",   default=None)
+    react.add_argument("--p-res",    default=None)
+    react.add_argument("--nuc-name", default=None)
+    react.add_argument("--nuc-res",  default=None)
+    react.add_argument("--lg-name",  default=None)
+    react.add_argument("--lg-res",   default=None)
+    # Target distances default to None → use input-geometry distances
+    # (no shift); override with floats if you want to push toward a TS pose
+    # (e.g. PTE: --target-d-p-onuc 2.00 --target-d-p-olg 2.25).
+    react.add_argument("--target-d-p-onuc", type=float, default=None,
+                       help="Target d(P-Onuc) in Å; default = input geometry value (no shift).")
+    react.add_argument("--target-d-p-olg",  type=float, default=None,
+                       help="Target d(P-Olg) in Å; default = input geometry value (no shift).")
 
     opt = p.add_argument_group("optimizer")
     opt.add_argument("--fmax", type=float, default=0.05)
     opt.add_argument("--max-steps", type=int, default=500)
+    opt.add_argument("--optimizer-backend", default="ase-lbfgs",
+                     help="Modular optimizer backend (default ase-lbfgs). "
+                          "Choices: ase-lbfgs, ase-fire, ase-bfgs, "
+                          "torch-sim-fire, torch-sim-lbfgs (stub). NOTE: "
+                          "torch-sim-fire does NOT support FixBondLength / "
+                          "FixAtoms — polish always uses constraints, so "
+                          "stick with ase-* for now.")
 
     constr = p.add_argument_group("custom constraints (all 1-based atom serials)")
     constr.add_argument("--free-residues", type=_csv_int, default=[],
@@ -181,6 +206,21 @@ def build_parser() -> argparse.ArgumentParser:
     cap.add_argument("--no-prune-xtb-relax", dest="prune_xtb_relax",
                       action="store_false")
     cap.add_argument("--prune-xtb-max-steps", type=int, default=100)
+
+    graft = p.add_argument_group("graft-back (inverse of pruning, runs at end)")
+    graft.add_argument("--graft-back", action="store_true", default=False,
+                       help="After polish, re-add pruned atoms at original "
+                            "positions and run a fast xTB partial relax with "
+                            "polished atoms FixAtoms-pinned. Output PDB has "
+                            "the same atom set as the input — required for "
+                            "RFdiffusion3 input prep. Residual clashes are "
+                            "acceptable; xTB just smooths the worst ones.")
+    graft.add_argument("--graft-relax-max-steps", type=int, default=50,
+                       help="Max xtb-GFN2 steps during graft-back relax.")
+    graft.add_argument("--no-graft-relax", dest="graft_xtb_relax",
+                       action="store_false", default=True,
+                       help="Skip the xTB relax during graft-back; just place "
+                            "atoms back at original positions and accept clashes.")
 
     chrg = p.add_argument_group("metal oxidation states (CIF formal_charge)")
     chrg.add_argument("--metal-oxidation", nargs="+", default=[], metavar="ELEM:CHARGE",
@@ -224,6 +264,7 @@ def resolve_args(args: argparse.Namespace) -> RunSpec:
         target_d_p_olg=args.target_d_p_olg,
         fmax=args.fmax,
         max_steps=args.max_steps,
+        optimizer_backend=args.optimizer_backend,
         snapshot_stride=args.snapshot_stride,
         free_residues=args.free_residues,
         prune_backbone_residues=args.prune_backbone_residues,
@@ -235,6 +276,9 @@ def resolve_args(args: argparse.Namespace) -> RunSpec:
         cap_h_bond=args.cap_h_bond,
         prune_xtb_relax=args.prune_xtb_relax,
         prune_xtb_max_steps=args.prune_xtb_max_steps,
+        graft_back=args.graft_back,
+        graft_relax_max_steps=args.graft_relax_max_steps,
+        graft_xtb_relax=args.graft_xtb_relax,
         metal_oxidation=_parse_metal_oxidation(args.metal_oxidation),
         compute_mulliken=args.compute_mulliken,
         dry_run=args.dry_run,
@@ -384,24 +428,69 @@ def run_polish(spec: RunSpec) -> int:
         new0 = old_to_new_idx.get(old0)
         return new0 + 1 if new0 is not None else None
 
-    # 3. Find reactive atoms
+    # 3. Find reactive atoms — explicit names take priority; missing names
+    #    trigger auto-detect from the ligand residue.
     def find(name, res):
         for i, a in enumerate(lineage.atoms):
             if a.name == name and a.resname == res:
                 return i, a
         return None, None
-    P_i, P_a = find(spec.p_name, spec.p_res)
-    ON_i, ON_a = find(spec.nuc_name, spec.nuc_res)
-    OL_i, OL_a = find(spec.lg_name, spec.lg_res)
-    if P_i is None or ON_i is None or OL_i is None:
-        raise SystemExit(
-            f"reactive atoms not found: P({spec.p_name}.{spec.p_res})={P_i}, "
-            f"Onuc({spec.nuc_name}.{spec.nuc_res})={ON_i}, "
-            f"Olg({spec.lg_name}.{spec.lg_res})={OL_i}"
-        )
-    log.info(f"  reactive: P=#{P_i+1} Onuc=#{ON_i+1} Olg=#{OL_i+1}")
 
-    # 4. Shift reactive distances to targets (if not pruned away)
+    autodetect_log: list[str] = []
+    fully_specified = all((spec.p_name, spec.p_res, spec.nuc_name, spec.nuc_res,
+                            spec.lg_name, spec.lg_res))
+    if fully_specified:
+        P_i, P_a = find(spec.p_name, spec.p_res)
+        ON_i, ON_a = find(spec.nuc_name, spec.nuc_res)
+        OL_i, OL_a = find(spec.lg_name, spec.lg_res)
+        if P_i is None or ON_i is None or OL_i is None:
+            raise SystemExit(
+                f"reactive atoms not found: P({spec.p_name}.{spec.p_res})={P_i}, "
+                f"Onuc({spec.nuc_name}.{spec.nuc_res})={ON_i}, "
+                f"Olg({spec.lg_name}.{spec.lg_res})={OL_i}"
+            )
+        autodetect_log.append(
+            f"reactive_triplet=user_override "
+            f"P={spec.p_name}.{spec.p_res} "
+            f"Nuc={spec.nuc_name}.{spec.nuc_res} "
+            f"LG={spec.lg_name}.{spec.lg_res}"
+        )
+    else:
+        from reactive_autodetect import _autodetect_reactive_triplet
+        P_i, ON_i, OL_i, ad_lines = _autodetect_reactive_triplet(lineage.atoms)
+        autodetect_log.extend(ad_lines)
+        # Allow partial overrides
+        if spec.p_name and spec.p_res:
+            i_, _ = find(spec.p_name, spec.p_res)
+            if i_ is not None: P_i = i_
+        if spec.nuc_name and spec.nuc_res:
+            i_, _ = find(spec.nuc_name, spec.nuc_res)
+            if i_ is not None: ON_i = i_
+        if spec.lg_name and spec.lg_res:
+            i_, _ = find(spec.lg_name, spec.lg_res)
+            if i_ is not None: OL_i = i_
+        P_a = lineage.atoms[P_i]; ON_a = lineage.atoms[ON_i]; OL_a = lineage.atoms[OL_i]
+    log.info(f"  reactive: P=#{P_i+1} ({P_a.name}.{P_a.resname}) "
+             f"Onuc=#{ON_i+1} ({ON_a.name}.{ON_a.resname}) "
+             f"Olg=#{OL_i+1} ({OL_a.name}.{OL_a.resname})")
+    for ln in autodetect_log:
+        log.info(f"  [autodetect] {ln}")
+
+    # 4. Resolve target reactive distances. None → use input-geometry value
+    #    (no shift); explicit float → push toward TS-like pose.
+    d_pn_input = float(np.linalg.norm(coords[P_i] - coords[ON_i]))
+    d_pl_input = float(np.linalg.norm(coords[P_i] - coords[OL_i]))
+    target_pn = spec.target_d_p_onuc if spec.target_d_p_onuc is not None else d_pn_input
+    target_pl = spec.target_d_p_olg  if spec.target_d_p_olg  is not None else d_pl_input
+    autodetect_log.append(
+        f"target_d_P_Onuc={target_pn:.4f}A "
+        f"source={'user_override' if spec.target_d_p_onuc is not None else 'input_geometry'}"
+    )
+    autodetect_log.append(
+        f"target_d_P_Olg={target_pl:.4f}A "
+        f"source={'user_override' if spec.target_d_p_olg is not None else 'input_geometry'}"
+    )
+
     def shift(positions, anchor, mover, target):
         v = positions[mover] - positions[anchor]
         d = float(np.linalg.norm(v))
@@ -409,8 +498,8 @@ def run_polish(spec: RunSpec) -> int:
         new = positions.copy()
         new[mover] = positions[anchor] + (v / d) * target
         return new
-    coords = shift(coords, P_i, ON_i, spec.target_d_p_onuc)
-    coords = shift(coords, P_i, OL_i, spec.target_d_p_olg)
+    coords = shift(coords, P_i, ON_i, target_pn)
+    coords = shift(coords, P_i, OL_i, target_pl)
     log.info(f"  shifted: d(P-Onuc)={np.linalg.norm(coords[P_i]-coords[ON_i]):.4f} "
              f"d(P-Olg)={np.linalg.norm(coords[P_i]-coords[OL_i]):.4f}")
 
@@ -425,8 +514,9 @@ def run_polish(spec: RunSpec) -> int:
         qcb_remark("METHOD", f"model={spec.model}", f"device={spec.device}"),
         qcb_remark("REACTIVE_DISTANCES",
                     f"P={P_i+1}", f"Onuc={ON_i+1}", f"Olg={OL_i+1}",
-                    f"target_d_P_Onuc={spec.target_d_p_onuc}",
-                    f"target_d_P_Olg={spec.target_d_p_olg}"),
+                    f"target_d_P_Onuc={target_pn:.4f}",
+                    f"target_d_P_Olg={target_pl:.4f}"),
+        qcb_remark("AUTODETECT", *autodetect_log),
         qcb_remark("CONSTRAINT_PATTERN",
                     f"FixInternals_CA_CA_pairs={len(ca_idx)*(len(ca_idx)-1)//2}",
                     f"FixBondLengths_reactive=2",
@@ -448,11 +538,14 @@ def run_polish(spec: RunSpec) -> int:
 
         # Load atoms via ase read (preserves bond order)
         atoms = ase_read(str(spec.input_pdb))
-        # If we pruned, reload from pruned coords + pruned element list
+        # If we pruned, reload from pruned coords + pruned element list.
+        # _normalize_element coerces 'ZN'/'FE'/'CL' → 'Zn'/'Fe'/'Cl' for ASE's
+        # case-sensitive atomic_numbers dict.
         if len(atoms) != len(lineage.atoms):
             from ase import Atoms as ASEAtoms
             elements = [
-                a.element if a.element else _guess_element(a.name)
+                _normalize_element(a.element) if a.element
+                else _normalize_element(_guess_element(a.name))
                 for a in lineage.atoms
             ]
             atoms = ASEAtoms(symbols=elements, positions=coords)
@@ -535,13 +628,37 @@ def run_polish(spec: RunSpec) -> int:
 
         atoms.set_constraint(constraints)
 
-        # Run LBFGS with snapshot every N steps if requested
+        # Run optimizer (modular backend; ase-lbfgs by default).
+        # torch-sim-fire would refuse here because of the active
+        # FixAtoms / FixBondLength / FixInternals constraints — the
+        # script forces the user onto an ase-* backend in that case.
         traj_path = spec.out_dir / f"{spec.out_basename}_traj.traj"
-        opt = LBFGS(atoms, trajectory=str(traj_path),
-                    logfile=str(spec.out_dir / f"{spec.out_basename}_polish.log"))
-        e0 = float(atoms.get_potential_energy())
-        log.info(f"  initial: E={e0:.4f} eV  fmax={float(np.linalg.norm(atoms.get_forces(), axis=1).max()):.4f}")
-        converged = opt.run(fmax=spec.fmax, steps=spec.max_steps)
+        backend = spec.optimizer_backend
+        if backend.startswith("torch-sim") and constraints:
+            log.warning(
+                "  optimizer-backend=%s does not support ASE constraints; "
+                "falling back to ase-lbfgs for this run.", backend)
+            backend = "ase-lbfgs"
+        log.info("  optimizer backend: %s", backend)
+        if backend == "ase-lbfgs":
+            # Fast path: keep the legacy LBFGS object so trajectory
+            # snapshot semantics stay bit-for-bit identical.
+            opt = LBFGS(atoms, trajectory=str(traj_path),
+                        logfile=str(spec.out_dir / f"{spec.out_basename}_polish.log"))
+            e0 = float(atoms.get_potential_energy())
+            log.info(f"  initial: E={e0:.4f} eV  fmax={float(np.linalg.norm(atoms.get_forces(), axis=1).max()):.4f}")
+            converged = opt.run(fmax=spec.fmax, steps=spec.max_steps)
+        else:
+            from quantum_engine.opt import make_optimizer
+            opt_obj = make_optimizer(
+                backend, fmax=spec.fmax, max_steps=spec.max_steps,
+                trajectory=traj_path,
+                logfile=spec.out_dir / f"{spec.out_basename}_polish.log",
+            )
+            e0 = float(atoms.get_potential_energy())
+            log.info(f"  initial: E={e0:.4f} eV  fmax={float(np.linalg.norm(atoms.get_forces(), axis=1).max()):.4f}")
+            res = opt_obj.run(atoms)
+            converged = res.converged
         e_final = float(atoms.get_potential_energy())
         fmax_final = float(np.linalg.norm(atoms.get_forces(), axis=1).max())
         log.info(f"  final  : E={e_final:.4f} eV  fmax={fmax_final:.4f}  converged={converged}")
@@ -642,6 +759,71 @@ def run_polish(spec: RunSpec) -> int:
         except Exception as e:
             log.warning(f"trajectory snapshot write failed: {e}")
 
+    # 8b. Graft-back: re-add pruned atoms at end so the final PDB matches the
+    #     input atom set (RFdiffusion3 prep). Only triggers if pruning happened.
+    graft_info: dict | None = None
+    if spec.graft_back:
+        if old_to_new_idx is None:
+            log.info("  --graft-back set but no pruning happened; skipping graft step")
+        else:
+            log.info("=== STEP 8b: graft-back (re-add pruned atoms) ===")
+            t_graft0 = time.monotonic()
+            from graft_back import apply_graft_back
+            grafted_lineage, grafted_coords, graft_info = apply_graft_back(
+                lineage, coords, spec.input_pdb,
+                do_xtb_relax=spec.graft_xtb_relax,
+                xtb_max_steps=spec.graft_relax_max_steps,
+                xtb_charge=spec.charge,
+                xtb_solvent=None,
+                log=log,
+            )
+            t_graft = time.monotonic() - t_graft0
+            graft_info["wall_total_sec"] = round(t_graft, 2)
+            log.info(f"  graft-back wall: {t_graft:.2f}s; "
+                     f"{graft_info['n_grafted']} atoms grafted; "
+                     f"{graft_info.get('n_clashes_after_relax', graft_info['n_clashes'])} "
+                     "residual clashes")
+            # Write the grafted PDB + CIF (parallel files; the polished
+            # output is preserved as-is).
+            graft_basename = f"{spec.out_basename}_grafted"
+            extra_qcb_graft = list(extra_qcb) + [
+                qcb_remark("GRAFTBACK",
+                           f"n_grafted={graft_info['n_grafted']}",
+                           f"n_caps_removed={graft_info['n_caps_removed']}",
+                           f"n_clashes={graft_info['n_clashes']}",
+                           f"xtb_relax={graft_info['xtb_relax_succeeded']}",
+                           f"wall_sec={graft_info['wall_total_sec']:.2f}"),
+            ]
+            if spec.emit_pdb:
+                graft_pdb = spec.out_dir / f"{graft_basename}.pdb"
+                write_pdb_lineage(grafted_lineage, grafted_coords, graft_pdb,
+                                   drop_old_qcb=False,
+                                   preserve_other_remarks=True,
+                                   extra_qcb=extra_qcb_graft,
+                                   bfactor=None,
+                                   title=f"polish_ts_v3 grafted {spec.out_basename}")
+                v = validate_pdb_format(graft_pdb)
+                log.info(f"  graft PDB: {graft_pdb}  format-ok={v['ok']}  "
+                         f"n_atoms={v['n_atoms']}")
+                out_paths["pdb_grafted"] = str(graft_pdb)
+                out_paths["pdb_grafted_validation"] = v
+            if spec.emit_cif:
+                graft_cif = spec.out_dir / f"{graft_basename}.cif"
+                metal_ox = {"Zn": 2}
+                metal_ox.update(spec.metal_oxidation or {})
+                try:
+                    write_cif_lineage(grafted_lineage, grafted_coords,
+                                       graft_cif,
+                                       total_charge=spec.charge,
+                                       partial_charges=None,
+                                       metal_oxidation_overrides=metal_ox,
+                                       energy_eV=None,    # graft step is xtb, not MACE
+                                       extra_qcb=extra_qcb_graft)
+                    log.info(f"  graft CIF: {graft_cif}")
+                    out_paths["cif_grafted"] = str(graft_cif)
+                except Exception as e:
+                    log.error(f"graft CIF write failed: {e}", exc_info=True)
+
     # 9. Summary JSON
     summary = {
         "input": str(spec.input_pdb),
@@ -662,6 +844,7 @@ def run_polish(spec: RunSpec) -> int:
         "converged": converged if not spec.dry_run else None,
         "model": spec.model,
         "charge": spec.charge,
+        "graft_back": graft_info,
     }
     sj = spec.out_dir / f"{spec.out_basename}_summary.json"
     sj.write_text(json.dumps(summary, indent=2, default=str))
@@ -683,13 +866,22 @@ Input: `{spec.input_pdb.name}` (copied to this directory)
 
 ## Constraints applied
 - CA-rigid scaffold over {len(ca_idx)} CA atoms (FixInternals on all pairs)
-- Reactive bond pins: P-Onuc={spec.target_d_p_onuc}, P-Olg={spec.target_d_p_olg}
+- Reactive bond pins: P-Onuc={target_pn:.3f}, P-Olg={target_pl:.3f} (auto from input geom unless overridden)
 - Free residues: {spec.free_residues or 'none'}
 - Pruned (residue_keep): {dict(spec.prune_residue_keep) or 'none'}
 - Pruned backbone: {spec.prune_backbone_residues or 'none'}
 
 ## Result
 {'(dry run)' if spec.dry_run else f'E = {e_final:.4f} eV; fmax = {fmax_final:.4f}; converged = {converged}'}
+
+## Graft-back
+{('Disabled.' if not spec.graft_back else
+  ('Skipped (no pruning).' if graft_info is None else
+   f"{graft_info['n_grafted']} atoms re-added in {graft_info['wall_total_sec']:.2f}s "
+   f"(xtb_relaxed={graft_info['xtb_relax_succeeded']}, "
+   f"residual clashes after relax="
+   f"{graft_info.get('n_clashes_after_relax', graft_info['n_clashes'])}). "
+   f"Output: `{spec.out_basename}_grafted.pdb` + `.cif` (same atom set as input)."))}
 """)
     return 0
 
