@@ -1,0 +1,104 @@
+Bootstrap: localimage
+From: /net/software/containers/universal.sif
+
+# UMA-only sidecar container — fairchem-core 2.x with the deps it needs.
+#
+# WHY a sidecar:
+#   The main quantum_chem-*.sif pins numpy 1.26.4 (for SCINE Chemoton 4.1.0
+#   + AIMNet2 + MACE 0.3.15-against-e3nn-0.4.4). fairchem-core 2.20.0 hard-
+#   requires numpy >=2.0 and e3nn >=0.5 — irreconcilable in one env. This
+#   sidecar carries just fairchem and runs UMA jobs only; everything else
+#   stays in quantum_chem.sif.
+#
+# BUILD (~10-20 min, downloads ~2 GB of wheels):
+#   cd /home/woodbuse/codebase_projects/quantum_cowboy_biochemistry
+#   apptainer build --fakeroot \
+#       /net/software/containers/users/woodbuse/quantum_chem/uma-$(date +%Y%m%d).sif \
+#       deps/uma_sidecar.def
+#
+# RUN — sized for the UMA family in quantum_engine/site.py:
+#   apptainer exec --nv --bind /home:/home --bind /net:/net \
+#       /net/software/containers/users/woodbuse/quantum_chem/uma-YYYYMMDD.sif \
+#       python -c 'from fairchem.core.calculate.ase_calculator import FAIRChemCalculator'
+#
+# Once built, quantum_engine.calc.factory._make_uma can shell out to this
+# .sif (separate task). For now any direct `python -c` works.
+
+%labels
+    Author woodbuse@uw.edu
+    Project qcb (quantum_cowboy_biochemistry)
+    Purpose UMA / FairChem sidecar (fairchem-core not installable in main qc.sif)
+
+%post
+    set -e
+
+    # ── 1. Pip constraints — pin only what fairchem actually needs to lift ───
+    # universal.sif already has numpy 2.0.2 + pydantic 2.x. fairchem-core
+    # 2.20.0 hard-requires torch~=2.8 (not the 2.11 in universal.sif) — we
+    # let pip downgrade torch inside this sidecar only; the main container
+    # is untouched. Things fairchem also needs lifted vs universal.sif:
+    #   e3nn   0.4.4  -> >=0.5
+    #   scipy  1.14.1 -> >=1.15
+    cat > /tmp/uma_constraints.txt <<'CONSTRAINTS'
+numpy>=2.0,<2.5
+pydantic>=2.0
+CONSTRAINTS
+
+    # ── 2. Bump e3nn + scipy + let fairchem-core pull its required torch ────
+    pip install --no-cache-dir \
+        --constraint /tmp/uma_constraints.txt \
+        --upgrade \
+            "e3nn>=0.5,<0.6" \
+            "scipy>=1.15"
+
+    pip install --no-cache-dir \
+        --constraint /tmp/uma_constraints.txt \
+            "fairchem-core==2.20.0"
+
+    # ── 3. Sanity check — fail the build if the import is broken ────────────
+    python - <<'PY'
+import sys
+import torch, numpy, e3nn, scipy, pydantic, ase
+print(f"  python    {sys.version.split()[0]}")
+print(f"  torch     {torch.__version__}")
+print(f"  numpy     {numpy.__version__}")
+print(f"  e3nn      {e3nn.__version__}")
+print(f"  scipy     {scipy.__version__}")
+print(f"  pydantic  {pydantic.__version__}")
+print(f"  ase       {ase.__version__}")
+import fairchem.core
+from fairchem.core.calculate.ase_calculator import FAIRChemCalculator
+from fairchem.core import pretrained_mlip
+print(f"  fairchem-core {fairchem.core.__version__}")
+print("  FAIRChemCalculator import OK")
+PY
+
+    rm -f /tmp/uma_constraints.txt
+
+%environment
+    export HF_HOME=/net/databases/huggingface
+    export TRANSFORMERS_CACHE=$HF_HOME/hub
+
+%test
+    python -c 'from fairchem.core.calculate.ase_calculator import FAIRChemCalculator; print("UMA sidecar OK")'
+
+%help
+    UMA sidecar (fairchem-core 2.20.0).
+
+    Use this image only for UMA / FAIRChem calculator calls. Everything
+    else (MACE, ORB, AIMNet2, SCINE, propka, …) lives in the main
+    quantum_chem.sif and is NOT available here.
+
+    Example single-point on a UMA-S-1.1 checkpoint:
+
+      apptainer exec --nv --bind /net /net/software/containers/users/woodbuse/quantum_chem/uma-YYYYMMDD.sif \
+        python -c "
+      from ase.io import read
+      from fairchem.core.calculate.ase_calculator import FAIRChemCalculator
+      from fairchem.core import pretrained_mlip
+      pred = pretrained_mlip.get_predict_unit('/net/databases/huggingface/mlFF_models/models--facebook--fairchem-uma-s-1p1/uma-s-1p1.pt', device='cuda')
+      calc = FAIRChemCalculator(pred, task_name='omol')
+      calc.charge, calc.spin = -2, 1
+      a = read('in.pdb'); a.calc = calc
+      print(a.get_potential_energy())
+      "

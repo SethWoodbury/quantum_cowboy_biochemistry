@@ -198,24 +198,51 @@ def _make_aimnet(model: str, model_path: str | None, device: str,
                       mult=spin if spin is not None else 1)
 
 
+# UMA lives in its own apptainer image (the main quantum_chem.sif can't
+# host fairchem-core — numpy 1.26 vs >=2.0 conflict). The factory imports
+# fairchem.core directly if it's importable in the current Python (i.e.
+# the user is already running inside the sidecar). Otherwise this branch
+# raises an ImportError that names the sidecar so the caller can apptainer-
+# exec into it.
+_UMA_SIDECAR_GLOB = ("/net/software/containers/users/woodbuse/quantum_chem/"
+                     "uma-*.sif")
+
+
+def _resolve_uma_sidecar() -> str | None:
+    import glob
+    found = sorted(glob.glob(_UMA_SIDECAR_GLOB), reverse=True)
+    return found[0] if found else None
+
+
 def _make_uma(model: str, model_path: str | None, device: str,
               charge: int | None, spin: int | None) -> "Calculator":
-    """FairChem UMA — universal foundation models. Charge/spin/task are
-    set on the calculator after build. fairchem-core is NOT shipped in the
-    current quantum_chem container; this branch fails LOUDLY with an install
-    hint rather than silently dropping into MACECalculator on the .pt file."""
+    """FairChem UMA — universal foundation models.
+
+    Lives in a dedicated apptainer sidecar (``uma-YYYYMMDD.sif``) because
+    fairchem-core's numpy/e3nn pins conflict with the main qcb container.
+    When called from a Python that already has ``fairchem.core`` importable
+    (i.e. the caller has apptainer-exec'd into the sidecar), this builds
+    the calculator in-process. Otherwise it raises a clear ImportError
+    naming the sidecar path so the caller can wrap their command.
+    """
+    sidecar = _resolve_uma_sidecar()
     try:
-        from fairchem.core import pretrained_mlip   # noqa: PLC0415
-        from fairchem.core.calculate.ase_calculator import FAIRChemCalculator  # noqa: PLC0415
+        from fairchem.core.calculate.pretrained_mlip import load_predict_unit  # noqa: PLC0415
+        from fairchem.core.calculate.ase_calculator import FAIRChemCalculator   # noqa: PLC0415
     except ImportError as exc:
+        if sidecar:
+            hint = (f"  - fairchem-core lives in the UMA sidecar — re-run "
+                    f"your command inside it:\n"
+                    f"      apptainer exec --nv --bind /home --bind /net "
+                    f"{sidecar} \\\n          python <your_qcb_call_here>")
+        else:
+            hint = ("  - no UMA sidecar found under "
+                    f"{_UMA_SIDECAR_GLOB.replace('*', 'YYYYMMDD')!r}.\n"
+                    "    Build one with `apptainer build --fakeroot "
+                    "deps/uma_sidecar.def` (see the def file for details).")
         raise ImportError(
-            f"UMA requested ({model!r}) but `fairchem-core` is not installed.\n"
-            f"  - The standard quantum_chem container does not ship it yet "
-            f"(deps/quantum_chem.def excludes it on purpose).\n"
-            f"  - To enable: `pip install fairchem-core>=2.6` in a writable "
-            f"environment, OR rebuild the container with it included.\n"
-            f"  - Local checkpoint that *will* be used once installed: "
-            f"{model_path or '<not on disk yet — run download_uma_models.sh>'}"
+            f"UMA requested ({model!r}) but `fairchem.core` is not importable "
+            f"in this Python.\n{hint}"
         ) from exc
 
     if model_path is None or not os.path.isfile(model_path):
@@ -226,7 +253,10 @@ def _make_uma(model: str, model_path: str | None, device: str,
 
     log.info(f"Loading UMA {model!r} from {model_path}  "
              f"(charge={charge}, spin={spin})")
-    predictor = pretrained_mlip.get_predict_unit(model_path, device=device)
+    # NB: load_predict_unit takes a file path; get_predict_unit takes a
+    # registered model NAME and tries to hf_hub_download even when the
+    # checkpoint already exists locally (and 401s on gated repos).
+    predictor = load_predict_unit(model_path, device=device)
     calc = FAIRChemCalculator(predictor, task_name="omol")
     # charge and spin live on the calc, read from atoms.info at force time
     if charge is not None:
