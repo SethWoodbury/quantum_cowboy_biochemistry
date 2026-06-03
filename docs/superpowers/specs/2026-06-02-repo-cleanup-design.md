@@ -149,3 +149,24 @@ Re-confirm zero importers (grep) for each, then delete:
 - README/docs use `quantum_engine`/`qcb` consistently.
 - Pytest baseline (inside container) has no new failures.
 - Archive tag exists; every deletion recoverable.
+
+## Outcome (2026-06-02)
+
+Completed in 5 commits (`18b4824`→`289fa6b`); net **−4277 lines** (121 files).
+Independent agent sign-off after the deletions and at the end. Recovery point:
+tag `pre-cleanup-2026-06-02` / branch `archive/pre-cleanup`.
+
+- Phase 1–6 executed as specced. Repo root is now code/docs/config only.
+- Deviations from the plan (all flagged to the user):
+  - `mlff/endpoint_generation.py` **kept** — it has a real importer
+    (`tools/run_neb_ts.py`) and 698 LOC of real strategy; its fate ties to
+    retiring `run_neb_ts.py` (deferred).
+  - **xTB-wrapper consolidation deferred** — only Phase-3 item touching live
+    numerical paths, unverifiable without the xtb binary + real fragments.
+  - **`--ligand-charge` deferred** to the notebook track — it's a reporting-only
+    feature best verified against the real OPAA di-Zn structure.
+- Pre-existing failures (NOT caused by cleanup): `import quantum_engine.config`
+  (pydantic v1 in container vs v2 schema) and `test_make_calc_unknown_raises`
+  (stale assertion). Both pre-date this work; recorded in
+  `2026-06-02-test-baseline.md`.
+- Next: the **notebook track** (see the deferral list + the OPAA notebook).
