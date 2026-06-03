@@ -1,5 +1,9 @@
 # Autonomous validation push — 2026-05-03 night
 
+> **Historical snapshot (2026-05-03).** Records what was built/validated on that
+> date; numbers and module names may be out of date. Not a description of the
+> current codebase.
+
 Comprehensive review of what was built and validated during the
 unattended overnight run while Seth was away.
 

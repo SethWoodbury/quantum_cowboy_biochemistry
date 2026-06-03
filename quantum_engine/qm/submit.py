@@ -19,12 +19,12 @@ from pathlib import Path
 
 from quantum_engine.site import GAUSSIAN_ROOT, SCRATCH_DIR
 
-# ── Defaults ─────────────────────────────────────────────────────────
+# ── Defaults (all env-overridable for portability to other clusters) ──
 _USERNAME = getpass.getuser()
-_EMAIL = f"{_USERNAME}@uw.edu"
-_GAUSS_SCRDIR = f"/net/scratch/{_USERNAME}/temp"
-_ORCA_EXEC = "/software/orca/latest/orca"
-_MPI_PATH = "/home/ikalvet/software/openmpi-3.1.3"
+_EMAIL = os.environ.get("QCB_SLURM_EMAIL", f"{_USERNAME}@uw.edu")
+_GAUSS_SCRDIR = os.environ.get("QCB_GAUSS_SCRDIR", f"/net/scratch/{_USERNAME}/temp")
+_ORCA_EXEC = os.environ.get("QCB_ORCA_BIN", "/software/orca/latest/orca")
+_MPI_PATH = os.environ.get("QCB_OPENMPI_PATH", "/home/ikalvet/software/openmpi-3.1.3")
 
 
 # ── Generic SLURM script generation ─────────────────────────────────

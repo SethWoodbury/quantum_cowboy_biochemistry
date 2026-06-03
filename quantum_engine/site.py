@@ -144,13 +144,13 @@ MACE_MODELS = {
     # Charge-aware, trained on TS data (wB97M-V, all elements)
     "mace-omol": _resolve_mace("mace-omol",
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-omol-0/MACE-omol-0-extra-large-1024.model",
-        "/home/gbg222/projects/mace_models/MACE-omol-0-extra-large-1024.model",
+        None,
     ),
 
     # Multi-head (7 DFT levels in one model)
     "mace-mh": _resolve_mace("mace-mh",
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-mh-0/mace-mh-0.model",
-        "/home/gbg222/projects/mace_models/mace-mh-0.model",
+        None,
     ),
     # MACE-MH-1 — newer multi-head foundation model (broad coverage:
     # inorganic crystals + molecules + surfaces). Public GitHub release.
@@ -163,19 +163,19 @@ MACE_MODELS = {
     # Needs graph_electrostatics → gbg222 venv only.
     "mace-polar-s": _resolve_mace("mace-polar-s",
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-polar-1-beta/MACE-POLAR-1-S.model",
-        "/home/gbg222/projects/mace_models/MACE-POLAR-1-S.model",
+        None,
     ),
     "mace-polar-m": _resolve_mace("mace-polar-m",
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-polar-1-beta/MACE-POLAR-1-M.model",
-        "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
+        None,
     ),
     "mace-polar-l": _resolve_mace("mace-polar-l",
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-polar-1-beta/MACE-POLAR-1-L.model",
-        "/home/gbg222/projects/mace_models/MACE-POLAR-1-L.model",
+        None,
     ),
     "mace-polar": _resolve_mace("mace-polar",
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-polar-1-beta/MACE-POLAR-1-M.model",
-        "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
+        None,
     ),
 
     # FairChem UMA (different calculator interface)
@@ -269,8 +269,6 @@ GXTB_BIN = str(_REPO_ROOT / "deps" / "g-xtb" / "install"
                / "xtb-6.7.1" / "bin" / "xtb")
 GXTB_LIB_DIRS: list[str] = []  # static binary — no extra LD_LIBRARY_PATH needed
 
-OPENBABEL_BIN = "/home/dme5188/bin/openbabel/bin/obabel"
-
 # ChimeraX — for empirical H placement + Gasteiger charges
 # Falls back to None if not found; consensus protonation will skip ChimeraX.
 def _find_chimera() -> str | None:
@@ -308,11 +306,6 @@ PLUMED_KERNEL = next(
     (p for p in _kernel_candidates if p and _os.path.isfile(p)),
     None,
 )
-
-# Reference codebases (read-only, for migration/comparison)
-GBG_ENZTS_VENV = "/home/gbg222/projects/enz-ts/.venv/bin/python"
-GBG_ENZTS_SRC = "/home/gbg222/projects/enz-ts/src"
-ENZTS_PROD = "/projects/ml/enzyme_filtering/enz-ts"  # production enz-ts (gbg222/Lars)
 
 # Python environments
 UNIVERSAL_PYTHON = f"apptainer exec --nv --bind /home:/home --bind /mnt:/mnt --bind /net:/net {CONTAINERS['universal']} python"

@@ -133,7 +133,7 @@ def main(argv=None):
     log = configure_logging(args.log_level)
     args.out.mkdir(parents=True, exist_ok=True)
 
-    sys.path.insert(0, "/home/woodbuse/codebase_projects/quantum_cowboy_biochemistry")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from quantum_engine.io import load_structure, write_pdb
     from ase.constraints import FixAtoms, FixBondLengths
     from quantum_engine.calc import make_calc

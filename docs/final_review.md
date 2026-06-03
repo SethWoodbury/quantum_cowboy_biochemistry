@@ -1,5 +1,9 @@
 # QCB Final Review
 
+> **Historical snapshot.** Review of commit `38f3069` (pre-cleanup). The package
+> is now `quantum_engine/` (not `qcb/`) and there is no `scripts/` dir; several
+> findings here may already be resolved — cross-check against current `git log`.
+
 Reviewer: independent senior computational chemistry software reviewer
 Scope: full `qcb/` package, `scripts/`, and `docs/` at commit `38f3069`
 Date: 2026-04-21

@@ -152,7 +152,7 @@ def main(argv=None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
 
     # ---- Load
-    sys.path.insert(0, "/home/woodbuse/codebase_projects/quantum_cowboy_biochemistry")
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from quantum_engine.io import load_structure, write_pdb
     from ase.constraints import FixAtoms, FixBondLengths, Hookean
 
