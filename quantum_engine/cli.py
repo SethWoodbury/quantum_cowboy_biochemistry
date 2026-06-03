@@ -164,6 +164,18 @@ def _cmd_sp(args):
 def _cmd_opt(args):
     from quantum_engine.ops import opt
     atoms, bt, calc, constraint, charge, outdir, _ = _setup_atoms_and_calc(args)
+    # Per-bond constraints (--fix-bond / --restrain-bond) go ON TOP of the
+    # FixAtoms scaffold built from --fix/--fix-preset.
+    bond_specs = getattr(args, "fix_bond", None) or []
+    restrain_specs = getattr(args, "restrain_bond", None) or []
+    if bond_specs or restrain_specs:
+        from quantum_engine.ops.bond_constraints import build_bond_constraints
+        bond_cons = build_bond_constraints(atoms, bond_specs, restrain_specs)
+        if constraint is None:
+            constraint = bond_cons
+        else:
+            base = constraint if isinstance(constraint, list) else [constraint]
+            constraint = base + bond_cons
     res = opt.run(atoms, calc, outdir, constraint,
                   optimizer=args.optimizer, fmax=args.fmax, max_steps=args.max_steps)
     # Optionally write output PDB
@@ -1243,6 +1255,14 @@ def main(argv=None):
     p_opt.add_argument("--fmax", type=float, default=0.05)
     p_opt.add_argument("--max-steps", type=int, default=500)
     p_opt.add_argument("--output-pdb", default=None, help="Write relaxed structure to PDB")
+    p_opt.add_argument("--fix-bond", action="append", nargs="+", metavar="I J [R0]", default=[],
+                       help="Hard-pin a bond (0-based ASE indices). With optional R0 (A), set the "
+                            "bond to R0 first, then fix it; else fix at the current length. "
+                            "Repeatable. Applied on top of --fix/--fix-preset.")
+    p_opt.add_argument("--restrain-bond", action="append", nargs=4,
+                       metavar=("I", "J", "K", "R0"), default=[],
+                       help="Two-sided harmonic bond restraint E=0.5*K*(d-R0)^2 "
+                            "(K in eV/A^2, R0 in A; 0-based ASE indices). Repeatable.")
 
     # md
     p_md = sub.add_parser("md", help="Molecular dynamics")
