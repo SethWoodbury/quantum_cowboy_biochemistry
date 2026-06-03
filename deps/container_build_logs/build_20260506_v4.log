@@ -1,0 +1,202 @@
+INFO:    User not listed in /etc/subuid, trying root-mapped namespace
+INFO:    The %post section will be run under the fakeroot command
+INFO:    Starting build...
+INFO:    Verifying bootstrap image /net/software/containers/universal.sif
+INFO:    Extracting local image...
+INFO:    Running post scriptlet
++ set -eux
++ cat
++ PIP=/usr/local/conda/bin/pip --no-cache-dir
++ C=--constraint /tmp/qc_constraints.txt
++ /usr/local/conda/bin/pip --no-cache-dir install --upgrade pip
+Requirement already satisfied: pip in ./usr/local/conda/lib/python3.11/site-packages (26.0.1)
+Collecting pip
+  Downloading pip-26.1.1-py3-none-any.whl.metadata (4.6 kB)
+Downloading pip-26.1.1-py3-none-any.whl (1.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 29.6 MB/s  0:00:00
+Installing collected packages: pip
+  Attempting uninstall: pip
+    Found existing installation: pip 26.0.1
+    Uninstalling pip-26.0.1:
+      Successfully uninstalled pip-26.0.1
+Successfully installed pip-26.1.1
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt numpy==1.26.4
+Collecting numpy==1.26.4
+  Downloading numpy-1.26.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (61 kB)
+Downloading numpy-1.26.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (18.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 18.3/18.3 MB 84.2 MB/s  0:00:00
+Installing collected packages: numpy
+  Attempting uninstall: numpy
+    Found existing installation: numpy 2.0.2
+    Uninstalling numpy-2.0.2:
+      Successfully uninstalled numpy-2.0.2
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+cytoflow 0.0.0 requires numexpr==2.10.1, but you have numexpr 2.14.1 which is incompatible.
+matscipy 1.2.0 requires numpy>=2.0.0, but you have numpy 1.26.4 which is incompatible.
+deerlab 1.1.5 requires numpy>=2.0, but you have numpy 1.26.4 which is incompatible.
+colabfold 1.6.1 requires numpy<3.0.0,>=2.0.2, but you have numpy 1.26.4 which is incompatible.
+mendeleev 1.1.0 requires numpy<3.0,>=2.0, but you have numpy 1.26.4 which is incompatible.
+Successfully installed numpy-1.26.4
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt rdkit>=2024.03 epam.indigo>=1.27 rxnmapper>=0.4 CGRtools==4.1.27 biotite ase>=3.23 matplotlib>=3.7
+Requirement already satisfied: rdkit>=2024.03 in ./usr/local/conda/lib/python3.11/site-packages (2025.3.6)
+Collecting epam.indigo>=1.27
+  Downloading epam_indigo-1.40.0-py3-none-manylinux1_x86_64.whl.metadata (2.0 kB)
+Collecting rxnmapper>=0.4
+  Downloading rxnmapper-0.4.3-py3-none-any.whl.metadata (5.2 kB)
+Collecting CGRtools==4.1.27
+  Downloading CGRtools-4.1.27.tar.gz (1.5 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.5/1.5 MB 24.0 MB/s  0:00:00
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: biotite in ./usr/local/conda/lib/python3.11/site-packages (1.4.0)
+Requirement already satisfied: ase>=3.23 in ./usr/local/conda/lib/python3.11/site-packages (3.28.0)
+Requirement already satisfied: matplotlib>=3.7 in ./usr/local/conda/lib/python3.11/site-packages (3.9.2)
+Collecting CachedMethods<0.2,>=0.1.4 (from CGRtools==4.1.27)
+  Downloading CachedMethods-0.1.4-py3-none-any.whl.metadata (754 bytes)
+Requirement already satisfied: pandas>=1.0.3 in ./usr/local/conda/lib/python3.11/site-packages (from rxnmapper>=0.4) (2.2.3)
+Collecting rxn-chem-utils>=1.0.3 (from rxnmapper>=0.4)
+  Downloading rxn_chem_utils-1.6.0-py3-none-any.whl.metadata (7.1 kB)
+Requirement already satisfied: scipy>=1.4.1 in ./usr/local/conda/lib/python3.11/site-packages (from rxnmapper>=0.4) (1.14.1)
+Requirement already satisfied: torch>=1.5.0 in ./usr/local/conda/lib/python3.11/site-packages (from rxnmapper>=0.4) (2.11.0+cu130)
+Collecting transformers<5.0.0,>=4.0.0 (from rxnmapper>=0.4)
+  Downloading transformers-4.57.6-py3-none-any.whl.metadata (43 kB)
+Requirement already satisfied: filelock in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (3.25.2)
+Collecting huggingface-hub<1.0,>=0.34.0 (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4)
+  Downloading huggingface_hub-0.36.2-py3-none-any.whl.metadata (15 kB)
+Requirement already satisfied: numpy>=1.17 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (1.26.4)
+Requirement already satisfied: packaging>=20.0 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (26.0)
+Requirement already satisfied: pyyaml>=5.1 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (6.0.3)
+Requirement already satisfied: regex!=2019.12.17 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2026.3.32)
+Requirement already satisfied: requests in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2.33.1)
+Collecting tokenizers<=0.23.0,>=0.22.0 (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4)
+  Downloading tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (7.3 kB)
+Collecting safetensors>=0.4.3 (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4)
+  Downloading safetensors-0.7.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+Requirement already satisfied: tqdm>=4.27 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (4.67.3)
+Requirement already satisfied: fsspec>=2023.5.0 in ./usr/local/conda/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.34.0->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2026.3.0)
+Collecting hf-xet<2.0.0,>=1.1.3 (from huggingface-hub<1.0,>=0.34.0->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4)
+  Downloading hf_xet-1.5.0-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (4.9 kB)
+Requirement already satisfied: typing-extensions>=3.7.4.3 in ./usr/local/conda/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.34.0->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (4.15.0)
+Requirement already satisfied: biotraj<2.0,>=1.0 in ./usr/local/conda/lib/python3.11/site-packages (from biotite) (1.2.2)
+Requirement already satisfied: msgpack>=0.5.6 in ./usr/local/conda/lib/python3.11/site-packages (from biotite) (1.1.2)
+Requirement already satisfied: networkx>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from biotite) (3.6.1)
+Requirement already satisfied: contourpy>=1.0.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (0.12.1)
+Requirement already satisfied: fonttools>=4.22.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (4.62.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (1.5.0)
+Requirement already satisfied: pillow>=8 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (12.0.0)
+Requirement already satisfied: pyparsing>=2.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (3.1.1)
+Requirement already satisfied: python-dateutil>=2.7 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (2.9.0.post0)
+Requirement already satisfied: pytz>=2020.1 in ./usr/local/conda/lib/python3.11/site-packages (from pandas>=1.0.3->rxnmapper>=0.4) (2026.1.post1)
+Requirement already satisfied: tzdata>=2022.7 in ./usr/local/conda/lib/python3.11/site-packages (from pandas>=1.0.3->rxnmapper>=0.4) (2025.3)
+Requirement already satisfied: six>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from python-dateutil>=2.7->matplotlib>=3.7) (1.17.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./usr/local/conda/lib/python3.11/site-packages (from requests->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2.0.4)
+Requirement already satisfied: idna<4,>=2.5 in ./usr/local/conda/lib/python3.11/site-packages (from requests->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (3.11)
+Requirement already satisfied: urllib3<3,>=1.26 in ./usr/local/conda/lib/python3.11/site-packages (from requests->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2.5.0)
+Requirement already satisfied: certifi>=2023.5.7 in ./usr/local/conda/lib/python3.11/site-packages (from requests->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2026.2.25)
+Requirement already satisfied: attrs>=21.2.0 in ./usr/local/conda/lib/python3.11/site-packages (from rxn-chem-utils>=1.0.3->rxnmapper>=0.4) (26.1.0)
+Requirement already satisfied: click>=7.0 in ./usr/local/conda/lib/python3.11/site-packages (from rxn-chem-utils>=1.0.3->rxnmapper>=0.4) (8.3.1)
+Collecting rxn-utils>=1.1.9 (from rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading rxn_utils-2.0.0-py3-none-any.whl.metadata (6.3 kB)
+Collecting diskcache>=5.2.1 (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading diskcache-5.6.3-py3-none-any.whl.metadata (20 kB)
+Collecting pydantic>=1.9.0 (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading pydantic-1.10.26-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (155 kB)
+Requirement already satisfied: pydantic-settings>=2.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4) (2.13.1)
+Collecting pymongo>=3.9.0 (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading pymongo-4.17.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (10 kB)
+INFO: pip is looking at multiple versions of pydantic-settings to determine which version is compatible with other requirements. This could take a while.
+Collecting pydantic-settings>=2.1.0 (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading pydantic_settings-2.14.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.13.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.12.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.11.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.10.1-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.10.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.9.1-py3-none-any.whl.metadata (3.8 kB)
+INFO: pip is still looking at multiple versions of pydantic-settings to determine which version is compatible with other requirements. This could take a while.
+  Downloading pydantic_settings-2.9.0-py3-none-any.whl.metadata (3.8 kB)
+  Downloading pydantic_settings-2.8.1-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.8.0-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.7.1-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.7.0-py3-none-any.whl.metadata (3.5 kB)
+INFO: This is taking longer than usual. You might need to provide the dependency resolver with stricter constraints to reduce runtime. See https://pip.pypa.io/warnings/backtracking for guidance. If you want to abort this run, press Ctrl + C.
+  Downloading pydantic_settings-2.6.1-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.6.0-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.5.2-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.5.1-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.5.0-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.4.0-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.3.4-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.3.3-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.3.2-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.3.1-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.3.0-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.2.1-py3-none-any.whl.metadata (3.1 kB)
+  Downloading pydantic_settings-2.2.0-py3-none-any.whl.metadata (3.1 kB)
+  Downloading pydantic_settings-2.1.0-py3-none-any.whl.metadata (2.9 kB)
+Collecting rxn-utils>=1.1.9 (from rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading rxn_utils-1.6.0-py3-none-any.whl.metadata (2.6 kB)
+Requirement already satisfied: dnspython<3.0.0,>=2.6.1 in ./usr/local/conda/lib/python3.11/site-packages (from pymongo>=3.9.0->rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4) (2.8.0)
+Requirement already satisfied: setuptools<82 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (81.0.0)
+Requirement already satisfied: sympy>=1.13.3 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (1.14.0)
+Requirement already satisfied: jinja2 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (3.1.6)
+Requirement already satisfied: cuda-toolkit==13.0.2 in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.2)
+Requirement already satisfied: cuda-bindings<14,>=13.0.3 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (13.2.0)
+Requirement already satisfied: nvidia-cudnn-cu13==9.19.0.56 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (9.19.0.56)
+Requirement already satisfied: nvidia-cusparselt-cu13==0.8.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (0.8.0)
+Requirement already satisfied: nvidia-nccl-cu13==2.28.9 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (2.28.9)
+Requirement already satisfied: nvidia-nvshmem-cu13==3.4.5 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (3.4.5)
+Requirement already satisfied: triton==3.6.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (3.6.0+git9844da95)
+Requirement already satisfied: nvidia-cublas==13.1.0.3.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.1.0.3)
+Requirement already satisfied: nvidia-cuda-runtime==13.0.96.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.96)
+Requirement already satisfied: nvidia-cufft==12.0.0.61.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (12.0.0.61)
+Requirement already satisfied: nvidia-cufile==1.15.1.6.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (1.15.1.6)
+Requirement already satisfied: nvidia-cuda-cupti==13.0.85.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.85)
+Requirement already satisfied: nvidia-curand==10.4.0.35.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (10.4.0.35)
+Requirement already satisfied: nvidia-cusolver==12.0.4.66.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (12.0.4.66)
+Requirement already satisfied: nvidia-cusparse==12.6.3.3.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (12.6.3.3)
+Requirement already satisfied: nvidia-nvjitlink==13.0.88.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.88)
+Requirement already satisfied: nvidia-cuda-nvrtc==13.0.88.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.88)
+Requirement already satisfied: nvidia-nvtx==13.0.85.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.85)
+Requirement already satisfied: cuda-pathfinder~=1.1 in ./usr/local/conda/lib/python3.11/site-packages (from cuda-bindings<14,>=13.0.3->torch>=1.5.0->rxnmapper>=0.4) (1.5.0)
+Requirement already satisfied: mpmath<1.5,>=1.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from sympy>=1.13.3->torch>=1.5.0->rxnmapper>=0.4) (1.4.1)
+Requirement already satisfied: MarkupSafe>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from jinja2->torch>=1.5.0->rxnmapper>=0.4) (3.0.3)
+Downloading CachedMethods-0.1.4-py3-none-any.whl (4.0 kB)
+Downloading epam_indigo-1.40.0-py3-none-manylinux1_x86_64.whl (9.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.2/9.2 MB 96.0 MB/s  0:00:00
+Downloading rxnmapper-0.4.3-py3-none-any.whl (3.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.0/3.0 MB 102.5 MB/s  0:00:00
+Downloading transformers-4.57.6-py3-none-any.whl (12.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.0/12.0 MB 90.5 MB/s  0:00:00
+Downloading huggingface_hub-0.36.2-py3-none-any.whl (566 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 566.4/566.4 kB 12.9 MB/s  0:00:00
+Downloading hf_xet-1.5.0-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.5/4.5 MB 48.4 MB/s  0:00:00
+Downloading tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.3/3.3 MB 51.1 MB/s  0:00:00
+Downloading rxn_chem_utils-1.6.0-py3-none-any.whl (38 kB)
+Downloading rxn_utils-1.6.0-py3-none-any.whl (21 kB)
+Downloading pydantic-1.10.26-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (2.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.8/2.8 MB 52.5 MB/s  0:00:00
+Downloading diskcache-5.6.3-py3-none-any.whl (45 kB)
+Downloading pymongo-4.17.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.5/1.5 MB 47.9 MB/s  0:00:00
+Downloading safetensors-0.7.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (507 kB)
+Building wheels for collected packages: CGRtools
+  Building wheel for CGRtools (pyproject.toml): started
+  Building wheel for CGRtools (pyproject.toml): finished with status 'done'
+  Created wheel for CGRtools: filename=cgrtools-4.1.27-cp311-cp311-linux_x86_64.whl size=914034 sha256=f0a19812196ebc31e026914cbeab4b91c5eba861e185c29fe5a3487e93212a24
+  Stored in directory: /tmp/pip-ephem-wheel-cache-bm771p4f/wheels/6c/10/70/4d9e1c961c41e3d18be664945ec2dabf746f561e262abc3efb
+Successfully built CGRtools
+Installing collected packages: safetensors, pymongo, pydantic, hf-xet, epam.indigo, diskcache, CachedMethods, rxn-utils, huggingface-hub, CGRtools, tokenizers, rxn-chem-utils, transformers, rxnmapper
+  Attempting uninstall: pydantic
+    Found existing installation: pydantic 2.12.5
+    Uninstalling pydantic-2.12.5:
+      Successfully uninstalled pydantic-2.12.5

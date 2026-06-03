@@ -1,0 +1,1176 @@
+INFO:    User not listed in /etc/subuid, trying root-mapped namespace
+INFO:    The %post section will be run under the fakeroot command
+INFO:    Starting build...
+INFO:    Verifying bootstrap image /net/software/containers/universal.sif
+INFO:    Extracting local image...
+INFO:    Running post scriptlet
++ set -eux
++ cat
++ PIP=/usr/local/conda/bin/pip --no-cache-dir
++ C=--constraint /tmp/qc_constraints.txt
++ /usr/local/conda/bin/pip --no-cache-dir install --upgrade pip
+Requirement already satisfied: pip in ./usr/local/conda/lib/python3.11/site-packages (26.0.1)
+Collecting pip
+  Downloading pip-26.1.1-py3-none-any.whl.metadata (4.6 kB)
+Downloading pip-26.1.1-py3-none-any.whl (1.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 32.6 MB/s  0:00:00
+Installing collected packages: pip
+  Attempting uninstall: pip
+    Found existing installation: pip 26.0.1
+    Uninstalling pip-26.0.1:
+      Successfully uninstalled pip-26.0.1
+Successfully installed pip-26.1.1
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt numpy==1.26.4
+Collecting numpy==1.26.4
+  Downloading numpy-1.26.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (61 kB)
+Downloading numpy-1.26.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (18.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 18.3/18.3 MB 88.2 MB/s  0:00:00
+Installing collected packages: numpy
+  Attempting uninstall: numpy
+    Found existing installation: numpy 2.0.2
+    Uninstalling numpy-2.0.2:
+      Successfully uninstalled numpy-2.0.2
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+deerlab 1.1.5 requires numpy>=2.0, but you have numpy 1.26.4 which is incompatible.
+matscipy 1.2.0 requires numpy>=2.0.0, but you have numpy 1.26.4 which is incompatible.
+mendeleev 1.1.0 requires numpy<3.0,>=2.0, but you have numpy 1.26.4 which is incompatible.
+colabfold 1.6.1 requires numpy<3.0.0,>=2.0.2, but you have numpy 1.26.4 which is incompatible.
+cytoflow 0.0.0 requires numexpr==2.10.1, but you have numexpr 2.14.1 which is incompatible.
+Successfully installed numpy-1.26.4
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt rdkit>=2024.03 epam.indigo>=1.27 rxnmapper>=0.4 CGRtools==4.1.27 biotite ase>=3.23 matplotlib>=3.7
+Requirement already satisfied: rdkit>=2024.03 in ./usr/local/conda/lib/python3.11/site-packages (2025.3.6)
+Collecting epam.indigo>=1.27
+  Downloading epam_indigo-1.40.0-py3-none-manylinux1_x86_64.whl.metadata (2.0 kB)
+Collecting rxnmapper>=0.4
+  Downloading rxnmapper-0.4.3-py3-none-any.whl.metadata (5.2 kB)
+Collecting CGRtools==4.1.27
+  Downloading CGRtools-4.1.27.tar.gz (1.5 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.5/1.5 MB 24.4 MB/s  0:00:00
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: biotite in ./usr/local/conda/lib/python3.11/site-packages (1.4.0)
+Requirement already satisfied: ase>=3.23 in ./usr/local/conda/lib/python3.11/site-packages (3.28.0)
+Requirement already satisfied: matplotlib>=3.7 in ./usr/local/conda/lib/python3.11/site-packages (3.9.2)
+Collecting CachedMethods<0.2,>=0.1.4 (from CGRtools==4.1.27)
+  Downloading CachedMethods-0.1.4-py3-none-any.whl.metadata (754 bytes)
+Requirement already satisfied: pandas>=1.0.3 in ./usr/local/conda/lib/python3.11/site-packages (from rxnmapper>=0.4) (2.2.3)
+Collecting rxn-chem-utils>=1.0.3 (from rxnmapper>=0.4)
+  Downloading rxn_chem_utils-1.6.0-py3-none-any.whl.metadata (7.1 kB)
+Requirement already satisfied: scipy>=1.4.1 in ./usr/local/conda/lib/python3.11/site-packages (from rxnmapper>=0.4) (1.14.1)
+Requirement already satisfied: torch>=1.5.0 in ./usr/local/conda/lib/python3.11/site-packages (from rxnmapper>=0.4) (2.11.0+cu130)
+Collecting transformers<5.0.0,>=4.0.0 (from rxnmapper>=0.4)
+  Downloading transformers-4.57.6-py3-none-any.whl.metadata (43 kB)
+Requirement already satisfied: filelock in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (3.25.2)
+Collecting huggingface-hub<1.0,>=0.34.0 (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4)
+  Downloading huggingface_hub-0.36.2-py3-none-any.whl.metadata (15 kB)
+Requirement already satisfied: numpy>=1.17 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (1.26.4)
+Requirement already satisfied: packaging>=20.0 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (26.0)
+Requirement already satisfied: pyyaml>=5.1 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (6.0.3)
+Requirement already satisfied: regex!=2019.12.17 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2026.3.32)
+Requirement already satisfied: requests in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2.33.1)
+Collecting tokenizers<=0.23.0,>=0.22.0 (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4)
+  Downloading tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (7.3 kB)
+Collecting safetensors>=0.4.3 (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4)
+  Downloading safetensors-0.7.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+Requirement already satisfied: tqdm>=4.27 in ./usr/local/conda/lib/python3.11/site-packages (from transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (4.67.3)
+Requirement already satisfied: fsspec>=2023.5.0 in ./usr/local/conda/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.34.0->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2026.3.0)
+Collecting hf-xet<2.0.0,>=1.1.3 (from huggingface-hub<1.0,>=0.34.0->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4)
+  Downloading hf_xet-1.5.0-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (4.9 kB)
+Requirement already satisfied: typing-extensions>=3.7.4.3 in ./usr/local/conda/lib/python3.11/site-packages (from huggingface-hub<1.0,>=0.34.0->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (4.15.0)
+Requirement already satisfied: biotraj<2.0,>=1.0 in ./usr/local/conda/lib/python3.11/site-packages (from biotite) (1.2.2)
+Requirement already satisfied: msgpack>=0.5.6 in ./usr/local/conda/lib/python3.11/site-packages (from biotite) (1.1.2)
+Requirement already satisfied: networkx>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from biotite) (3.6.1)
+Requirement already satisfied: contourpy>=1.0.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (0.12.1)
+Requirement already satisfied: fonttools>=4.22.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (4.62.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (1.5.0)
+Requirement already satisfied: pillow>=8 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (12.0.0)
+Requirement already satisfied: pyparsing>=2.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (3.1.1)
+Requirement already satisfied: python-dateutil>=2.7 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.7) (2.9.0.post0)
+Requirement already satisfied: pytz>=2020.1 in ./usr/local/conda/lib/python3.11/site-packages (from pandas>=1.0.3->rxnmapper>=0.4) (2026.1.post1)
+Requirement already satisfied: tzdata>=2022.7 in ./usr/local/conda/lib/python3.11/site-packages (from pandas>=1.0.3->rxnmapper>=0.4) (2025.3)
+Requirement already satisfied: six>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from python-dateutil>=2.7->matplotlib>=3.7) (1.17.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./usr/local/conda/lib/python3.11/site-packages (from requests->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2.0.4)
+Requirement already satisfied: idna<4,>=2.5 in ./usr/local/conda/lib/python3.11/site-packages (from requests->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (3.11)
+Requirement already satisfied: urllib3<3,>=1.26 in ./usr/local/conda/lib/python3.11/site-packages (from requests->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2.5.0)
+Requirement already satisfied: certifi>=2023.5.7 in ./usr/local/conda/lib/python3.11/site-packages (from requests->transformers<5.0.0,>=4.0.0->rxnmapper>=0.4) (2026.2.25)
+Requirement already satisfied: attrs>=21.2.0 in ./usr/local/conda/lib/python3.11/site-packages (from rxn-chem-utils>=1.0.3->rxnmapper>=0.4) (26.1.0)
+Requirement already satisfied: click>=7.0 in ./usr/local/conda/lib/python3.11/site-packages (from rxn-chem-utils>=1.0.3->rxnmapper>=0.4) (8.3.1)
+Collecting rxn-utils>=1.1.9 (from rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading rxn_utils-2.0.0-py3-none-any.whl.metadata (6.3 kB)
+Collecting diskcache>=5.2.1 (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading diskcache-5.6.3-py3-none-any.whl.metadata (20 kB)
+Collecting pydantic>=1.9.0 (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading pydantic-1.10.26-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (155 kB)
+Requirement already satisfied: pydantic-settings>=2.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4) (2.13.1)
+Collecting pymongo>=3.9.0 (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading pymongo-4.17.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (10 kB)
+INFO: pip is looking at multiple versions of pydantic-settings to determine which version is compatible with other requirements. This could take a while.
+Collecting pydantic-settings>=2.1.0 (from rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading pydantic_settings-2.14.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.13.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.12.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.11.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.10.1-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.10.0-py3-none-any.whl.metadata (3.4 kB)
+  Downloading pydantic_settings-2.9.1-py3-none-any.whl.metadata (3.8 kB)
+INFO: pip is still looking at multiple versions of pydantic-settings to determine which version is compatible with other requirements. This could take a while.
+  Downloading pydantic_settings-2.9.0-py3-none-any.whl.metadata (3.8 kB)
+  Downloading pydantic_settings-2.8.1-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.8.0-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.7.1-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.7.0-py3-none-any.whl.metadata (3.5 kB)
+INFO: This is taking longer than usual. You might need to provide the dependency resolver with stricter constraints to reduce runtime. See https://pip.pypa.io/warnings/backtracking for guidance. If you want to abort this run, press Ctrl + C.
+  Downloading pydantic_settings-2.6.1-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.6.0-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.5.2-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.5.1-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.5.0-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.4.0-py3-none-any.whl.metadata (3.5 kB)
+  Downloading pydantic_settings-2.3.4-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.3.3-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.3.2-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.3.1-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.3.0-py3-none-any.whl.metadata (3.3 kB)
+  Downloading pydantic_settings-2.2.1-py3-none-any.whl.metadata (3.1 kB)
+  Downloading pydantic_settings-2.2.0-py3-none-any.whl.metadata (3.1 kB)
+  Downloading pydantic_settings-2.1.0-py3-none-any.whl.metadata (2.9 kB)
+Collecting rxn-utils>=1.1.9 (from rxn-chem-utils>=1.0.3->rxnmapper>=0.4)
+  Downloading rxn_utils-1.6.0-py3-none-any.whl.metadata (2.6 kB)
+Requirement already satisfied: dnspython<3.0.0,>=2.6.1 in ./usr/local/conda/lib/python3.11/site-packages (from pymongo>=3.9.0->rxn-utils>=1.1.9->rxn-chem-utils>=1.0.3->rxnmapper>=0.4) (2.8.0)
+Requirement already satisfied: setuptools<82 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (81.0.0)
+Requirement already satisfied: sympy>=1.13.3 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (1.14.0)
+Requirement already satisfied: jinja2 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (3.1.6)
+Requirement already satisfied: cuda-toolkit==13.0.2 in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.2)
+Requirement already satisfied: cuda-bindings<14,>=13.0.3 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (13.2.0)
+Requirement already satisfied: nvidia-cudnn-cu13==9.19.0.56 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (9.19.0.56)
+Requirement already satisfied: nvidia-cusparselt-cu13==0.8.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (0.8.0)
+Requirement already satisfied: nvidia-nccl-cu13==2.28.9 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (2.28.9)
+Requirement already satisfied: nvidia-nvshmem-cu13==3.4.5 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (3.4.5)
+Requirement already satisfied: triton==3.6.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=1.5.0->rxnmapper>=0.4) (3.6.0+git9844da95)
+Requirement already satisfied: nvidia-cublas==13.1.0.3.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.1.0.3)
+Requirement already satisfied: nvidia-cuda-runtime==13.0.96.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.96)
+Requirement already satisfied: nvidia-cufft==12.0.0.61.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (12.0.0.61)
+Requirement already satisfied: nvidia-cufile==1.15.1.6.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (1.15.1.6)
+Requirement already satisfied: nvidia-cuda-cupti==13.0.85.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.85)
+Requirement already satisfied: nvidia-curand==10.4.0.35.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (10.4.0.35)
+Requirement already satisfied: nvidia-cusolver==12.0.4.66.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (12.0.4.66)
+Requirement already satisfied: nvidia-cusparse==12.6.3.3.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (12.6.3.3)
+Requirement already satisfied: nvidia-nvjitlink==13.0.88.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.88)
+Requirement already satisfied: nvidia-cuda-nvrtc==13.0.88.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.88)
+Requirement already satisfied: nvidia-nvtx==13.0.85.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=1.5.0->rxnmapper>=0.4) (13.0.85)
+Requirement already satisfied: cuda-pathfinder~=1.1 in ./usr/local/conda/lib/python3.11/site-packages (from cuda-bindings<14,>=13.0.3->torch>=1.5.0->rxnmapper>=0.4) (1.5.0)
+Requirement already satisfied: mpmath<1.5,>=1.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from sympy>=1.13.3->torch>=1.5.0->rxnmapper>=0.4) (1.4.1)
+Requirement already satisfied: MarkupSafe>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from jinja2->torch>=1.5.0->rxnmapper>=0.4) (3.0.3)
+Downloading CachedMethods-0.1.4-py3-none-any.whl (4.0 kB)
+Downloading epam_indigo-1.40.0-py3-none-manylinux1_x86_64.whl (9.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.2/9.2 MB 79.8 MB/s  0:00:00
+Downloading rxnmapper-0.4.3-py3-none-any.whl (3.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.0/3.0 MB 73.1 MB/s  0:00:00
+Downloading transformers-4.57.6-py3-none-any.whl (12.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.0/12.0 MB 61.6 MB/s  0:00:00
+Downloading huggingface_hub-0.36.2-py3-none-any.whl (566 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 566.4/566.4 kB 63.6 MB/s  0:00:00
+Downloading hf_xet-1.5.0-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.5/4.5 MB 51.1 MB/s  0:00:00
+Downloading tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.3/3.3 MB 52.4 MB/s  0:00:00
+Downloading rxn_chem_utils-1.6.0-py3-none-any.whl (38 kB)
+Downloading rxn_utils-1.6.0-py3-none-any.whl (21 kB)
+Downloading pydantic-1.10.26-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (2.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.8/2.8 MB 52.1 MB/s  0:00:00
+Downloading diskcache-5.6.3-py3-none-any.whl (45 kB)
+Downloading pymongo-4.17.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.5/1.5 MB 54.5 MB/s  0:00:00
+Downloading safetensors-0.7.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (507 kB)
+Building wheels for collected packages: CGRtools
+  Building wheel for CGRtools (pyproject.toml): started
+  Building wheel for CGRtools (pyproject.toml): finished with status 'done'
+  Created wheel for CGRtools: filename=cgrtools-4.1.27-cp311-cp311-linux_x86_64.whl size=914034 sha256=ed7b497b826663a7144e4a1ccd38fdde969870ab64a3ebd134e893727d211217
+  Stored in directory: /tmp/pip-ephem-wheel-cache-f2fxnfll/wheels/6c/10/70/4d9e1c961c41e3d18be664945ec2dabf746f561e262abc3efb
+Successfully built CGRtools
+Installing collected packages: safetensors, pymongo, pydantic, hf-xet, epam.indigo, diskcache, CachedMethods, rxn-utils, huggingface-hub, CGRtools, tokenizers, rxn-chem-utils, transformers, rxnmapper
+  Attempting uninstall: pydantic
+    Found existing installation: pydantic 2.12.5
+    Uninstalling pydantic-2.12.5:
+      Successfully uninstalled pydantic-2.12.5
+
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+mlflow-skinny 3.10.1 requires pydantic<3,>=2.0.0, but you have pydantic 1.10.26 which is incompatible.
+mlflow 3.10.1 requires pydantic<3,>=2.0.0, but you have pydantic 1.10.26 which is incompatible.
+pydantic-settings 2.13.1 requires pydantic>=2.7.0, but you have pydantic 1.10.26 which is incompatible.
+fastapi 0.135.2 requires pydantic>=2.9.0, but you have pydantic 1.10.26 which is incompatible.
+mendeleev 1.1.0 requires numpy<3.0,>=2.0, but you have numpy 1.26.4 which is incompatible.
+mendeleev 1.1.0 requires pydantic<3.0.0,>=2.9.2, but you have pydantic 1.10.26 which is incompatible.
+pydantic-extra-types 2.8.2 requires pydantic>=2.5.2, but you have pydantic 1.10.26 which is incompatible.
+Successfully installed CGRtools-4.1.27 CachedMethods-0.1.4 diskcache-5.6.3 epam.indigo-1.40.0 hf-xet-1.5.0 huggingface-hub-0.36.2 pydantic-1.10.26 pymongo-4.17.0 rxn-chem-utils-1.6.0 rxn-utils-1.6.0 rxnmapper-0.4.3 safetensors-0.7.0 tokenizers-0.22.2 transformers-4.57.6
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt git+https://github.com/duartegroup/autodE.git@v1.4.5
+Collecting git+https://github.com/duartegroup/autodE.git@v1.4.5
+  Cloning https://github.com/duartegroup/autodE.git (to revision v1.4.5) to ./tmp/pip-req-build-s0dnqfop
+  Running command git clone --filter=blob:none --quiet https://github.com/duartegroup/autodE.git /tmp/pip-req-build-s0dnqfop
+  Running command git checkout -b v1.4.5 --track origin/v1.4.5
+  Switched to a new branch 'v1.4.5'
+  branch 'v1.4.5' set up to track 'origin/v1.4.5'.
+  Resolved https://github.com/duartegroup/autodE.git to commit 02df34639e5d0f9a6bc9dc962af366cc9865ee35
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: autode
+  Building wheel for autode (pyproject.toml): started
+  Building wheel for autode (pyproject.toml): finished with status 'done'
+  Created wheel for autode: filename=autode-1.4.5-cp311-cp311-linux_x86_64.whl size=946344 sha256=daf21f52bbe2e20c59230fef72b2775e4ad5b52bec9f6945d5aac09a5fc4ada3
+  Stored in directory: /tmp/pip-ephem-wheel-cache-74k9z99n/wheels/35/1c/f2/dd97ab991ecb16b52f4e0b212d247ad395f89aeaf157fea0a4
+Successfully built autode
+Installing collected packages: autode
+Successfully installed autode-1.4.5
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt pysisyphus>=0.7 sella>=2.3
+Collecting pysisyphus>=0.7
+  Downloading pysisyphus-1.0.0-py3-none-any.whl.metadata (4.1 kB)
+Collecting sella>=2.3
+  Downloading sella-2.4.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (3.6 kB)
+Collecting autograd (from pysisyphus>=0.7)
+  Downloading autograd-1.8.0-py3-none-any.whl.metadata (7.5 kB)
+Collecting dask (from pysisyphus>=0.7)
+  Downloading dask-2026.3.0-py3-none-any.whl.metadata (3.9 kB)
+Collecting distributed (from pysisyphus>=0.7)
+  Downloading distributed-2026.3.0-py3-none-any.whl.metadata (3.4 kB)
+Requirement already satisfied: h5py in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (3.14.0)
+Collecting fabric (from pysisyphus>=0.7)
+  Downloading fabric-3.2.3-py3-none-any.whl.metadata (3.7 kB)
+Requirement already satisfied: jax in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (0.5.2)
+Requirement already satisfied: jinja2 in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (3.1.6)
+Requirement already satisfied: matplotlib in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (3.9.2)
+Requirement already satisfied: natsort in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (7.1.1)
+Requirement already satisfied: numba in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (0.60.0)
+Requirement already satisfied: numpy in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (1.26.4)
+Requirement already satisfied: networkx in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (3.6.1)
+Collecting optuna (from pysisyphus>=0.7)
+  Downloading optuna-4.8.0-py3-none-any.whl.metadata (17 kB)
+Requirement already satisfied: pandas in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (2.2.3)
+Requirement already satisfied: psutil in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (7.2.2)
+Requirement already satisfied: pyyaml in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (6.0.3)
+Requirement already satisfied: rmsd in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (1.6.5)
+Requirement already satisfied: scipy in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (1.14.1)
+Requirement already satisfied: sympy in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (1.14.0)
+Requirement already satisfied: scikit-learn in ./usr/local/conda/lib/python3.11/site-packages (from pysisyphus>=0.7) (1.5.2)
+Requirement already satisfied: ase>=3.18.0 in ./usr/local/conda/lib/python3.11/site-packages (from sella>=2.3) (3.28.0)
+Requirement already satisfied: jaxlib>=0.4.20 in ./usr/local/conda/lib/python3.11/site-packages (from sella>=2.3) (0.5.2)
+Requirement already satisfied: ml_dtypes>=0.4.0 in ./usr/local/conda/lib/python3.11/site-packages (from jax->pysisyphus>=0.7) (0.5.4)
+Requirement already satisfied: opt_einsum in ./usr/local/conda/lib/python3.11/site-packages (from jax->pysisyphus>=0.7) (3.4.0)
+Requirement already satisfied: contourpy>=1.0.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib->pysisyphus>=0.7) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib->pysisyphus>=0.7) (0.12.1)
+Requirement already satisfied: fonttools>=4.22.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib->pysisyphus>=0.7) (4.62.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib->pysisyphus>=0.7) (1.5.0)
+Requirement already satisfied: packaging>=20.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib->pysisyphus>=0.7) (26.0)
+Requirement already satisfied: pillow>=8 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib->pysisyphus>=0.7) (12.0.0)
+Requirement already satisfied: pyparsing>=2.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib->pysisyphus>=0.7) (3.1.1)
+Requirement already satisfied: python-dateutil>=2.7 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib->pysisyphus>=0.7) (2.9.0.post0)
+Requirement already satisfied: six>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from python-dateutil>=2.7->matplotlib->pysisyphus>=0.7) (1.17.0)
+Requirement already satisfied: click>=8.1 in ./usr/local/conda/lib/python3.11/site-packages (from dask->pysisyphus>=0.7) (8.3.1)
+Requirement already satisfied: cloudpickle>=3.0.0 in ./usr/local/conda/lib/python3.11/site-packages (from dask->pysisyphus>=0.7) (3.1.2)
+Requirement already satisfied: fsspec>=2021.09.0 in ./usr/local/conda/lib/python3.11/site-packages (from dask->pysisyphus>=0.7) (2026.3.0)
+Collecting partd>=1.4.0 (from dask->pysisyphus>=0.7)
+  Downloading partd-1.4.2-py3-none-any.whl.metadata (4.6 kB)
+Requirement already satisfied: toolz>=0.12.0 in ./usr/local/conda/lib/python3.11/site-packages (from dask->pysisyphus>=0.7) (1.1.0)
+Requirement already satisfied: importlib_metadata>=4.13.0 in ./usr/local/conda/lib/python3.11/site-packages (from dask->pysisyphus>=0.7) (8.8.0)
+Requirement already satisfied: zipp>=3.20 in ./usr/local/conda/lib/python3.11/site-packages (from importlib_metadata>=4.13.0->dask->pysisyphus>=0.7) (3.23.0)
+Collecting locket (from partd>=1.4.0->dask->pysisyphus>=0.7)
+  Downloading locket-1.0.0-py2.py3-none-any.whl.metadata (2.8 kB)
+Requirement already satisfied: msgpack>=1.0.2 in ./usr/local/conda/lib/python3.11/site-packages (from distributed->pysisyphus>=0.7) (1.1.2)
+Collecting sortedcontainers>=2.0.5 (from distributed->pysisyphus>=0.7)
+  Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl.metadata (10 kB)
+Requirement already satisfied: tblib!=3.2.0,!=3.2.1,>=1.6.0 in ./usr/local/conda/lib/python3.11/site-packages (from distributed->pysisyphus>=0.7) (3.2.2)
+Requirement already satisfied: tornado>=6.2.0 in ./usr/local/conda/lib/python3.11/site-packages (from distributed->pysisyphus>=0.7) (6.5.5)
+Requirement already satisfied: urllib3>=1.26.5 in ./usr/local/conda/lib/python3.11/site-packages (from distributed->pysisyphus>=0.7) (2.5.0)
+Collecting zict>=3.0.0 (from distributed->pysisyphus>=0.7)
+  Downloading zict-3.0.0-py2.py3-none-any.whl.metadata (899 bytes)
+Requirement already satisfied: MarkupSafe>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from jinja2->pysisyphus>=0.7) (3.0.3)
+Requirement already satisfied: invoke<3.0,>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from fabric->pysisyphus>=0.7) (2.2.1)
+Requirement already satisfied: paramiko>=2.4 in ./usr/local/conda/lib/python3.11/site-packages (from fabric->pysisyphus>=0.7) (4.0.0)
+Requirement already satisfied: decorator>=5 in ./usr/local/conda/lib/python3.11/site-packages (from fabric->pysisyphus>=0.7) (5.2.1)
+Requirement already satisfied: deprecated>=1.2 in ./usr/local/conda/lib/python3.11/site-packages (from fabric->pysisyphus>=0.7) (1.3.1)
+Requirement already satisfied: wrapt<3,>=1.10 in ./usr/local/conda/lib/python3.11/site-packages (from deprecated>=1.2->fabric->pysisyphus>=0.7) (2.1.2)
+Requirement already satisfied: bcrypt>=3.2 in ./usr/local/conda/lib/python3.11/site-packages (from paramiko>=2.4->fabric->pysisyphus>=0.7) (5.0.0)
+Requirement already satisfied: cryptography>=3.3 in ./usr/local/conda/lib/python3.11/site-packages (from paramiko>=2.4->fabric->pysisyphus>=0.7) (46.0.5)
+Requirement already satisfied: pynacl>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from paramiko>=2.4->fabric->pysisyphus>=0.7) (1.6.2)
+Requirement already satisfied: cffi>=1.14 in ./usr/local/conda/lib/python3.11/site-packages (from cryptography>=3.3->paramiko>=2.4->fabric->pysisyphus>=0.7) (2.0.0)
+Requirement already satisfied: pycparser in ./usr/local/conda/lib/python3.11/site-packages (from cffi>=1.14->cryptography>=3.3->paramiko>=2.4->fabric->pysisyphus>=0.7) (2.21)
+Requirement already satisfied: llvmlite<0.44,>=0.43.0dev0 in ./usr/local/conda/lib/python3.11/site-packages (from numba->pysisyphus>=0.7) (0.43.0)
+Requirement already satisfied: alembic>=1.5.0 in ./usr/local/conda/lib/python3.11/site-packages (from optuna->pysisyphus>=0.7) (1.18.4)
+Collecting colorlog (from optuna->pysisyphus>=0.7)
+  Downloading colorlog-6.10.1-py3-none-any.whl.metadata (11 kB)
+Requirement already satisfied: sqlalchemy>=1.4.2 in ./usr/local/conda/lib/python3.11/site-packages (from optuna->pysisyphus>=0.7) (2.0.48)
+Requirement already satisfied: tqdm in ./usr/local/conda/lib/python3.11/site-packages (from optuna->pysisyphus>=0.7) (4.67.3)
+Requirement already satisfied: Mako in ./usr/local/conda/lib/python3.11/site-packages (from alembic>=1.5.0->optuna->pysisyphus>=0.7) (1.3.10)
+Requirement already satisfied: typing-extensions>=4.12 in ./usr/local/conda/lib/python3.11/site-packages (from alembic>=1.5.0->optuna->pysisyphus>=0.7) (4.15.0)
+Requirement already satisfied: greenlet>=1 in ./usr/local/conda/lib/python3.11/site-packages (from sqlalchemy>=1.4.2->optuna->pysisyphus>=0.7) (3.3.2)
+Requirement already satisfied: pytz>=2020.1 in ./usr/local/conda/lib/python3.11/site-packages (from pandas->pysisyphus>=0.7) (2026.1.post1)
+Requirement already satisfied: tzdata>=2022.7 in ./usr/local/conda/lib/python3.11/site-packages (from pandas->pysisyphus>=0.7) (2025.3)
+Requirement already satisfied: joblib>=1.2.0 in ./usr/local/conda/lib/python3.11/site-packages (from scikit-learn->pysisyphus>=0.7) (1.5.3)
+Requirement already satisfied: threadpoolctl>=3.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from scikit-learn->pysisyphus>=0.7) (3.6.0)
+Requirement already satisfied: mpmath<1.5,>=1.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from sympy->pysisyphus>=0.7) (1.4.1)
+Downloading pysisyphus-1.0.0-py3-none-any.whl (9.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.3/9.3 MB 59.7 MB/s  0:00:00
+Downloading sella-2.4.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (1.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.7/1.7 MB 117.2 MB/s  0:00:00
+Downloading autograd-1.8.0-py3-none-any.whl (51 kB)
+Downloading dask-2026.3.0-py3-none-any.whl (1.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.5/1.5 MB 141.9 MB/s  0:00:00
+Downloading partd-1.4.2-py3-none-any.whl (18 kB)
+Downloading distributed-2026.3.0-py3-none-any.whl (1.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.0/1.0 MB 155.5 MB/s  0:00:00
+Downloading locket-1.0.0-py2.py3-none-any.whl (4.4 kB)
+Downloading sortedcontainers-2.4.0-py2.py3-none-any.whl (29 kB)
+Downloading zict-3.0.0-py2.py3-none-any.whl (43 kB)
+Downloading fabric-3.2.3-py3-none-any.whl (59 kB)
+Downloading optuna-4.8.0-py3-none-any.whl (419 kB)
+Downloading colorlog-6.10.1-py3-none-any.whl (11 kB)
+Installing collected packages: sortedcontainers, zict, locket, colorlog, autograd, partd, optuna, dask, sella, fabric, distributed, pysisyphus
+
+Successfully installed autograd-1.8.0 colorlog-6.10.1 dask-2026.3.0 distributed-2026.3.0 fabric-3.2.3 locket-1.0.0 optuna-4.8.0 partd-1.4.2 pysisyphus-1.0.0 sella-2.4.2 sortedcontainers-2.4.0 zict-3.0.0
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt scine-chemoton==4.1.0 scine-readuct==6.1.0 scine-sparrow==5.1.0
+Collecting scine-chemoton==4.1.0
+  Downloading scine_chemoton-4.1.0.tar.gz (398 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting scine-readuct==6.1.0
+  Downloading scine_readuct-6.1.0-cp311-cp311-manylinux_2_28_x86_64.whl.metadata (3.6 kB)
+Collecting scine-sparrow==5.1.0
+  Downloading scine_sparrow-5.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (3.3 kB)
+Requirement already satisfied: networkx in ./usr/local/conda/lib/python3.11/site-packages (from scine-chemoton==4.1.0) (3.6.1)
+Requirement already satisfied: numpy==1.26.4 in ./usr/local/conda/lib/python3.11/site-packages (from scine-chemoton==4.1.0) (1.26.4)
+Collecting polymethod (from scine-chemoton==4.1.0)
+  Downloading polymethod-1.0.0-py3-none-any.whl.metadata (2.6 kB)
+Requirement already satisfied: psutil in ./usr/local/conda/lib/python3.11/site-packages (from scine-chemoton==4.1.0) (7.2.2)
+Collecting pymatgen==2023.8.10 (from scine-chemoton==4.1.0)
+  Downloading pymatgen-2023.8.10-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (12 kB)
+Requirement already satisfied: typing_extensions in ./usr/local/conda/lib/python3.11/site-packages (from scine-chemoton==4.1.0) (4.15.0)
+Collecting scine_art (from scine-chemoton==4.1.0)
+  Downloading scine_art-2.1.0.tar.gz (31 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting scine_database (from scine-chemoton==4.1.0)
+  Downloading scine_database-1.5.0-cp311-cp311-manylinux_2_28_x86_64.whl.metadata (4.1 kB)
+Collecting scine_utilities (from scine-chemoton==4.1.0)
+  Downloading scine_utilities-10.1.0-cp311-cp311-manylinux_2_28_x86_64.whl.metadata (3.6 kB)
+Collecting scine_molassembler (from scine-chemoton==4.1.0)
+  Downloading scine_molassembler-3.0.1-cp311-cp311-manylinux_2_28_x86_64.whl.metadata (1.4 kB)
+Requirement already satisfied: scipy in ./usr/local/conda/lib/python3.11/site-packages (from scine-chemoton==4.1.0) (1.14.1)
+Requirement already satisfied: setproctitle in ./usr/local/conda/lib/python3.11/site-packages (from scine-chemoton==4.1.0) (1.3.7)
+Requirement already satisfied: pyyaml in ./usr/local/conda/lib/python3.11/site-packages (from scine-chemoton==4.1.0) (6.0.3)
+Requirement already satisfied: wrapt in ./usr/local/conda/lib/python3.11/site-packages (from scine-chemoton==4.1.0) (2.1.2)
+Requirement already satisfied: matplotlib>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (3.9.2)
+Collecting monty>=3.0.2 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading monty-2026.2.18-py3-none-any.whl.metadata (3.3 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.46.1-py3-none-any.whl.metadata (2.7 kB)
+Collecting palettable>=3.1.1 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading palettable-3.3.3-py2.py3-none-any.whl.metadata (3.3 kB)
+Requirement already satisfied: pandas in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (2.2.3)
+Collecting plotly>=4.5.0 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading plotly-6.7.0-py3-none-any.whl.metadata (8.6 kB)
+Collecting pybtex (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading pybtex-0.26.1-py3-none-any.whl.metadata (1.9 kB)
+Requirement already satisfied: pydantic<2.0.0 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (1.10.26)
+Requirement already satisfied: requests in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (2.33.1)
+Requirement already satisfied: ruamel.yaml>=0.17.0 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (0.18.17)
+Collecting spglib>=2.0.2 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading spglib-2.7.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (4.2 kB)
+Requirement already satisfied: sympy in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (1.14.0)
+Requirement already satisfied: tabulate in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (0.10.0)
+Requirement already satisfied: tqdm in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (4.67.3)
+Collecting uncertainties>=3.1.4 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading uncertainties-3.2.3-py3-none-any.whl.metadata (7.0 kB)
+Requirement already satisfied: joblib in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen==2023.8.10->scine-chemoton==4.1.0) (1.5.3)
+Requirement already satisfied: contourpy>=1.0.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (0.12.1)
+Requirement already satisfied: fonttools>=4.22.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (4.62.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (1.5.0)
+Requirement already satisfied: packaging>=20.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (26.0)
+Requirement already satisfied: pillow>=8 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (12.0.0)
+Requirement already satisfied: pyparsing>=2.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (3.1.1)
+Requirement already satisfied: python-dateutil>=2.7 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (2.9.0.post0)
+INFO: pip is looking at multiple versions of mp-api to determine which version is compatible with other requirements. This could take a while.
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.46.0-py3-none-any.whl.metadata (2.6 kB)
+Collecting emmet-core>=0.86.3 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.86.4-py3-none-any.whl.metadata (1.9 kB)
+Collecting boto3 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading boto3-1.43.4-py3-none-any.whl.metadata (6.5 kB)
+Requirement already satisfied: orjson<4,>=3.10 in ./usr/local/conda/lib/python3.11/site-packages (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0) (3.11.7)
+INFO: pip is looking at multiple versions of emmet-core to determine which version is compatible with other requirements. This could take a while.
+Collecting emmet-core>=0.86.3 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.86.3-py3-none-any.whl.metadata (1.8 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.45.15-py3-none-any.whl.metadata (2.4 kB)
+Requirement already satisfied: msgpack in ./usr/local/conda/lib/python3.11/site-packages (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0) (1.1.2)
+Collecting smart_open (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading smart_open-7.6.0-py3-none-any.whl.metadata (25 kB)
+Collecting emmet-core>=0.86.2 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.86.2-py3-none-any.whl.metadata (2.1 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.45.14-py3-none-any.whl.metadata (2.4 kB)
+Collecting emmet-core>=0.86.2rc1 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.87.0.dev20-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.87.0.dev19-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.87.0.dev18-py3-none-any.whl.metadata (1.9 kB)
+INFO: pip is still looking at multiple versions of emmet-core to determine which version is compatible with other requirements. This could take a while.
+  Downloading emmet_core-0.87.0.dev17-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.87.0.dev16-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.87.0.dev15-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.87.0.dev14-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.87.0.dev13-py3-none-any.whl.metadata (1.9 kB)
+INFO: This is taking longer than usual. You might need to provide the dependency resolver with stricter constraints to reduce runtime. See https://pip.pypa.io/warnings/backtracking for guidance. If you want to abort this run, press Ctrl + C.
+  Downloading emmet_core-0.87.0.dev12-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.87.0.dev11-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.87.0.dev10-py3-none-any.whl.metadata (2.2 kB)
+  Downloading emmet_core-0.87.0.dev9-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev8-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev7-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev6-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev5-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev4-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev3-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev2-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev1-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.87.0.dev0-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.86.4rc4-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.86.4rc3-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.86.4rc2-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.86.4rc1-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.86.4rc0-py3-none-any.whl.metadata (1.9 kB)
+  Downloading emmet_core-0.86.3rc1-py3-none-any.whl.metadata (1.8 kB)
+  Downloading emmet_core-0.86.3rc0-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.86.2rc1-py3-none-any.whl.metadata (2.1 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.45.13-py3-none-any.whl.metadata (2.4 kB)
+Collecting emmet-core>=0.85.1rc0 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.86.2rc0-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.86.1-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.86.1rc0-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.86.0-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.86.0rc1-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.86.0rc0-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.85.1-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.85.1rc0-py3-none-any.whl.metadata (2.1 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.45.12-py3-none-any.whl.metadata (2.4 kB)
+Collecting emmet-core>=0.84.6rc0 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.85.0-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.85.0rc0-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.84.10-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.10rc2-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.10rc1-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.10rc0-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.9-py3-none-any.whl.metadata (2.8 kB)
+  Downloading emmet_core-0.84.9rc0-py3-none-any.whl.metadata (2.8 kB)
+  Downloading emmet_core-0.84.8-py3-none-any.whl.metadata (2.8 kB)
+  Downloading emmet_core-0.84.7-py3-none-any.whl.metadata (2.8 kB)
+  Downloading emmet_core-0.84.7rc4-py3-none-any.whl.metadata (2.8 kB)
+  Downloading emmet_core-0.84.7rc3-py3-none-any.whl.metadata (2.8 kB)
+  Downloading emmet_core-0.84.7rc2-py3-none-any.whl.metadata (2.8 kB)
+  Downloading emmet_core-0.84.7rc1-py3-none-any.whl.metadata (3.0 kB)
+  Downloading emmet_core-0.84.7rc0-py3-none-any.whl.metadata (3.0 kB)
+  Downloading emmet_core-0.84.6-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.6rc6-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.6rc5-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.6rc4-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.6rc3-py3-none-any.whl.metadata (2.9 kB)
+  Downloading emmet_core-0.84.6rc2-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.6rc1-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.6rc0-py3-none-any.whl.metadata (2.7 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.45.11-py3-none-any.whl.metadata (2.4 kB)
+Collecting maggma>=0.57.1 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading maggma-0.72.1-py3-none-any.whl.metadata (11 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.45.10-py3-none-any.whl.metadata (2.5 kB)
+Requirement already satisfied: setuptools in ./usr/local/conda/lib/python3.11/site-packages (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0) (81.0.0)
+INFO: pip is still looking at multiple versions of mp-api to determine which version is compatible with other requirements. This could take a while.
+  Downloading mp_api-0.45.9-py3-none-any.whl.metadata (2.4 kB)
+Collecting emmet-core>=0.84.3rc6 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.84.5-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.4-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.3-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.3rc6-py3-none-any.whl.metadata (2.7 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.45.8-py3-none-any.whl.metadata (2.4 kB)
+  Downloading mp_api-0.45.7-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.45.6-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.45.5-py3-none-any.whl.metadata (2.3 kB)
+INFO: This is taking longer than usual. You might need to provide the dependency resolver with stricter constraints to reduce runtime. See https://pip.pypa.io/warnings/backtracking for guidance. If you want to abort this run, press Ctrl + C.
+  Downloading mp_api-0.45.4-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.45.3-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.45.2-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.45.1-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.45.0-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.44.0-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.43.0-py3-none-any.whl.metadata (2.3 kB)
+Collecting emmet-core>=0.78.0rc3 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.84.3rc4-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.3rc3-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.3rc2-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.3rc0-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.2-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.2rc10-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.2rc9-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.2rc8-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.2rc7-py3-none-any.whl.metadata (2.6 kB)
+  Downloading emmet_core-0.84.2rc6-py3-none-any.whl.metadata (2.6 kB)
+  Downloading emmet_core-0.84.2rc5-py3-none-any.whl.metadata (2.6 kB)
+  Downloading emmet_core-0.84.2rc4-py3-none-any.whl.metadata (2.6 kB)
+  Downloading emmet_core-0.84.2rc3-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.2rc2-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.2rc0-py3-none-any.whl.metadata (2.7 kB)
+  Downloading emmet_core-0.84.1-py3-none-any.whl.metadata (2.6 kB)
+  Downloading emmet_core-0.84.0-py3-none-any.whl.metadata (2.6 kB)
+  Downloading emmet_core-0.83.9-py3-none-any.whl.metadata (2.6 kB)
+  Downloading emmet_core-0.83.8-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.7-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.6-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.6rc3-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.6rc2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.6rc0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.5-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.4-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.3-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.83.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.82.2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.82.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.82.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.81.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.81.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.80.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.79.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.7-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.6-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.5-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.4-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.3-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.0rc4-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.78.0rc3-py3-none-any.whl.metadata (2.5 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.42.2-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.42.1-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.42.0-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.41.2-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.41.1-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.41.0-py3-none-any.whl.metadata (2.3 kB)
+  Downloading mp_api-0.40.2-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.40.1-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.40.0-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.39.5-py3-none-any.whl.metadata (2.2 kB)
+Collecting emmet-core>=0.74.2 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.77.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.77.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.76.2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.76.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.76.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.75.3-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.75.2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.75.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.75.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.74.8-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.74.7-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.74.6-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.74.5-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.74.4-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.74.3-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.74.2-py3-none-any.whl.metadata (2.5 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.39.4-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.39.3-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.39.2-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.39.1-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.39.0-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.38.0-py3-none-any.whl.metadata (2.2 kB)
+Collecting emmet-core>=0.69.2 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.74.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.74.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.73.3-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.73.2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.73.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.73.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.21-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.20-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.19-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.18-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.16-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.15-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.14-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.13-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.12-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.10-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.9-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.8-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.7-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.6-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.5-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.4-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.3-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.72.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.71.2-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.71.1-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.71.0-py3-none-any.whl.metadata (2.5 kB)
+  Downloading emmet_core-0.70.6-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.70.5-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.70.4-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.70.3-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.70.2-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.70.1-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.70.0-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.69.11-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.69.10-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.69.9-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.69.8-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.69.7-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.69.6-py3-none-any.whl.metadata (2.0 kB)
+  Downloading emmet_core-0.69.5-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.69.4-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.69.3-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.69.2-py3-none-any.whl.metadata (2.1 kB)
+Collecting mp-api>=0.27.3 (from pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading mp_api-0.37.5-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.37.4-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.37.3-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.37.2-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.37.1-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.37.0-py3-none-any.whl.metadata (2.2 kB)
+  Downloading mp_api-0.36.1-py3-none-any.whl.metadata (2.2 kB)
+Collecting emmet-core>=0.54.0 (from mp-api>=0.27.3->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading emmet_core-0.69.1-py3-none-any.whl.metadata (2.1 kB)
+  Downloading emmet_core-0.68.0-py3-none-any.whl.metadata (1.9 kB)
+Collecting latexcodec>=1.0.4 (from pybtex->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading latexcodec-3.0.1-py3-none-any.whl.metadata (5.2 kB)
+Collecting narwhals>=1.15.1 (from plotly>=4.5.0->pymatgen==2023.8.10->scine-chemoton==4.1.0)
+  Downloading narwhals-2.20.0-py3-none-any.whl.metadata (15 kB)
+Requirement already satisfied: six>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from python-dateutil>=2.7->matplotlib>=1.5->pymatgen==2023.8.10->scine-chemoton==4.1.0) (1.17.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./usr/local/conda/lib/python3.11/site-packages (from requests->pymatgen==2023.8.10->scine-chemoton==4.1.0) (2.0.4)
+Requirement already satisfied: idna<4,>=2.5 in ./usr/local/conda/lib/python3.11/site-packages (from requests->pymatgen==2023.8.10->scine-chemoton==4.1.0) (3.11)
+Requirement already satisfied: urllib3<3,>=1.26 in ./usr/local/conda/lib/python3.11/site-packages (from requests->pymatgen==2023.8.10->scine-chemoton==4.1.0) (2.5.0)
+Requirement already satisfied: certifi>=2023.5.7 in ./usr/local/conda/lib/python3.11/site-packages (from requests->pymatgen==2023.8.10->scine-chemoton==4.1.0) (2026.2.25)
+Requirement already satisfied: ruamel.yaml.clib>=0.2.15 in ./usr/local/conda/lib/python3.11/site-packages (from ruamel.yaml>=0.17.0->pymatgen==2023.8.10->scine-chemoton==4.1.0) (0.2.15)
+Requirement already satisfied: pytz>=2020.1 in ./usr/local/conda/lib/python3.11/site-packages (from pandas->pymatgen==2023.8.10->scine-chemoton==4.1.0) (2026.1.post1)
+Requirement already satisfied: tzdata>=2022.7 in ./usr/local/conda/lib/python3.11/site-packages (from pandas->pymatgen==2023.8.10->scine-chemoton==4.1.0) (2025.3)
+Collecting svgutils (from scine_art->scine-chemoton==4.1.0)
+  Downloading svgutils-0.3.4-py3-none-any.whl.metadata (1.1 kB)
+Collecting dataclasses (from scine_art->scine-chemoton==4.1.0)
+  Downloading dataclasses-0.6-py3-none-any.whl.metadata (3.0 kB)
+Collecting lxml (from svgutils->scine_art->scine-chemoton==4.1.0)
+  Downloading lxml-6.1.0-cp311-cp311-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (4.0 kB)
+Requirement already satisfied: mpmath<1.5,>=1.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from sympy->pymatgen==2023.8.10->scine-chemoton==4.1.0) (1.4.1)
+Downloading scine_readuct-6.1.0-cp311-cp311-manylinux_2_28_x86_64.whl (8.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.7/8.7 MB 14.0 MB/s  0:00:00
+Downloading scine_sparrow-5.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (23.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 23.2/23.2 MB 16.1 MB/s  0:00:01
+Downloading pymatgen-2023.8.10-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (9.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.8/9.8 MB 17.0 MB/s  0:00:00
+Downloading monty-2026.2.18-py3-none-any.whl (52 kB)
+Downloading mp_api-0.36.1-py3-none-any.whl (98 kB)
+Downloading emmet_core-0.68.0-py3-none-any.whl (170 kB)
+Downloading pybtex-0.26.1-py3-none-any.whl (126 kB)
+Downloading latexcodec-3.0.1-py3-none-any.whl (18 kB)
+Downloading palettable-3.3.3-py2.py3-none-any.whl (332 kB)
+Downloading plotly-6.7.0-py3-none-any.whl (9.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.9/9.9 MB 18.4 MB/s  0:00:00
+Downloading narwhals-2.20.0-py3-none-any.whl (449 kB)
+Downloading spglib-2.7.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (960 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 960.5/960.5 kB 17.8 MB/s  0:00:00
+Downloading uncertainties-3.2.3-py3-none-any.whl (60 kB)
+Downloading polymethod-1.0.0-py3-none-any.whl (7.6 kB)
+Downloading dataclasses-0.6-py3-none-any.whl (14 kB)
+Downloading scine_database-1.5.0-cp311-cp311-manylinux_2_28_x86_64.whl (11.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 11.0/11.0 MB 19.7 MB/s  0:00:00
+Downloading scine_molassembler-3.0.1-cp311-cp311-manylinux_2_28_x86_64.whl (2.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.6/2.6 MB 19.9 MB/s  0:00:00
+Downloading scine_utilities-10.1.0-cp311-cp311-manylinux_2_28_x86_64.whl (5.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.2/5.2 MB 20.5 MB/s  0:00:00
+Downloading svgutils-0.3.4-py3-none-any.whl (10 kB)
+Downloading lxml-6.1.0-cp311-cp311-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (5.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.2/5.2 MB 20.8 MB/s  0:00:00
+Building wheels for collected packages: scine-chemoton, scine_art
+  Building wheel for scine-chemoton (pyproject.toml): started
+  Building wheel for scine-chemoton (pyproject.toml): finished with status 'done'
+  Created wheel for scine-chemoton: filename=scine_chemoton-4.1.0-py3-none-any.whl size=453984 sha256=1078e173f61ed2699b37c261613a68ec9b3700d630fdba92fde22d8ec97afd88
+  Stored in directory: /tmp/pip-ephem-wheel-cache-1uiimdq2/wheels/7e/0e/39/643923af3ceb459f49d80470bf9312d14239496e0b0d4d2346
+  Building wheel for scine_art (pyproject.toml): started
+  Building wheel for scine_art (pyproject.toml): finished with status 'done'
+  Created wheel for scine_art: filename=scine_art-2.1.0-py3-none-any.whl size=33377 sha256=268fd4b98a43448bb653137d9cab2810084f378f391ba52b0a3f184394513709
+  Stored in directory: /tmp/pip-ephem-wheel-cache-1uiimdq2/wheels/37/47/97/4ba7263760732adc72b4f5b1a9dc495e50b77a9d2f1224b3a9
+Successfully built scine-chemoton scine_art
+Installing collected packages: dataclasses, uncertainties, spglib, polymethod, palettable, narwhals, lxml, latexcodec, svgutils, scine_utilities, pybtex, plotly, monty, scine-sparrow, scine-readuct, scine_molassembler, scine_database, scine_art, emmet-core, mp-api, pymatgen, scine-chemoton
+
+Successfully installed dataclasses-0.6 emmet-core-0.68.0 latexcodec-3.0.1 lxml-6.1.0 monty-2026.2.18 mp-api-0.36.1 narwhals-2.20.0 palettable-3.3.3 plotly-6.7.0 polymethod-1.0.0 pybtex-0.26.1 pymatgen-2023.8.10 scine-chemoton-4.1.0 scine-readuct-6.1.0 scine-sparrow-5.1.0 scine_art-2.1.0 scine_database-1.5.0 scine_molassembler-3.0.1 scine_utilities-10.1.0 spglib-2.7.0 svgutils-0.3.4 uncertainties-3.2.3
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt scine-puffin==2.1.0 scine-xtb-wrapper==3.0.2
+Collecting scine-puffin==2.1.0
+  Downloading scine_puffin-2.1.0.tar.gz (190 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting scine-xtb-wrapper==3.0.2
+  Downloading scine_xtb_wrapper-3.0.2-cp311-cp311-manylinux_2_28_x86_64.whl.metadata (4.7 kB)
+Requirement already satisfied: gitpython in ./usr/local/conda/lib/python3.11/site-packages (from scine-puffin==2.1.0) (3.1.46)
+Requirement already satisfied: numpy in ./usr/local/conda/lib/python3.11/site-packages (from scine-puffin==2.1.0) (1.26.4)
+Requirement already satisfied: psutil in ./usr/local/conda/lib/python3.11/site-packages (from scine-puffin==2.1.0) (7.2.2)
+Requirement already satisfied: pymatgen in ./usr/local/conda/lib/python3.11/site-packages (from scine-puffin==2.1.0) (2023.8.10)
+Collecting python-daemon (from scine-puffin==2.1.0)
+  Downloading python_daemon-3.1.2-py3-none-any.whl.metadata (4.8 kB)
+Requirement already satisfied: pyyaml in ./usr/local/conda/lib/python3.11/site-packages (from scine-puffin==2.1.0) (6.0.3)
+Requirement already satisfied: scipy in ./usr/local/conda/lib/python3.11/site-packages (from scine-puffin==2.1.0) (1.14.1)
+Requirement already satisfied: setproctitle in ./usr/local/conda/lib/python3.11/site-packages (from scine-puffin==2.1.0) (1.3.7)
+Collecting sphinx (from scine-puffin==2.1.0)
+  Downloading sphinx-9.0.4-py3-none-any.whl.metadata (5.8 kB)
+Collecting sphinx_rtd_theme (from scine-puffin==2.1.0)
+  Downloading sphinx_rtd_theme-3.1.0-py2.py3-none-any.whl.metadata (4.5 kB)
+Collecting sphinx_autodoc_typehints (from scine-puffin==2.1.0)
+  Downloading sphinx_autodoc_typehints-3.6.1-py3-none-any.whl.metadata (8.7 kB)
+Collecting sphinx_copybutton (from scine-puffin==2.1.0)
+  Downloading sphinx_copybutton-0.5.2-py3-none-any.whl.metadata (3.2 kB)
+Collecting salib (from scine-puffin==2.1.0)
+  Downloading salib-1.5.2-py3-none-any.whl.metadata (11 kB)
+Requirement already satisfied: typing-extensions in ./usr/local/conda/lib/python3.11/site-packages (from scine-puffin==2.1.0) (4.15.0)
+Requirement already satisfied: scine_utilities in ./usr/local/conda/lib/python3.11/site-packages (from scine-xtb-wrapper==3.0.2) (10.1.0)
+Requirement already satisfied: gitdb<5,>=4.0.1 in ./usr/local/conda/lib/python3.11/site-packages (from gitpython->scine-puffin==2.1.0) (4.0.12)
+Requirement already satisfied: smmap<6,>=3.0.1 in ./usr/local/conda/lib/python3.11/site-packages (from gitdb<5,>=4.0.1->gitpython->scine-puffin==2.1.0) (5.0.2)
+Requirement already satisfied: matplotlib>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (3.9.2)
+Requirement already satisfied: monty>=3.0.2 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (2026.2.18)
+Requirement already satisfied: mp-api>=0.27.3 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (0.36.1)
+Requirement already satisfied: networkx>=2.2 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (3.6.1)
+Requirement already satisfied: palettable>=3.1.1 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (3.3.3)
+Requirement already satisfied: pandas in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (2.2.3)
+Requirement already satisfied: plotly>=4.5.0 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (6.7.0)
+Requirement already satisfied: pybtex in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (0.26.1)
+Requirement already satisfied: pydantic<2.0.0 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (1.10.26)
+Requirement already satisfied: requests in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (2.33.1)
+Requirement already satisfied: ruamel.yaml>=0.17.0 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (0.18.17)
+Requirement already satisfied: spglib>=2.0.2 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (2.7.0)
+Requirement already satisfied: sympy in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (1.14.0)
+Requirement already satisfied: tabulate in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (0.10.0)
+Requirement already satisfied: tqdm in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (4.67.3)
+Requirement already satisfied: uncertainties>=3.1.4 in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (3.2.3)
+Requirement already satisfied: joblib in ./usr/local/conda/lib/python3.11/site-packages (from pymatgen->scine-puffin==2.1.0) (1.5.3)
+Requirement already satisfied: contourpy>=1.0.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (0.12.1)
+Requirement already satisfied: fonttools>=4.22.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (4.62.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (1.5.0)
+Requirement already satisfied: packaging>=20.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (26.0)
+Requirement already satisfied: pillow>=8 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (12.0.0)
+Requirement already satisfied: pyparsing>=2.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (3.1.1)
+Requirement already satisfied: python-dateutil>=2.7 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (2.9.0.post0)
+Requirement already satisfied: setuptools in ./usr/local/conda/lib/python3.11/site-packages (from mp-api>=0.27.3->pymatgen->scine-puffin==2.1.0) (81.0.0)
+Requirement already satisfied: msgpack in ./usr/local/conda/lib/python3.11/site-packages (from mp-api>=0.27.3->pymatgen->scine-puffin==2.1.0) (1.1.2)
+Requirement already satisfied: emmet-core>=0.54.0 in ./usr/local/conda/lib/python3.11/site-packages (from mp-api>=0.27.3->pymatgen->scine-puffin==2.1.0) (0.68.0)
+Requirement already satisfied: latexcodec>=1.0.4 in ./usr/local/conda/lib/python3.11/site-packages (from pybtex->pymatgen->scine-puffin==2.1.0) (3.0.1)
+Requirement already satisfied: narwhals>=1.15.1 in ./usr/local/conda/lib/python3.11/site-packages (from plotly>=4.5.0->pymatgen->scine-puffin==2.1.0) (2.20.0)
+Requirement already satisfied: six>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from python-dateutil>=2.7->matplotlib>=1.5->pymatgen->scine-puffin==2.1.0) (1.17.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./usr/local/conda/lib/python3.11/site-packages (from requests->pymatgen->scine-puffin==2.1.0) (2.0.4)
+Requirement already satisfied: idna<4,>=2.5 in ./usr/local/conda/lib/python3.11/site-packages (from requests->pymatgen->scine-puffin==2.1.0) (3.11)
+Requirement already satisfied: urllib3<3,>=1.26 in ./usr/local/conda/lib/python3.11/site-packages (from requests->pymatgen->scine-puffin==2.1.0) (2.5.0)
+Requirement already satisfied: certifi>=2023.5.7 in ./usr/local/conda/lib/python3.11/site-packages (from requests->pymatgen->scine-puffin==2.1.0) (2026.2.25)
+Requirement already satisfied: ruamel.yaml.clib>=0.2.15 in ./usr/local/conda/lib/python3.11/site-packages (from ruamel.yaml>=0.17.0->pymatgen->scine-puffin==2.1.0) (0.2.15)
+Requirement already satisfied: pytz>=2020.1 in ./usr/local/conda/lib/python3.11/site-packages (from pandas->pymatgen->scine-puffin==2.1.0) (2026.1.post1)
+Requirement already satisfied: tzdata>=2022.7 in ./usr/local/conda/lib/python3.11/site-packages (from pandas->pymatgen->scine-puffin==2.1.0) (2025.3)
+Collecting lockfile>=0.10 (from python-daemon->scine-puffin==2.1.0)
+  Downloading lockfile-0.12.2-py2.py3-none-any.whl.metadata (2.4 kB)
+Collecting multiprocess (from salib->scine-puffin==2.1.0)
+  Downloading multiprocess-0.70.19-py311-none-any.whl.metadata (7.5 kB)
+INFO: pip is looking at multiple versions of salib to determine which version is compatible with other requirements. This could take a while.
+Collecting salib (from scine-puffin==2.1.0)
+  Downloading salib-1.5.1-py3-none-any.whl.metadata (11 kB)
+Requirement already satisfied: dill>=0.4.1 in ./usr/local/conda/lib/python3.11/site-packages (from multiprocess->salib->scine-puffin==2.1.0) (0.4.1)
+Collecting sphinxcontrib-applehelp>=1.0.7 (from sphinx->scine-puffin==2.1.0)
+  Downloading sphinxcontrib_applehelp-2.0.0-py3-none-any.whl.metadata (2.3 kB)
+Collecting sphinxcontrib-devhelp>=1.0.6 (from sphinx->scine-puffin==2.1.0)
+  Downloading sphinxcontrib_devhelp-2.0.0-py3-none-any.whl.metadata (2.3 kB)
+Collecting sphinxcontrib-htmlhelp>=2.0.6 (from sphinx->scine-puffin==2.1.0)
+  Downloading sphinxcontrib_htmlhelp-2.1.0-py3-none-any.whl.metadata (2.3 kB)
+Collecting sphinxcontrib-jsmath>=1.0.1 (from sphinx->scine-puffin==2.1.0)
+  Downloading sphinxcontrib_jsmath-1.0.1-py2.py3-none-any.whl.metadata (1.4 kB)
+Collecting sphinxcontrib-qthelp>=1.0.6 (from sphinx->scine-puffin==2.1.0)
+  Downloading sphinxcontrib_qthelp-2.0.0-py3-none-any.whl.metadata (2.3 kB)
+Collecting sphinxcontrib-serializinghtml>=1.1.9 (from sphinx->scine-puffin==2.1.0)
+  Downloading sphinxcontrib_serializinghtml-2.0.0-py3-none-any.whl.metadata (2.4 kB)
+Requirement already satisfied: Jinja2>=3.1 in ./usr/local/conda/lib/python3.11/site-packages (from sphinx->scine-puffin==2.1.0) (3.1.6)
+Requirement already satisfied: Pygments>=2.17 in ./usr/local/conda/lib/python3.11/site-packages (from sphinx->scine-puffin==2.1.0) (2.20.0)
+Collecting docutils<0.23,>=0.20 (from sphinx->scine-puffin==2.1.0)
+  Downloading docutils-0.22.4-py3-none-any.whl.metadata (15 kB)
+Collecting snowballstemmer>=2.2 (from sphinx->scine-puffin==2.1.0)
+  Downloading snowballstemmer-3.0.1-py3-none-any.whl.metadata (7.9 kB)
+Requirement already satisfied: babel>=2.13 in ./usr/local/conda/lib/python3.11/site-packages (from sphinx->scine-puffin==2.1.0) (2.18.0)
+Collecting alabaster>=0.7.14 (from sphinx->scine-puffin==2.1.0)
+  Downloading alabaster-1.0.0-py3-none-any.whl.metadata (2.8 kB)
+Collecting imagesize>=1.3 (from sphinx->scine-puffin==2.1.0)
+  Downloading imagesize-2.0.0-py2.py3-none-any.whl.metadata (1.5 kB)
+Collecting roman-numerals>=1.0.0 (from sphinx->scine-puffin==2.1.0)
+  Downloading roman_numerals-4.1.0-py3-none-any.whl.metadata (3.3 kB)
+Requirement already satisfied: MarkupSafe>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from Jinja2>=3.1->sphinx->scine-puffin==2.1.0) (3.0.3)
+Collecting sphinxcontrib-jquery<5,>=4 (from sphinx_rtd_theme->scine-puffin==2.1.0)
+  Downloading sphinxcontrib_jquery-4.1-py2.py3-none-any.whl.metadata (2.6 kB)
+Requirement already satisfied: mpmath<1.5,>=1.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from sympy->pymatgen->scine-puffin==2.1.0) (1.4.1)
+Downloading scine_xtb_wrapper-3.0.2-cp311-cp311-manylinux_2_28_x86_64.whl (7.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7.7/7.7 MB 74.1 MB/s  0:00:00
+Downloading python_daemon-3.1.2-py3-none-any.whl (30 kB)
+Downloading lockfile-0.12.2-py2.py3-none-any.whl (13 kB)
+Downloading salib-1.5.1-py3-none-any.whl (778 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 778.9/778.9 kB 167.6 MB/s  0:00:00
+Downloading multiprocess-0.70.19-py311-none-any.whl (144 kB)
+Downloading sphinx-9.0.4-py3-none-any.whl (3.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.9/3.9 MB 90.3 MB/s  0:00:00
+Downloading docutils-0.22.4-py3-none-any.whl (633 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 633.2/633.2 kB 144.4 MB/s  0:00:00
+Downloading alabaster-1.0.0-py3-none-any.whl (13 kB)
+Downloading imagesize-2.0.0-py2.py3-none-any.whl (9.4 kB)
+Downloading roman_numerals-4.1.0-py3-none-any.whl (7.7 kB)
+Downloading snowballstemmer-3.0.1-py3-none-any.whl (103 kB)
+Downloading sphinxcontrib_applehelp-2.0.0-py3-none-any.whl (119 kB)
+Downloading sphinxcontrib_devhelp-2.0.0-py3-none-any.whl (82 kB)
+Downloading sphinxcontrib_htmlhelp-2.1.0-py3-none-any.whl (98 kB)
+Downloading sphinxcontrib_jsmath-1.0.1-py2.py3-none-any.whl (5.1 kB)
+Downloading sphinxcontrib_qthelp-2.0.0-py3-none-any.whl (88 kB)
+Downloading sphinxcontrib_serializinghtml-2.0.0-py3-none-any.whl (92 kB)
+Downloading sphinx_autodoc_typehints-3.6.1-py3-none-any.whl (20 kB)
+Downloading sphinx_copybutton-0.5.2-py3-none-any.whl (13 kB)
+Downloading sphinx_rtd_theme-3.1.0-py2.py3-none-any.whl (7.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7.7/7.7 MB 83.5 MB/s  0:00:00
+Downloading sphinxcontrib_jquery-4.1-py2.py3-none-any.whl (121 kB)
+Building wheels for collected packages: scine-puffin
+  Building wheel for scine-puffin (pyproject.toml): started
+  Building wheel for scine-puffin (pyproject.toml): finished with status 'done'
+  Created wheel for scine-puffin: filename=scine_puffin-2.1.0-py3-none-any.whl size=255838 sha256=fe1de852e9d3bdc80f82f649e09715e415a5707dc1084fd76540b9ad04b7a0dc
+  Stored in directory: /tmp/pip-ephem-wheel-cache-ifx41nuw/wheels/da/80/5c/b21e71ffe9f51a4236b55f3dc2001c7a1861f4240b55fc60ee
+Successfully built scine-puffin
+Installing collected packages: lockfile, sphinxcontrib-serializinghtml, sphinxcontrib-qthelp, sphinxcontrib-jsmath, sphinxcontrib-htmlhelp, sphinxcontrib-devhelp, sphinxcontrib-applehelp, snowballstemmer, roman-numerals, python-daemon, multiprocess, imagesize, docutils, alabaster, sphinx, sphinxcontrib-jquery, sphinx_copybutton, sphinx_autodoc_typehints, scine-xtb-wrapper, salib, sphinx_rtd_theme, scine-puffin
+
+Successfully installed alabaster-1.0.0 docutils-0.22.4 imagesize-2.0.0 lockfile-0.12.2 multiprocess-0.70.19 python-daemon-3.1.2 roman-numerals-4.1.0 salib-1.5.1 scine-puffin-2.1.0 scine-xtb-wrapper-3.0.2 snowballstemmer-3.0.1 sphinx-9.0.4 sphinx_autodoc_typehints-3.6.1 sphinx_copybutton-0.5.2 sphinx_rtd_theme-3.1.0 sphinxcontrib-applehelp-2.0.0 sphinxcontrib-devhelp-2.0.0 sphinxcontrib-htmlhelp-2.1.0 sphinxcontrib-jquery-4.1 sphinxcontrib-jsmath-1.0.1 sphinxcontrib-qthelp-2.0.0 sphinxcontrib-serializinghtml-2.0.0
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt --no-deps scine-parrot==1.0.0
+Collecting scine-parrot==1.0.0
+  Downloading scine_parrot-1.0.0.tar.gz (8.8 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.8/8.8 MB 65.9 MB/s  0:00:00
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: scine-parrot
+  Building wheel for scine-parrot (pyproject.toml): started
+  Building wheel for scine-parrot (pyproject.toml): finished with status 'done'
+  Created wheel for scine-parrot: filename=scine_parrot-1.0.0-py3-none-any.whl size=8800674 sha256=473662a7e253dc87e752336a5cb3b33374c221beb2b570b56c7ee9a3c5dbcbb5
+  Stored in directory: /tmp/pip-ephem-wheel-cache-9zgkow5g/wheels/d4/24/37/2e1fe4f4c5586abd8c26025bdec2b458ab446eb091cc30ac35
+Successfully built scine-parrot
+Installing collected packages: scine-parrot
+Successfully installed scine-parrot-1.0.0
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ curl -fsSL https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2204-7.0.14.tgz
++ tar -xz -C /usr/local --strip-components=1
++ /usr/local/bin/mongod --version
++ head -2
+db version v7.0.14
+Build Info: {
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt openmm-ml openmm-plumed
+ERROR: Could not find a version that satisfies the requirement openmm-ml (from versions: none)
+ERROR: No matching distribution found for openmm-ml
++ echo WARN: openmm-ml/plumed install failed; container still functional
+WARN: openmm-ml/plumed install failed; container still functional
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt orb-models
+Collecting orb-models
+  Downloading orb_models-0.5.5-py3-none-any.whl.metadata (12 kB)
+Collecting cached_path>=1.6.7 (from orb-models)
+  Downloading cached_path-1.8.10-py3-none-any.whl.metadata (19 kB)
+Requirement already satisfied: ase>=3.24.0 in ./usr/local/conda/lib/python3.11/site-packages (from orb-models) (3.28.0)
+Requirement already satisfied: numpy>=1.26.4 in ./usr/local/conda/lib/python3.11/site-packages (from orb-models) (1.26.4)
+Collecting scipy>=1.15.1 (from orb-models)
+  Downloading scipy-1.17.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (62 kB)
+Requirement already satisfied: torch<3.0.0,>=2.6.0 in ./usr/local/conda/lib/python3.11/site-packages (from orb-models) (2.11.0+cu130)
+Collecting dm-tree==0.1.8 (from orb-models)
+  Downloading dm_tree-0.1.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (1.9 kB)
+Requirement already satisfied: tqdm>=4.66.5 in ./usr/local/conda/lib/python3.11/site-packages (from orb-models) (4.67.3)
+Requirement already satisfied: filelock in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (3.25.2)
+Requirement already satisfied: typing-extensions>=4.10.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (4.15.0)
+Requirement already satisfied: setuptools<82 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (81.0.0)
+Requirement already satisfied: sympy>=1.13.3 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (1.14.0)
+Requirement already satisfied: networkx>=2.5.1 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (3.6.1)
+Requirement already satisfied: jinja2 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (3.1.6)
+Requirement already satisfied: fsspec>=0.8.5 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (2026.3.0)
+Requirement already satisfied: cuda-toolkit==13.0.2 in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (13.0.2)
+Requirement already satisfied: cuda-bindings<14,>=13.0.3 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (13.2.0)
+Requirement already satisfied: nvidia-cudnn-cu13==9.19.0.56 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (9.19.0.56)
+Requirement already satisfied: nvidia-cusparselt-cu13==0.8.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (0.8.0)
+Requirement already satisfied: nvidia-nccl-cu13==2.28.9 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (2.28.9)
+Requirement already satisfied: nvidia-nvshmem-cu13==3.4.5 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (3.4.5)
+Requirement already satisfied: triton==3.6.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch<3.0.0,>=2.6.0->orb-models) (3.6.0+git9844da95)
+Requirement already satisfied: nvidia-cublas==13.1.0.3.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (13.1.0.3)
+Requirement already satisfied: nvidia-cuda-runtime==13.0.96.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (13.0.96)
+Requirement already satisfied: nvidia-cufft==12.0.0.61.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (12.0.0.61)
+Requirement already satisfied: nvidia-cufile==1.15.1.6.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (1.15.1.6)
+Requirement already satisfied: nvidia-cuda-cupti==13.0.85.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (13.0.85)
+Requirement already satisfied: nvidia-curand==10.4.0.35.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (10.4.0.35)
+Requirement already satisfied: nvidia-cusolver==12.0.4.66.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (12.0.4.66)
+Requirement already satisfied: nvidia-cusparse==12.6.3.3.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (12.6.3.3)
+Requirement already satisfied: nvidia-nvjitlink==13.0.88.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (13.0.88)
+Requirement already satisfied: nvidia-cuda-nvrtc==13.0.88.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (13.0.88)
+Requirement already satisfied: nvidia-nvtx==13.0.85.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch<3.0.0,>=2.6.0->orb-models) (13.0.85)
+Requirement already satisfied: cuda-pathfinder~=1.1 in ./usr/local/conda/lib/python3.11/site-packages (from cuda-bindings<14,>=13.0.3->torch<3.0.0,>=2.6.0->orb-models) (1.5.0)
+Requirement already satisfied: matplotlib>=3.5.2 in ./usr/local/conda/lib/python3.11/site-packages (from ase>=3.24.0->orb-models) (3.9.2)
+Requirement already satisfied: requests in ./usr/local/conda/lib/python3.11/site-packages (from cached_path>=1.6.7->orb-models) (2.33.1)
+Collecting rich<14.0,>=12.1 (from cached_path>=1.6.7->orb-models)
+  Downloading rich-13.9.4-py3-none-any.whl.metadata (18 kB)
+Collecting boto3<2.0,>=1.0 (from cached_path>=1.6.7->orb-models)
+  Downloading boto3-1.43.4-py3-none-any.whl.metadata (6.5 kB)
+Collecting google-cloud-storage<4.0,>=1.32.0 (from cached_path>=1.6.7->orb-models)
+  Downloading google_cloud_storage-3.10.1-py3-none-any.whl.metadata (15 kB)
+Requirement already satisfied: huggingface-hub<2.0,>=0.8.1 in ./usr/local/conda/lib/python3.11/site-packages (from cached_path>=1.6.7->orb-models) (0.36.2)
+Requirement already satisfied: packaging in ./usr/local/conda/lib/python3.11/site-packages (from cached_path>=1.6.7->orb-models) (26.0)
+Collecting botocore<1.44.0,>=1.43.4 (from boto3<2.0,>=1.0->cached_path>=1.6.7->orb-models)
+  Downloading botocore-1.43.4-py3-none-any.whl.metadata (5.5 kB)
+Collecting jmespath<2.0.0,>=0.7.1 (from boto3<2.0,>=1.0->cached_path>=1.6.7->orb-models)
+  Downloading jmespath-1.1.0-py3-none-any.whl.metadata (7.6 kB)
+Collecting s3transfer<0.18.0,>=0.17.0 (from boto3<2.0,>=1.0->cached_path>=1.6.7->orb-models)
+  Downloading s3transfer-0.17.0-py3-none-any.whl.metadata (1.7 kB)
+Requirement already satisfied: python-dateutil<3.0.0,>=2.1 in ./usr/local/conda/lib/python3.11/site-packages (from botocore<1.44.0,>=1.43.4->boto3<2.0,>=1.0->cached_path>=1.6.7->orb-models) (2.9.0.post0)
+Requirement already satisfied: urllib3!=2.2.0,<3,>=1.25.4 in ./usr/local/conda/lib/python3.11/site-packages (from botocore<1.44.0,>=1.43.4->boto3<2.0,>=1.0->cached_path>=1.6.7->orb-models) (2.5.0)
+Requirement already satisfied: google-auth<3.0.0,>=2.26.1 in ./usr/local/conda/lib/python3.11/site-packages (from google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models) (2.49.1)
+Collecting google-api-core<3.0.0,>=2.27.0 (from google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models)
+  Downloading google_api_core-2.30.3-py3-none-any.whl.metadata (3.1 kB)
+Collecting google-cloud-core<3.0.0,>=2.4.2 (from google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models)
+  Downloading google_cloud_core-2.5.1-py3-none-any.whl.metadata (2.8 kB)
+Collecting google-resumable-media<3.0.0,>=2.7.2 (from google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models)
+  Downloading google_resumable_media-2.8.2-py3-none-any.whl.metadata (2.2 kB)
+Collecting google-crc32c<2.0.0,>=1.1.3 (from google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models)
+  Downloading google_crc32c-1.8.0-cp311-cp311-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl.metadata (1.7 kB)
+Collecting googleapis-common-protos<2.0.0,>=1.63.2 (from google-api-core<3.0.0,>=2.27.0->google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models)
+  Downloading googleapis_common_protos-1.74.0-py3-none-any.whl.metadata (9.2 kB)
+Requirement already satisfied: protobuf<8.0.0,>=4.25.8 in ./usr/local/conda/lib/python3.11/site-packages (from google-api-core<3.0.0,>=2.27.0->google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models) (6.33.6)
+Collecting proto-plus<2.0.0,>=1.22.3 (from google-api-core<3.0.0,>=2.27.0->google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models)
+  Downloading proto_plus-1.27.2-py3-none-any.whl.metadata (2.2 kB)
+Requirement already satisfied: pyasn1-modules>=0.2.1 in ./usr/local/conda/lib/python3.11/site-packages (from google-auth<3.0.0,>=2.26.1->google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models) (0.4.2)
+Requirement already satisfied: cryptography>=38.0.3 in ./usr/local/conda/lib/python3.11/site-packages (from google-auth<3.0.0,>=2.26.1->google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models) (46.0.5)
+Requirement already satisfied: hf-xet<2.0.0,>=1.1.3 in ./usr/local/conda/lib/python3.11/site-packages (from huggingface-hub<2.0,>=0.8.1->cached_path>=1.6.7->orb-models) (1.5.0)
+Requirement already satisfied: pyyaml>=5.1 in ./usr/local/conda/lib/python3.11/site-packages (from huggingface-hub<2.0,>=0.8.1->cached_path>=1.6.7->orb-models) (6.0.3)
+Requirement already satisfied: six>=1.5 in ./usr/local/conda/lib/python3.11/site-packages (from python-dateutil<3.0.0,>=2.1->botocore<1.44.0,>=1.43.4->boto3<2.0,>=1.0->cached_path>=1.6.7->orb-models) (1.17.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./usr/local/conda/lib/python3.11/site-packages (from requests->cached_path>=1.6.7->orb-models) (2.0.4)
+Requirement already satisfied: idna<4,>=2.5 in ./usr/local/conda/lib/python3.11/site-packages (from requests->cached_path>=1.6.7->orb-models) (3.11)
+Requirement already satisfied: certifi>=2023.5.7 in ./usr/local/conda/lib/python3.11/site-packages (from requests->cached_path>=1.6.7->orb-models) (2026.2.25)
+Requirement already satisfied: markdown-it-py>=2.2.0 in ./usr/local/conda/lib/python3.11/site-packages (from rich<14.0,>=12.1->cached_path>=1.6.7->orb-models) (4.0.0)
+Requirement already satisfied: pygments<3.0.0,>=2.13.0 in ./usr/local/conda/lib/python3.11/site-packages (from rich<14.0,>=12.1->cached_path>=1.6.7->orb-models) (2.20.0)
+Requirement already satisfied: cffi>=1.14 in ./usr/local/conda/lib/python3.11/site-packages (from cryptography>=38.0.3->google-auth<3.0.0,>=2.26.1->google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models) (2.0.0)
+Requirement already satisfied: pycparser in ./usr/local/conda/lib/python3.11/site-packages (from cffi>=1.14->cryptography>=38.0.3->google-auth<3.0.0,>=2.26.1->google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models) (2.21)
+Requirement already satisfied: mdurl~=0.1 in ./usr/local/conda/lib/python3.11/site-packages (from markdown-it-py>=2.2.0->rich<14.0,>=12.1->cached_path>=1.6.7->orb-models) (0.1.2)
+Requirement already satisfied: contourpy>=1.0.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.5.2->ase>=3.24.0->orb-models) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.5.2->ase>=3.24.0->orb-models) (0.12.1)
+Requirement already satisfied: fonttools>=4.22.0 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.5.2->ase>=3.24.0->orb-models) (4.62.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.5.2->ase>=3.24.0->orb-models) (1.5.0)
+Requirement already satisfied: pillow>=8 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.5.2->ase>=3.24.0->orb-models) (12.0.0)
+Requirement already satisfied: pyparsing>=2.3.1 in ./usr/local/conda/lib/python3.11/site-packages (from matplotlib>=3.5.2->ase>=3.24.0->orb-models) (3.1.1)
+Requirement already satisfied: pyasn1<0.7.0,>=0.6.1 in ./usr/local/conda/lib/python3.11/site-packages (from pyasn1-modules>=0.2.1->google-auth<3.0.0,>=2.26.1->google-cloud-storage<4.0,>=1.32.0->cached_path>=1.6.7->orb-models) (0.6.3)
+Requirement already satisfied: mpmath<1.5,>=1.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from sympy>=1.13.3->torch<3.0.0,>=2.6.0->orb-models) (1.4.1)
+Requirement already satisfied: MarkupSafe>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from jinja2->torch<3.0.0,>=2.6.0->orb-models) (3.0.3)
+Downloading orb_models-0.5.5-py3-none-any.whl (94 kB)
+Downloading dm_tree-0.1.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (152 kB)
+Downloading cached_path-1.8.10-py3-none-any.whl (37 kB)
+Downloading boto3-1.43.4-py3-none-any.whl (140 kB)
+Downloading botocore-1.43.4-py3-none-any.whl (15.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 15.0/15.0 MB 77.5 MB/s  0:00:00
+Downloading google_cloud_storage-3.10.1-py3-none-any.whl (324 kB)
+Downloading google_api_core-2.30.3-py3-none-any.whl (173 kB)
+Downloading google_cloud_core-2.5.1-py3-none-any.whl (29 kB)
+Downloading google_crc32c-1.8.0-cp311-cp311-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl (33 kB)
+Downloading google_resumable_media-2.8.2-py3-none-any.whl (81 kB)
+Downloading googleapis_common_protos-1.74.0-py3-none-any.whl (300 kB)
+Downloading jmespath-1.1.0-py3-none-any.whl (20 kB)
+Downloading proto_plus-1.27.2-py3-none-any.whl (50 kB)
+Downloading rich-13.9.4-py3-none-any.whl (242 kB)
+Downloading s3transfer-0.17.0-py3-none-any.whl (86 kB)
+Downloading scipy-1.17.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (35.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 35.3/35.3 MB 75.8 MB/s  0:00:00
+Installing collected packages: dm-tree, scipy, proto-plus, jmespath, googleapis-common-protos, google-crc32c, rich, google-resumable-media, botocore, s3transfer, google-api-core, boto3, google-cloud-core, google-cloud-storage, cached_path, orb-models
+  Attempting uninstall: dm-tree
+    Found existing installation: dm-tree 0.1.9
+    Uninstalling dm-tree-0.1.9:
+      Successfully uninstalled dm-tree-0.1.9
+  Attempting uninstall: scipy
+    Found existing installation: scipy 1.14.1
+    Uninstalling scipy-1.14.1:
+      Successfully uninstalled scipy-1.14.1
+  Attempting uninstall: rich
+    Found existing installation: rich 14.3.3
+    Uninstalling rich-14.3.3:
+      Successfully uninstalled rich-14.3.3
+
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+scine-parrot 1.0.0 requires matgl<=0.8.5, which is not installed.
+scine-parrot 1.0.0 requires torchani, which is not installed.
+deerlab 1.1.5 requires numpy>=2.0, but you have numpy 1.26.4 which is incompatible.
+mlflow 3.10.1 requires pydantic<3,>=2.0.0, but you have pydantic 1.10.26 which is incompatible.
+matscipy 1.2.0 requires numpy>=2.0.0, but you have numpy 1.26.4 which is incompatible.
+scine-parrot 1.0.0 requires torch<=2.2.0, but you have torch 2.11.0+cu130 which is incompatible.
+scine-parrot 1.0.0 requires torchdata<=0.7.1, but you have torchdata 0.11.0 which is incompatible.
+cytoflow 0.0.0 requires numexpr==2.10.1, but you have numexpr 2.14.1 which is incompatible.
+cytoflow 0.0.0 requires scipy==1.14.1, but you have scipy 1.17.1 which is incompatible.
+Successfully installed boto3-1.43.4 botocore-1.43.4 cached_path-1.8.10 dm-tree-0.1.8 google-api-core-2.30.3 google-cloud-core-2.5.1 google-cloud-storage-3.10.1 google-crc32c-1.8.0 google-resumable-media-2.8.2 googleapis-common-protos-1.74.0 jmespath-1.1.0 orb-models-0.5.5 proto-plus-1.27.2 rich-13.9.4 s3transfer-0.17.0 scipy-1.17.1
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ /usr/local/conda/bin/pip --no-cache-dir install --constraint /tmp/qc_constraints.txt aimnet
+Collecting aimnet
+  Downloading aimnet-0.2.0-py3-none-any.whl.metadata (12 kB)
+Requirement already satisfied: click>=8.1.7 in ./usr/local/conda/lib/python3.11/site-packages (from aimnet) (8.3.1)
+Requirement already satisfied: h5py>=3.12.1 in ./usr/local/conda/lib/python3.11/site-packages (from aimnet) (3.14.0)
+Requirement already satisfied: jinja2>=3.1.6 in ./usr/local/conda/lib/python3.11/site-packages (from aimnet) (3.1.6)
+Requirement already satisfied: numpy in ./usr/local/conda/lib/python3.11/site-packages (from aimnet) (1.26.4)
+Collecting nvalchemi-toolkit-ops>=0.3.1 (from aimnet)
+  Downloading nvalchemi_toolkit_ops-0.3.1-py3-none-any.whl.metadata (9.6 kB)
+Requirement already satisfied: pyyaml>=6.0.2 in ./usr/local/conda/lib/python3.11/site-packages (from aimnet) (6.0.3)
+Requirement already satisfied: requests>=2.32.3 in ./usr/local/conda/lib/python3.11/site-packages (from aimnet) (2.33.1)
+Requirement already satisfied: torch>=2.8 in ./usr/local/conda/lib/python3.11/site-packages (from aimnet) (2.11.0+cu130)
+Collecting warp-lang<2,>=1.11 (from aimnet)
+  Downloading warp_lang-1.13.0-py3-none-manylinux_2_28_x86_64.whl.metadata (25 kB)
+Requirement already satisfied: MarkupSafe>=2.0 in ./usr/local/conda/lib/python3.11/site-packages (from jinja2>=3.1.6->aimnet) (3.0.3)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./usr/local/conda/lib/python3.11/site-packages (from requests>=2.32.3->aimnet) (2.0.4)
+Requirement already satisfied: idna<4,>=2.5 in ./usr/local/conda/lib/python3.11/site-packages (from requests>=2.32.3->aimnet) (3.11)
+Requirement already satisfied: urllib3<3,>=1.26 in ./usr/local/conda/lib/python3.11/site-packages (from requests>=2.32.3->aimnet) (2.5.0)
+Requirement already satisfied: certifi>=2023.5.7 in ./usr/local/conda/lib/python3.11/site-packages (from requests>=2.32.3->aimnet) (2026.2.25)
+Requirement already satisfied: filelock in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (3.25.2)
+Requirement already satisfied: typing-extensions>=4.10.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (4.15.0)
+Requirement already satisfied: setuptools<82 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (81.0.0)
+Requirement already satisfied: sympy>=1.13.3 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (1.14.0)
+Requirement already satisfied: networkx>=2.5.1 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (3.6.1)
+Requirement already satisfied: fsspec>=0.8.5 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (2026.3.0)
+Requirement already satisfied: cuda-toolkit==13.0.2 in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (13.0.2)
+Requirement already satisfied: cuda-bindings<14,>=13.0.3 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (13.2.0)
+Requirement already satisfied: nvidia-cudnn-cu13==9.19.0.56 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (9.19.0.56)
+Requirement already satisfied: nvidia-cusparselt-cu13==0.8.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (0.8.0)
+Requirement already satisfied: nvidia-nccl-cu13==2.28.9 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (2.28.9)
+Requirement already satisfied: nvidia-nvshmem-cu13==3.4.5 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (3.4.5)
+Requirement already satisfied: triton==3.6.0 in ./usr/local/conda/lib/python3.11/site-packages (from torch>=2.8->aimnet) (3.6.0+git9844da95)
+Requirement already satisfied: nvidia-cublas==13.1.0.3.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (13.1.0.3)
+Requirement already satisfied: nvidia-cuda-runtime==13.0.96.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (13.0.96)
+Requirement already satisfied: nvidia-cufft==12.0.0.61.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (12.0.0.61)
+Requirement already satisfied: nvidia-cufile==1.15.1.6.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (1.15.1.6)
+Requirement already satisfied: nvidia-cuda-cupti==13.0.85.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (13.0.85)
+Requirement already satisfied: nvidia-curand==10.4.0.35.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (10.4.0.35)
+Requirement already satisfied: nvidia-cusolver==12.0.4.66.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (12.0.4.66)
+Requirement already satisfied: nvidia-cusparse==12.6.3.3.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (12.6.3.3)
+Requirement already satisfied: nvidia-nvjitlink==13.0.88.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (13.0.88)
+Requirement already satisfied: nvidia-cuda-nvrtc==13.0.88.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (13.0.88)
+Requirement already satisfied: nvidia-nvtx==13.0.85.* in ./usr/local/conda/lib/python3.11/site-packages (from cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2; platform_system == "Linux"->torch>=2.8->aimnet) (13.0.85)
+Requirement already satisfied: cuda-pathfinder~=1.1 in ./usr/local/conda/lib/python3.11/site-packages (from cuda-bindings<14,>=13.0.3->torch>=2.8->aimnet) (1.5.0)
+Requirement already satisfied: mpmath<1.5,>=1.1.0 in ./usr/local/conda/lib/python3.11/site-packages (from sympy>=1.13.3->torch>=2.8->aimnet) (1.4.1)
+Downloading aimnet-0.2.0-py3-none-any.whl (575 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 575.2/575.2 kB 16.0 MB/s  0:00:00
+Downloading warp_lang-1.13.0-py3-none-manylinux_2_28_x86_64.whl (138.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 138.3/138.3 MB 36.6 MB/s  0:00:03
+Downloading nvalchemi_toolkit_ops-0.3.1-py3-none-any.whl (464 kB)
+Installing collected packages: warp-lang, nvalchemi-toolkit-ops, aimnet
+
+Successfully installed aimnet-0.2.0 nvalchemi-toolkit-ops-0.3.1 warp-lang-1.13.0
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
++ set +e
++ tail -1
++ /usr/local/conda/bin/python -c import numpy; print('numpy:', numpy.__version__)
+numpy: 1.26.4
++ + tail -1
+/usr/local/conda/bin/python -c import importlib; m = importlib.import_module('torch'); v = getattr(m, '__version__', '?'); print('  torch:', v)
+  torch: 2.11.0+cu130
++ tail -1
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('mace'); v = getattr(m, '__version__', '?'); print('  mace:', v)
+  mace: 0.3.15
++ tail -1
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('rdkit'); v = getattr(m, '__version__', '?'); print('  rdkit:', v)
+  rdkit: 2025.03.6
++ tail -1
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('ase'); v = getattr(m, '__version__', '?'); print('  ase:', v)
+  ase: 3.28.0
++ tail+  -1
+/usr/local/conda/bin/python -c import importlib; m = importlib.import_module('biotite'); v = getattr(m, '__version__', '?'); print('  biotite:', v)
+  biotite: 1.4.0
++ /usr/local/conda/bin/python+  -c import importlib; m = importlib.import_module('rxnmapper'); v = getattr(m, '__version__', '?'); print('  rxnmapper:', v)
+tail -1
+  rxnmapper: 0.4.3
++ /usr/local/conda/bin/python -c+  import importlib; m = importlib.import_module('CGRtools'); v = getattr(m, '__version__', '?'); print('  CGRtools:', v)
+tail -1
+  CGRtools: ?
++ tail -1
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('autode'); v = getattr(m, '__version__', '?'); print('  autode:', v)
+  autode: 1.4.5
++ + /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('pysisyphus'); v = getattr(m, '__version__', '?'); print('  pysisyphus:', v)
+tail -1
+  pysisyphus: 1.0.0
++ tail+  -1
+/usr/local/conda/bin/python -c import importlib; m = importlib.import_module('sella'); v = getattr(m, '__version__', '?'); print('  sella:', v)
+  sella: ?
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('scine_chemoton'); v = getattr(m, '__version__', '?'); print('  scine_chemoton:', v)
++ tail -1
+  scine_chemoton: 4.1.0
++ tail -1
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('scine_readuct'); v = getattr(m, '__version__', '?'); print('  scine_readuct:', v)
+  scine_readuct: ?
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('scine_sparrow'); v = getattr(m, '__version__', '?'); print('  scine_sparrow:', v)
++ tail -1
+free(): invalid pointer
+Aborted
++ + /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('scine_utilities'); v = getattr(m, '__version__', '?'); print('  scine_utilities:', v)
+tail -1
+  scine_utilities: ?
++ + tail -1/usr/local/conda/bin/python
+ -c import importlib; m = importlib.import_module('scine_database'); v = getattr(m, '__version__', '?'); print('  scine_database:', v)
+  scine_database: ?
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('scine_molassembler'); v = getattr(m, '__version__', '?'); print('  scine_molassembler:', v)
++ tail -1
+  scine_molassembler: 3.0.1
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('scine_puffin'); v = getattr(m, '__version__', '?'); print('  scine_puffin:', v)
++ tail -1
+  scine_puffin: 2.1.0
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('scine_xtb_wrapper'); v = getattr(m, '__version__', '?'); print('  scine_xtb_wrapper:', v)
++ tail -1
+  scine_xtb_wrapper: ?
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('scine_parrot'); v = getattr(m, '__version__', '?'); print('  scine_parrot:', v)
++ tail -1
+ModuleNotFoundError: No module named 'torchani'
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('orb_models'); v = getattr(m, '__version__', '?'); print('  orb_models:', v)
++ tail -1
+  orb_models: v0.5.5
++ /usr/local/conda/bin/python -c import importlib; m = importlib.import_module('aimnet'); v = getattr(m, '__version__', '?'); print('  aimnet:', v)
++ tail -1
+  aimnet: 0.2.0
++ + head -1
+/usr/local/bin/mongod --version
+db version v7.0.14
++ set -e
++ mkdir -p /tmp /scratch
++ chmod 1777 /tmp /scratch
+INFO:    Adding help info
+INFO:    Adding labels
+INFO:    Adding environment to container
+INFO:    Adding runscript
+INFO:    Creating SIF file...
