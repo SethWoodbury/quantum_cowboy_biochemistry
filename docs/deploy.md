@@ -33,19 +33,28 @@ or a bind-mounted dev tree without a rebuild.
 
 Notebooks call the `qcb` CLI inside the container — never a raw `.py` path:
 
+> **Current gap:** `quantum_chem-20260506.sif` does NOT have `quantum_engine`
+> pip-installed (`pip show quantum-engine` → not found), so the `qcb` console
+> script isn't on PATH there. Until the package is installed in a rebuilt
+> container, invoke the CLI as a module with the checkout on `PYTHONPATH`:
+
 ```bash
 SIF=/net/software/containers/users/$USER/quantum_chem/quantum_chem-20260506.sif
-apptainer exec --nv --bind /home --bind /net $SIF qcb <op> ...
+REPO=$HOME/codebase_projects/quantum_cowboy_biochemistry
+apptainer exec --nv --bind /home --bind /net --env PYTHONPATH=$REPO \
+  $SIF python -m quantum_engine.cli <op> ...
 ```
 
-To test **uncommitted** dev changes, bind-mount this checkout over the installed
-package and prepend it to `PYTHONPATH`:
+To make `qcb <op>` work directly, the container build must install the package
+— add to `deps/quantum_chem.def` (after the source is on `/net/software/lab` or
+bind-mounted at build):
 
-```bash
-apptainer exec --nv --bind /home --bind /net \
-  --env PYTHONPATH=$HOME/codebase_projects/quantum_cowboy_biochemistry \
-  $SIF qcb <op> ...
 ```
+pip install -e /net/software/lab/quantum_cowboy_biochemistry   # puts `qcb` on PATH
+```
+
+Then `apptainer exec … $SIF qcb <op> …` works, and the `python -m` form remains
+the no-rebuild path for testing an editable checkout.
 
 ## Building / rebuilding containers
 

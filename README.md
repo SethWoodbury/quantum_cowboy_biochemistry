@@ -38,22 +38,40 @@ The installable package is **`quantum_engine`**; the CLI binary stays **`qcb`**.
 
 ## Quick Start
 
-All commands run the `qcb` CLI inside the container. Define a prefix once:
+The package is **not yet pip-installed in the container**, so the `qcb` console
+script isn't on PATH there — invoke the CLI as a module with the checkout on
+`PYTHONPATH`. Define a prefix once:
 
 ```bash
 SIF=/net/software/containers/users/woodbuse/quantum_chem/quantum_chem-20260506.sif
-QCB="apptainer exec --nv --bind /home --bind /net $SIF qcb"
+REPO=/home/woodbuse/codebase_projects/quantum_cowboy_biochemistry
+QCB="apptainer exec --nv --bind /home --bind /net --env PYTHONPATH=$REPO $SIF python -m quantum_engine.cli"
 
 # Protonate an active site (deterministic staged protonator)
-$QCB protonate input.pdb -o protonated.pdb --pH 7.0 --relax-h
+$QCB protonate input.pdb -o protonated.pdb --pH 7.0 --relax-h \
+    --ligand-charge ZN=2
 
-# Minimize with MACE-OMOL, freeze CAs, write PDB
-$QCB opt protonated.pdb --model mace-omol --fix-preset ca-only --fmax 0.01 \
-    --output-pdb relaxed.pdb
+# Minimize, freeze CAs; mace-mh-1 --head omol is charge-aware and loads in-container
+$QCB opt protonated.pdb --model mace-mh-1 --head omol --fix-preset ca-only \
+    --fmax 0.01 --output-pdb relaxed.pdb
+
+# Hold a forming/breaking bond at 1.9 A during a relax (0-based ASE indices)
+$QCB opt relaxed.pdb --model mace-mh-1 --head omol --fix-bond 1849 1871 1.9
 
 # Full TS pipeline with the IRC strategy
 $QCB ts relaxed.pdb --strategy irc --n-images 15 --fix-preset ca-only
+
+# UMA (FairChem) models run in the separate sidecar container:
+UMA=/net/software/containers/users/woodbuse/quantum_chem/uma-20260527.sif
+apptainer exec --nv --bind /home --bind /net --env PYTHONPATH=$REPO $UMA \
+    python -m quantum_engine.cli sp relaxed.pdb --model uma-s-1p1
 ```
+
+> Once the package is `pip install`-ed into a rebuilt container, `qcb <op>`
+> works directly and the `python -m quantum_engine.cli` form becomes optional
+> (it stays the no-rebuild path for testing an editable checkout). `mace-polar-*`
+> needs `graph_electrostatics`, which is not in the container — `make_calc`
+> raises a clear error pointing you to `mace-mh-1 --head omol` / `mace-omol`.
 
 > For a development checkout, bind-mount it over the installed package:
 > `--bind <repo>:/opt/quantum_engine_src` and prepend it to `PYTHONPATH`.
