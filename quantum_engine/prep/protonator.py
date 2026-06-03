@@ -2738,10 +2738,51 @@ def compute_net_charge(st: ProtonationState) -> tuple:
     return net, per_res
 
 
+def ligand_charge_total(st: ProtonationState, ligand_charges: dict) -> tuple:
+    """Sum declared ligand formal charges over HETATM residue INSTANCES.
+
+    ``ligand_charges`` maps RESNAME -> int (case-insensitive). Each non-water
+    HETATM residue *instance* whose resname is declared contributes its charge
+    ONCE — so two ``ZN`` residues at +2 each give +4, and a multi-atom ligand
+    counts once. Waters are skipped. Returns ``(total, per_instance, warnings)``;
+    warns on (a) a declared resname not present, and (b) a non-water HETATM
+    resname present but not declared (counted as 0 so the user notices).
+    Reporting-only — HETATM geometry is never modified.
+    """
+    lc = {str(k).strip().upper(): int(v) for k, v in (ligand_charges or {}).items()}
+    residues = group_residues([a for a in st.atoms if a.record == "HETATM"])
+    total = 0
+    per_instance: list = []
+    seen: set = set()
+    undeclared: set = set()
+    for rk, atoms in residues.items():
+        resname = atoms[0].resname.strip().upper()
+        if resname in WATER_RESNAMES:
+            continue
+        seen.add(resname)
+        q = lc.get(resname, 0)
+        if resname not in lc:
+            undeclared.add(resname)
+        total += q
+        per_instance.append({"residue": reskey_str(rk), "resname": resname, "charge": q})
+    warnings: list = []
+    for rn in sorted(lc):
+        if rn not in seen:
+            warnings.append(f"--ligand-charge {rn}={lc[rn]:+d} given but no HETATM "
+                            f"residue {rn!r} is present")
+    for rn in sorted(undeclared):
+        warnings.append(f"HETATM ligand {rn!r} present with no --ligand-charge; "
+                        f"counted as 0 in TOTAL_SYSTEM_CHARGE")
+    return total, per_instance, warnings
+
+
 def _qcb_remarks(version: str, pH: float, net: int, per_res: list,
-                 protomer=None, n_protomers: int = 1) -> list:
+                 protomer=None, n_protomers: int = 1,
+                 total_system: int | None = None) -> list:
     """Minimal REMARK 999 QCB-PROTONATOR annotation block (kept short)."""
     out = [f"v2  pH={pH}  {version}", f"NET_PROTEIN_CHARGE {net:+d}"]
+    if total_system is not None:
+        out.append(f"TOTAL_SYSTEM_CHARGE {total_system:+d}  (protein + ligands)")
     real = {"peptide", "none", "covalent?", None}
     n_n = sum(1 for r in per_res if r["n_cap"] not in real)
     n_c = sum(1 for r in per_res if r["c_cap"] not in real)
@@ -2789,6 +2830,9 @@ def _write_info_json(path, inp_path, pH: float, args,
             "joint_prob": round(pr["prob"], 6),
             "output_pdb": pr["output"],
             "net_protein_charge": pr["net"],
+            "ligand_charge": pr.get("ligand_charge", 0),
+            "total_system_charge": pr.get("total_system_charge", pr["net"]),
+            "ligand_per_instance": pr.get("ligand_per_instance", []),
             "autocorrect": pst.settings.get("autocorrect"),
             "relax": pst.settings.get("relax"),
             "warnings": list(pst.warnings),
@@ -2855,6 +2899,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "chain and append any insertion code (A:169B)")
     p.add_argument("--ptm-charge", action="append", metavar="CHAIN:RESID=Q",
                    help="formal charge for a declared PTM residue (repeatable)")
+    p.add_argument("--ligand-charge", action="append", metavar="RESNAME=Q",
+                   help="formal charge of a ligand/metal HETATM residue, for "
+                        "TOTAL system-charge reporting (repeatable; e.g. ZN=2 "
+                        "PXN=-1). Counted once per residue instance; HETATM "
+                        "geometry is left untouched.")
     p.add_argument("--disulfide-cutoff", type=float, default=2.5,
                    help="Cys SG-SG disulfide detection distance (default: 2.5)")
     # Stage 4 — histidine tautomer
@@ -2963,8 +3012,11 @@ def main(argv=None) -> int:
 
     # per protomer: autocorrect (LAST geometry step, also clash-checks Stage
     # 5/6 H), optional MLFF relax, charge accounting, write
+    ligand_charges = (_parse_kv(args.ligand_charge, "ligand-charge")
+                      if getattr(args, "ligand_charge", None) else {})
     n = len(protomers)
     protomer_results: list = []
+    _ligand_warned = False
     for pm in protomers:
         pst = pm["state"]
         stage_autocorrect(pst, h_clash_cutoff=args.h_clash_cutoff)
@@ -2972,15 +3024,25 @@ def main(argv=None) -> int:
             stage_relax_h(pst, model=args.relax_h_model, fmax=args.relax_h_fmax,
                           steps=args.relax_h_steps, device=args.relax_h_device)
         net, per_res = compute_net_charge(pst)
+        lig_total, lig_per, lig_warn = ligand_charge_total(pst, ligand_charges)
+        if not _ligand_warned:
+            for w in lig_warn:
+                log.warning(w)
+            _ligand_warned = True
+        total_system = net + lig_total
         out_path = (out if n == 1 else out.with_name(
             f"{out.stem}_protomer{pm['rank']}{out.suffix or '.pdb'}"))
         remarks = _qcb_remarks(f"input={inp.name}", args.pH, net, per_res,
-                               protomer=pm, n_protomers=n)
+                               protomer=pm, n_protomers=n,
+                               total_system=total_system)
         write_pdb(pst, out_path, remarks=remarks)
-        log.info(f"  net protein charge = {net:+d}   ->  {out_path}")
+        log.info(f"  net protein charge = {net:+d}; ligands = {lig_total:+d}; "
+                 f"TOTAL system = {total_system:+d}   ->  {out_path}")
         protomer_results.append({
             "rank": pm["rank"], "prob": pm["prob"], "output": str(out_path),
-            "net": net, "per_res": per_res, "state": pst})
+            "net": net, "ligand_charge": lig_total,
+            "total_system_charge": total_system, "ligand_per_instance": lig_per,
+            "per_res": per_res, "state": pst})
 
     if args.output_info_file:
         _write_info_json(args.output_info_file, inp, args.pH, args,

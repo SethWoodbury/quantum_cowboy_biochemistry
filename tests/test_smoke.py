@@ -316,11 +316,25 @@ def test_list_models_non_empty():
 
 
 def test_make_calc_unknown_raises():
-    """A bogus model name should raise FileNotFoundError with a
-    helpful 'Available registry keys' message."""
+    """A bogus model name should raise FileNotFoundError with a helpful
+    message (it falls through to the MACE auto-download family check)."""
     from quantum_engine.calc import make_calc
-    with pytest.raises(FileNotFoundError, match="Available registry keys"):
+    with pytest.raises(FileNotFoundError, match="did not match any family"):
         make_calc(model="not_a_real_model_xyz", device="cpu")
+
+
+def test_make_calc_polar_clear_error_without_graph_electrostatics():
+    """mace-polar-* must raise a clear, actionable ImportError naming
+    graph_electrostatics + the mace-mh-1/omol alternatives when the
+    package is absent (e.g. the standard quantum_chem-*.sif)."""
+    try:
+        import graph_electrostatics  # noqa: F401
+        pytest.skip("graph_electrostatics IS installed; clear-error path not exercised")
+    except ImportError:
+        pass
+    from quantum_engine.calc import make_calc
+    with pytest.raises(ImportError, match="graph_electrostatics"):
+        make_calc(model="mace-polar-m", device="cpu")
 
 
 # ─────────────────────────────────────────────────────────────────────

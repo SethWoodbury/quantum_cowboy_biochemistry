@@ -83,6 +83,24 @@ def _make_mace(model: str, model_path: str | None, head: str | None,
                ) -> "Calculator":
     from mace.calculators import MACECalculator  # noqa: PLC0415
 
+    # MACE-POLAR (polarizable / long-range electrostatics) needs the
+    # `graph_electrostatics` package, which is NOT in the standard
+    # quantum_chem-*.sif. Detect early and fail with an actionable message
+    # rather than a cryptic load error (covers both the local-path and the
+    # auto-download branches, and the bare `mace-polar` alias).
+    if "polar" in model.lower():
+        try:
+            import graph_electrostatics  # noqa: F401, PLC0415
+        except ImportError as exc:
+            raise ImportError(
+                f"{model!r} is a MACE-POLAR model and needs the "
+                f"'graph_electrostatics' package, which is not installed in "
+                f"this environment (e.g. the standard quantum_chem-*.sif). "
+                f"Use a charge-aware model that loads here instead: "
+                f"'mace-mh-1 --head omol' (recommended) or 'mace-omol' "
+                f"(higher accuracy, needs a large GPU)."
+            ) from exc
+
     # No local path → try MACE's HuggingFace auto-download by family.
     if model_path is None:
         try:
