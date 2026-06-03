@@ -43,20 +43,19 @@ from quantum_engine.pipelines.steps import IRC, MTD, NEB, Opt
 
 @dataclass
 class ProtonateActiveSite:
-    """Run consensus protonation on the input PDB.
+    """Run deterministic staged protonation on the input PDB.
 
-    Wraps :func:`quantum_engine.prep.consensus_protonate` (ChimeraX +
-    propka + pdbfixer + hardcoded rules). Writes a protonated PDB and
-    swaps ``ctx.atoms`` for the protonated geometry.
+    Wraps the canonical protonation engine
+    :mod:`quantum_engine.prep.protonator` (CLI: ``qcb protonate``). Writes a
+    protonated PDB and swaps ``ctx.atoms`` for the protonated geometry.
     """
     name: str = "protonate"
     pH: float = 7.0
-    methods: tuple[str, ...] = ("chimera", "propka", "pdbfixer", "rules")
-    rules: dict[str, str] | None = None       # e.g. {"LYS:139": "carbamylated"}
-    ligand_charges: dict[str, int] | None = None
+    set_overrides: dict[str, str] | None = None   # e.g. {"A:226": "HIP"}
+    ptm: dict[str, str] | None = None             # e.g. {"A:169": "KCX"}
 
     def run(self, ctx: Context) -> StepResult:
-        from quantum_engine.prep import consensus_protonate
+        from quantum_engine.prep import protonator
         outdir = ctx.outdir / self.name
         outdir.mkdir(exist_ok=True)
         # Need a PDB on disk; if ctx has only ASE Atoms, dump first
@@ -66,11 +65,15 @@ class ProtonateActiveSite:
             in_pdb = outdir / "input.pdb"
             ase_write(str(in_pdb), ctx.atoms)
         out_pdb = outdir / "protonated.pdb"
-        result = consensus_protonate(
-            input_pdb=in_pdb, output_pdb=out_pdb, pH=self.pH,
-            methods=self.methods, rules=self.rules,
-            ligand_charges=self.ligand_charges,
-        )
+        argv = ["--input-pdb", str(in_pdb), "--output-pdb", str(out_pdb),
+                "--pH", str(self.pH)]
+        for spec, state in (self.set_overrides or {}).items():
+            argv += ["--set", f"{spec}={state}"]
+        for spec, code in (self.ptm or {}).items():
+            argv += ["--ptm", f"{spec}={code}"]
+        rc = protonator.main(argv)
+        if rc != 0:
+            raise RuntimeError(f"protonator failed (rc={rc}) on {in_pdb}")
         # Swap atoms to protonated structure
         from ase.io import read as ase_read
         ctx.atoms = ase_read(str(out_pdb))
@@ -78,8 +81,6 @@ class ProtonateActiveSite:
         return StepResult(
             name=self.name, atoms=ctx.atoms,
             outputs={"protonated_pdb": str(out_pdb)},
-            extra={"consensus_states": result.consensus_states,
-                   "disagreements": result.disagreements},
         )
 
 

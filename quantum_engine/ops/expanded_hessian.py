@@ -42,11 +42,9 @@ import numpy as np
 from ase import Atoms
 
 from quantum_engine.ops import freq as freq_op
-from quantum_engine.units import EV_TO_KCAL
+from quantum_engine.units import EV_TO_KCAL, FREQ_CONV
 
 log = logging.getLogger("quantum_engine.ops.expanded_hessian")
-
-FREQ_CONV = 521.47083
 
 
 # ---------------------------------------------------------------------------

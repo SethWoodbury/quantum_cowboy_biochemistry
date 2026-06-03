@@ -486,31 +486,30 @@ def main() -> int:
     kcx_summary = add_carbamate_to_lys169(cropped, kcx_pdb, log)
     log.info(f"  → {kcx_summary['output_pdb']}")
 
-    # Step 3: protonate via consensus_protonate
+    # Step 3: protonate via the canonical protonator (qcb protonate).
+    # KCX 169 is the carbamylated-lysine PTM (charge -1); metals/ligand HETATM
+    # are left untouched by the protonator.
     if args.run_consensus_protonation:
-        log.info("--- Step 3: consensus protonation ---")
+        log.info("--- Step 3: protonation (protonator) ---")
         final_pdb = args.outdir / "step3_protonated.pdb"
         try:
-            from quantum_engine.prep.protonate_consensus import (
-                consensus_protonate,
-            )
-            result = consensus_protonate(
-                input_pdb=kcx_pdb,
-                output_pdb=final_pdb,
-                pH=7.0,
-                methods=("propka", "pdbfixer", "rules"),
-                # No chimera by default — its ChimeraX path may not be wired
-                rules={"KCX:169": "deprotonated"},
-                ligand_charges={"KCX": -1, "ZN": 2},
-            )
+            from quantum_engine.prep import protonator
+            rc = protonator.main([
+                "--input-pdb", str(kcx_pdb),
+                "--output-pdb", str(final_pdb),
+                "--pH", "7.0",
+                "--ptm", "A:169=KCX",
+                "--ptm-charge", "A:169=-1",
+            ])
+            if rc != 0:
+                raise RuntimeError(f"protonator returned {rc}")
             log.info(f"  → {final_pdb}")
-            log.info(f"  consensus result: {result}")
         except Exception as e:
             log.error(f"  protonation failed: {type(e).__name__}: {e}")
             log.error("  shipping unprotonated KCX file as final.")
             final_pdb = kcx_pdb
     else:
-        log.info("--- Step 3 SKIPPED (consensus protonation rejected for PTE metal sites) ---")
+        log.info("--- Step 3 SKIPPED (protonation rejected for PTE metal sites) ---")
         final_pdb = kcx_pdb
 
     # Final summary

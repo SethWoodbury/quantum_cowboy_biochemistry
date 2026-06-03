@@ -23,6 +23,10 @@ KCAL_TO_KJ: float = 4.184
 KB_KJ_PER_MOL_K: float = 8.314462618e-3
 KB_EV_PER_K: float = 8.617333262145e-5
 
+# Vibrational frequency: sqrt(eV/Å²/amu) → cm⁻¹. Used by finite-difference
+# Hessian frequency analysis (ops.freq, ops.expanded_hessian).
+FREQ_CONV: float = 521.47083
+
 # Inverse for completeness (rarely used):
 KCAL_TO_EV: float = 1.0 / EV_TO_KCAL
 KJ_TO_EV: float = 1.0 / EV_TO_KJ
@@ -32,4 +36,5 @@ __all__ = [
     "KJ_TO_KCAL", "KCAL_TO_KJ",
     "KCAL_TO_EV", "KJ_TO_EV",
     "KB_KJ_PER_MOL_K", "KB_EV_PER_K",
+    "FREQ_CONV",
 ]

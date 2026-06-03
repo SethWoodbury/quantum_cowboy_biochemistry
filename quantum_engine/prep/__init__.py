@@ -2,17 +2,13 @@
 Structure preparation: active site extraction, protonation, charge calculation, capping.
 """
 
+# Canonical protonation is the deterministic, staged engine in
+# ``quantum_engine.prep.protonator`` (CLI: ``qcb protonate``). The older
+# multi-method consensus arbiter (protonate_consensus / protonate_chimera)
+# was retired in the 2026-06 cleanup; see archive/pre-cleanup to recover it.
+# ``protonate`` (PROPKA pKa prediction) is kept — protonator stage5 and
+# ``charge.py`` both use ``get_pka_dict``.
 from quantum_engine.prep.protonate import get_pka_dict, assign_protonation_states
-from quantum_engine.prep.protonate_chimera import (
-    add_hydrogens_chimera,
-    add_hydrogens_with_charges,
-    parse_pqr_charges,
-)
-from quantum_engine.prep.protonate_consensus import (
-    consensus_protonate,
-    ConsensusResult,
-    MethodResult,
-)
 from quantum_engine.prep.extract import (
     extract_active_site,
     extract_by_zones,
@@ -32,14 +28,6 @@ __all__ = [
     # propka pKa prediction
     "get_pka_dict",
     "assign_protonation_states",
-    # ChimeraX
-    "add_hydrogens_chimera",
-    "add_hydrogens_with_charges",
-    "parse_pqr_charges",
-    # Consensus arbiter
-    "consensus_protonate",
-    "ConsensusResult",
-    "MethodResult",
     # extraction / charges / I/O
     "extract_active_site",
     "extract_by_zones",

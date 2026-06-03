@@ -352,9 +352,9 @@ class ActiveSitePrep:
 
     def run(self, ctx: Context) -> StepResult:
         raise NotImplementedError(
-            "ActiveSitePrep: reuse "
-            "quantum_engine.prep.consensus_protonate (already implemented "
-            "in active_site_ts.orchestrator.ProtonateActiveSite)."
+            "ActiveSitePrep: reuse the protonator (qcb protonate) — see "
+            "active_site_ts.orchestrator.ProtonateActiveSite for a wired "
+            "example."
         )
 
 

@@ -11,13 +11,10 @@ import logging
 from pathlib import Path
 
 import numpy as np
-from quantum_engine.units import EV_TO_KCAL
+from quantum_engine.units import EV_TO_KCAL, FREQ_CONV
 from ase import Atoms
 
 log = logging.getLogger("quantum_engine.ops.freq")
-
-# Conversion factor sqrt(eV/Å²/amu) → cm⁻¹
-FREQ_CONV = 521.47083
 
 
 def run(
