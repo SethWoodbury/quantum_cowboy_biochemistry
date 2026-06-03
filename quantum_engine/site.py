@@ -346,18 +346,7 @@ def _resolve_crest() -> str | None:
     return next((p for p in candidates if p and os.path.isfile(p)), None)
 
 
-def _resolve_chemshell() -> str | None:
-    """ChemShell (CCFE QM/MM TS framework). Override via $QCB_CHEMSHELL."""
-    candidates = [
-        os.environ.get("QCB_CHEMSHELL"),
-        str(_REPO_ROOT / "deps" / "chemshell" / "install" / "bin" / "chemsh"),
-        "/net/software/lab/chemshell/bin/chemsh",
-    ]
-    return next((p for p in candidates if p and os.path.isfile(p)), None)
-
-
 CREST_BIN = _resolve_crest()
-CHEMSHELL_BIN = _resolve_chemshell()
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -429,19 +418,3 @@ def benchmark_cache_dir() -> Path:
     return _resolve_cache_dir("benchmark_cache")
 
 
-# ─────────────────────────────────────────────────────────────────────
-# molecularGSM (ZimmermanGroup) — C++/CMake + MKL source build.
-# Vendored at deps/molecularGSM. No pip/conda path; binary-only tool
-# driven via subprocess. Build with `bash deps/build_molecular_gsm.sh`.
-# ─────────────────────────────────────────────────────────────────────
-
-def _resolve_molecular_gsm() -> str | None:
-    candidates = [
-        os.environ.get("QCB_MOLECULAR_GSM_BIN"),
-        str(_REPO_ROOT / "deps" / "molecularGSM" / "install" / "bin" / "gsm"),
-        f"{LAB_SOFTWARE}/molecularGSM/current/bin/gsm",
-    ]
-    return next((p for p in candidates if p and os.path.isfile(p)), None)
-
-
-MOLECULAR_GSM_BIN = _resolve_molecular_gsm()

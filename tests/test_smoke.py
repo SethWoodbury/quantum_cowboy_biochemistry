@@ -37,16 +37,10 @@ def test_subpackage_imports():
 
 
 def test_new_qm_adapters_import_clean():
-    """Each lazy QM adapter (scine, pygsm, pysisyphus, molecular_gsm,
-    yarp) must import without raising even when the underlying tool is
-    absent — they expose <name>_available() bool checks instead."""
-    from quantum_engine.qm import scine, pygsm, pysisyphus, molecular_gsm, yarp
-    # Each module exposes an availability check that returns bool, not raise.
-    assert isinstance(scine.scine_available(), bool)
-    assert isinstance(pygsm.pygsm_available(), bool)
+    """Lazy QM adapters must import without raising even when the underlying
+    tool is absent — they expose <name>_available() bool checks instead."""
+    from quantum_engine.qm import pysisyphus
     assert isinstance(pysisyphus.pysisyphus_available(), bool)
-    assert isinstance(molecular_gsm.molecular_gsm_available(), bool)
-    assert yarp.yarp_available() is False  # stub: always False
 
 
 def test_apptainer_exec_helper():

@@ -10,14 +10,13 @@ optional deps into the parent import chain. Each exposes a cheap
 
   * ``quantum_engine.qm.autode``        — autodE SMILES → vacuum TS (xtb / g-xtb)
   * ``quantum_engine.qm.crest``         — Grimme CREST conformer search
-  * ``quantum_engine.qm.chemshell``     — ChemShell QM/MM (registration-walled)
-  * ``quantum_engine.qm.scine``         — SCINE Chemoton + ReaDuct
-  * ``quantum_engine.qm.pygsm``         — pyGSM single/double-ended GSM
-  * ``quantum_engine.qm.pysisyphus``    — pysisyphus RS-P-RFO / dimer / NEB
+  * ``quantum_engine.qm.pysisyphus``    — pysisyphus RS-P-RFO / dimer
   * ``quantum_engine.qm.sella``         — Sella saddle search (Hessian-eigvec)
   * ``quantum_engine.qm.dimer``         — ASE improved-dimer saddle search
-  * ``quantum_engine.qm.molecular_gsm`` — molecularGSM (C++ binary)
-  * ``quantum_engine.qm.yarp``          — YARP stub (upstream dead — use scine)
+
+SCINE Chemoton/ReaDuct reaction-network exploration lives in
+``tools/scine_bridge.py`` (it imports the SCINE packages directly). String/GSM
+path search is in ``quantum_engine.ops.gsm`` (pysisyphus FSM/GSM).
 """
 
 from quantum_engine.qm.gaussian import (

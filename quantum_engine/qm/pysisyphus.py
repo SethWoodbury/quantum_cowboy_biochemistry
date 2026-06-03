@@ -310,18 +310,6 @@ def dimer_ts(
 # --------------------------------------------------------------------------
 # Legacy API (kept for backwards compat; tests import these names)
 # --------------------------------------------------------------------------
-def neb_path(
-    reactant: Any,
-    product: Any,
-    **kwargs,
-) -> dict[str, Any]:
-    """Stub for pysisyphus NEB. Use :mod:`quantum_engine.ops.gsm` for FSM/GSM."""
-    _require()
-    raise NotImplementedError(
-        "pysisyphus.neb_path: not wired; use quantum_engine.ops.gsm for FSM/GSM."
-    )
-
-
 def rsirfo_ts(atoms: Atoms, **kwargs) -> dict[str, Any]:
     """RS-I-RFO — alias to :func:`rsprfo_ts` for now (same code path; the
     optimiser only differs in the secondary mode-tracking logic, which is
@@ -330,20 +318,3 @@ def rsirfo_ts(atoms: Atoms, **kwargs) -> dict[str, Any]:
     return rsprfo_ts(atoms, **kwargs)
 
 
-def irc(ts_atoms: Atoms, **kwargs) -> dict[str, Any]:
-    """IRC descent through pysisyphus — not yet wired (use the ASE/legacy
-    IRC in :mod:`quantum_engine.mlff.irc` for now)."""
-    _require()
-    raise NotImplementedError(
-        "pysisyphus.irc: not wired; use quantum_engine.ops.irc for the "
-        "IRC-from-TS workflow."
-    )
-
-
-def harmonic_restraints(atoms: Atoms, **kwargs) -> Any:
-    """SpringConstraint helper — keep stubbed; not needed for the cascade."""
-    _require()
-    raise NotImplementedError(
-        "pysisyphus.harmonic_restraints: stubbed; use ASE's "
-        "FixedConstraint or the cluster-mode helpers in quantum_engine.io."
-    )

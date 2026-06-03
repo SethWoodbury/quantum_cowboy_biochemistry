@@ -24,7 +24,7 @@ upstream ever ships a `PyCalculator` trampoline. (Future work.)
 
 Public API
 ----------
-- ``scine_available()`` — re-export of ``quantum_engine.qm.scine.scine_available``
+- ``scine_available()`` — True if the SCINE core packages import cleanly
 - ``pdb_to_scine_cluster(pdb, residues, ...)`` — strip protein → ≤60-atom QM
   cluster, returning ``(AtomCollection, atom_index_map)``.
 - ``make_scine_model(backend)`` — backends: ``'sparrow-pm6'`` (default),
