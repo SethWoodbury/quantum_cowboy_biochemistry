@@ -85,23 +85,34 @@ def _make_mace(model: str, model_path: str | None, head: str | None,
                ) -> "Calculator":
     from mace.calculators import MACECalculator  # noqa: PLC0415
 
-    # MACE-POLAR (polarizable / long-range electrostatics) needs the
-    # `graph_electrostatics` package, which is NOT in the standard
-    # quantum_chem-*.sif. Detect early and fail with an actionable message
-    # rather than a cryptic load error (covers both the local-path and the
-    # auto-download branches, and the bare `mace-polar` alias).
+    # MACE-POLAR (polarizable / long-range electrostatics) needs TWO vendored
+    # pieces that aren't in the stock container: the `graph_longrange` module
+    # (deps/graph_longrange_src, from github.com/WillBaldwin0/graph_electrostatics)
+    # AND the MACE fork that defines `PolarMACE` (deps/mace_polar_src) — stock
+    # mace lacks PolarMACE, so the model unpickles to `Can't get attribute
+    # 'PolarMACE'`. Detect early + fail with an actionable message. This is
+    # packaging-agnostic: it works in-process once those are installed (whether
+    # baked into the main container or run inside a POLAR-capable one); otherwise
+    # it names the fix + the working fallback. Covers the bare `mace-polar` alias.
     if "polar" in model.lower():
+        missing = []
         try:
-            import graph_electrostatics  # noqa: F401, PLC0415
-        except ImportError as exc:
+            import graph_longrange  # noqa: F401, PLC0415
+        except ImportError:
+            missing.append("graph_longrange (deps/graph_longrange_src)")
+        try:
+            from mace.modules.extensions import PolarMACE  # noqa: F401, PLC0415
+        except Exception:  # noqa: BLE001 — ImportError or AttributeError on stock mace
+            missing.append("the MACE-POLAR fork that defines PolarMACE "
+                           "(deps/mace_polar_src)")
+        if missing:
             raise ImportError(
-                f"{model!r} is a MACE-POLAR model and needs the "
-                f"'graph_electrostatics' package, which is not installed in "
-                f"this environment (e.g. the standard quantum_chem-*.sif). "
-                f"Use a charge-aware model that loads here instead: "
-                f"'mace-mh-1 --head omol' (recommended) or 'mace-omol' "
-                f"(higher accuracy, needs a large GPU)."
-            ) from exc
+                f"{model!r} is a MACE-POLAR model but this environment is missing: "
+                f"{'; '.join(missing)}. Run it in a container with the POLAR fork "
+                f"installed (see deps/quantum_chem.def / a POLAR sidecar), or use a "
+                f"charge-aware model that loads here: 'mace-mh-1 --head omol' "
+                f"(recommended) or 'mace-omol' (higher accuracy, large GPU)."
+            )
 
     # No local path → try MACE's HuggingFace auto-download by family.
     if model_path is None:

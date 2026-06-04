@@ -323,17 +323,23 @@ def test_make_calc_unknown_raises():
         make_calc(model="not_a_real_model_xyz", device="cpu")
 
 
-def test_make_calc_polar_clear_error_without_graph_electrostatics():
-    """mace-polar-* must raise a clear, actionable ImportError naming
-    graph_electrostatics + the mace-mh-1/omol alternatives when the
-    package is absent (e.g. the standard quantum_chem-*.sif)."""
+def test_make_calc_polar_clear_error_without_deps():
+    """mace-polar-* must raise a clear, actionable ImportError naming the
+    missing POLAR deps (graph_longrange + the PolarMACE fork) + the working
+    mace-mh-1/omol alternatives when they're absent (stock quantum_chem-*.sif)."""
+    have_glr = have_polar = True
     try:
-        import graph_electrostatics  # noqa: F401
-        pytest.skip("graph_electrostatics IS installed; clear-error path not exercised")
+        import graph_longrange  # noqa: F401
     except ImportError:
-        pass
+        have_glr = False
+    try:
+        from mace.modules.extensions import PolarMACE  # noqa: F401
+    except Exception:  # noqa: BLE001
+        have_polar = False
+    if have_glr and have_polar:
+        pytest.skip("POLAR deps installed; clear-error path not exercised")
     from quantum_engine.calc import make_calc
-    with pytest.raises(ImportError, match="graph_electrostatics"):
+    with pytest.raises(ImportError, match="mace-mh-1"):
         make_calc(model="mace-polar-m", device="cpu")
 
 
