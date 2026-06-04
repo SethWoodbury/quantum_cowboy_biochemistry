@@ -32,6 +32,14 @@ From: /net/software/containers/universal.sif
     Base universal.sif
     NumpyPin 1.26.4
 
+%files
+    # Vendored MACE-POLAR stack (charge-aware polarizable MLFF). The fork is
+    # mace-torch 0.3.15 + a PolarMACE class; it imports `graph_longrange`
+    # (github.com/WillBaldwin0/graph_electrostatics). Copied in so the editable
+    # installs in %post don't depend on host binds at build time.
+    /home/woodbuse/codebase_projects/quantum_cowboy_biochemistry/deps/graph_longrange_src /opt/graph_longrange_src
+    /home/woodbuse/codebase_projects/quantum_cowboy_biochemistry/deps/mace_polar_src /opt/mace_polar_src
+
 %post
     # apptainer's %post runs under /bin/sh (dash), which lacks pipefail.
     # set -eux is enough — pip already errors out on its own pipe failures.
@@ -191,6 +199,19 @@ CONSTRAINTS
     # would break SCINE). Pysisyphus + sella are installed separately above.
     $PIP install $C "aimnet" || echo "WARN: aimnet install failed"
 
+    # MACE-POLAR (charge-aware polarizable MLFF). graph_longrange is a small
+    # pure helper (e3nn==0.4.4 matches our pin) → install with the constraint.
+    # The mace-polar fork IS mace-torch 0.3.15 (same version as stock) + a
+    # PolarMACE class, so it stays compatible with the omol/mh/off model files.
+    # Replace the stock mace with the fork via --no-deps editable install so
+    # NOTHING else (torch/numpy/e3nn) drifts. If this turns out to break the
+    # stock models, the fallback is a dedicated POLAR sidecar instead.
+    $PIP install $C -e /opt/graph_longrange_src \
+        || echo "WARN: graph_longrange install failed (MACE-POLAR unavailable)"
+    $PIP uninstall -y mace-torch || true
+    $PIP install --no-deps -e /opt/mace_polar_src \
+        || echo "WARN: mace-polar fork install failed (MACE-POLAR unavailable)"
+
     # NOTE: fairchem-core was tried but it transitively pulls torch 2.8 +
     # numpy 2.x + new pydantic which breaks the rest of the stack even
     # under --constraint. Until UMA-S-1.2 / UMA-M-1.1 are downloadable
@@ -208,9 +229,11 @@ CONSTRAINTS
                pysisyphus sella scine_chemoton scine_readuct scine_sparrow \
                scine_utilities scine_database scine_molassembler \
                scine_puffin scine_xtb_wrapper scine_parrot \
-               orb_models aimnet ; do
+               orb_models aimnet graph_longrange ; do
         /usr/local/conda/bin/python -c "import importlib; m = importlib.import_module('$mod'); v = getattr(m, '__version__', '?'); print('  $mod:', v)" 2>&1 | tail -1 || echo "  $mod: FAIL (segfault or import error)"
     done
+    # MACE-POLAR fork must expose PolarMACE AND still load a stock model class.
+    /usr/local/conda/bin/python -c "from mace.modules.extensions import PolarMACE; from mace.calculators import MACECalculator; print('  PolarMACE: OK (+ MACECalculator)')" 2>&1 | tail -1 || echo "  PolarMACE: FAIL"
     /usr/local/bin/mongod --version 2>&1 | head -1 || echo "  mongod: FAIL"
     set -e
 
@@ -228,8 +251,8 @@ CONSTRAINTS
     # at /usr/local/bin/mongod) and any other static binaries dropped
     # there beat the conda copies, if they conflict.
     export PATH=/usr/local/bin:$PATH
-    # No mace-polar graph_electrostatics yet (gbg222's venv only); set this
-    # when we fold that in later.
+    # MACE-POLAR is now baked in (graph_longrange + the PolarMACE fork installed
+    # in %post), so `mace-polar-*` loads in-process — no separate venv/sidecar.
 
 %runscript
     exec /usr/local/conda/bin/python "$@"
