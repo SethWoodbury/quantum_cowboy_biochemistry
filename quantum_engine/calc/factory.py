@@ -60,6 +60,8 @@ def _family_of(model: str) -> str:
         return "orb"
     if m.startswith("aimnet"):
         return "aimnet"
+    if m.startswith("gfn") or m in ("xtb", "g-xtb", "gfnff"):
+        return "qc"          # semiempirical: GFN0/1/2-xTB, GFN-FF, g-xTB
     return "mace"
 
 
@@ -332,6 +334,9 @@ def make_calc(
         return _make_orb(model, model_path, device, charge, spin)
     if family == "aimnet":
         return _make_aimnet(model, model_path, device, charge, spin)
+    if family == "qc":
+        from quantum_engine.calc.qc_calc import make_qc_calc  # noqa: PLC0415
+        return make_qc_calc(model, charge=charge or 0, spin=spin or 1)
     return _make_mace(model, model_path, head, device, default_dtype, charge)
 
 
