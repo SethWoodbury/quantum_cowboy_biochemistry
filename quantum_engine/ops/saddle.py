@@ -119,11 +119,22 @@ def _run_pysis_dimer(atoms, *, calculator, outdir, constraint, fmax, max_steps,
         initial_mode_vector=initial_mode_vector, **extra)
 
 
+def _run_geometric(atoms, *, calculator, outdir, constraint, fmax, max_steps,
+                   initial_mode_vector, eigh_drivers, **extra) -> dict:
+    """geomeTRIC TRIC-internal-coordinate TS optimisation (large/floppy systems).
+    Needs ``pip install geometric`` — raises a clean ImportError otherwise."""
+    from quantum_engine.qm import geometric_ts
+    return geometric_ts.run(atoms, calculator=calculator, outdir=outdir,
+                            constraint=constraint, fmax=fmax, max_steps=max_steps,
+                            **extra)
+
+
 register_saddle("sella", _run_sella)
 register_saddle("sella-internal", _run_sella_internal)
 register_saddle("dimer", _run_dimer)
 register_saddle("pysisyphus-rsprfo", _run_pysis_rsprfo, aliases=("rsprfo", "rs-p-rfo"))
 register_saddle("pysisyphus-dimer", _run_pysis_dimer)
+register_saddle("geometric", _run_geometric, aliases=("geometric-ts",))
 
 
 # Built-in backend names accepted by ``backend=`` (snapshot for cli choices).

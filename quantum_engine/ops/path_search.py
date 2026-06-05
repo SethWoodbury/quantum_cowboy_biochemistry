@@ -114,6 +114,14 @@ def _run_neb(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any], 
                    constraint=constraint, charge=charge, **kwargs)
 
 
+def _run_autoneb(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any], *,
+                 outdir, constraint, charge, **kwargs) -> dict:
+    """Adaptive-image NEB (ASE-native) — honours ASE constraints, like NEB."""
+    from quantum_engine.ops import autoneb
+    return autoneb.run(reactant, product, calculator_fn, outdir=outdir,
+                       constraint=constraint, charge=charge, **kwargs)
+
+
 def _run_fsm(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any], *,
              outdir, constraint, charge, **kwargs) -> dict:
     from quantum_engine.ops import gsm
@@ -170,6 +178,7 @@ def _run_gsm_se(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any
 
 
 register_path("neb", _run_neb, aliases=("ci-neb",))
+register_path("autoneb", _run_autoneb)
 register_path("fsm", _run_fsm)
 register_path("gsm-de", _run_gsm_de, aliases=("gsm",))
 register_path("pygsm-de", _run_pygsm_de, aliases=("pygsm",))

@@ -11,6 +11,7 @@ Available ops:
     scan     — 1D/2D coordinate scan
     scan_modes — bond-difference / two-sided / auto reaction-coordinate scans
     bond_monitor — non-constraining bond + metal-coordination report
+    autoneb  — adaptive-image NEB (ASE-native) path method
     saddle   — multi-backend saddle-point search (registry: make_saddle_optimizer)
     irc      — intrinsic reaction coordinate (registry: make_irc)
     neb      — nudged elastic band
@@ -22,9 +23,9 @@ Available ops:
 """
 from quantum_engine.ops import (
     sp, opt, md, freq, scan, scan_modes, bond_monitor, saddle, irc, neb,
-    path_search, mtd, mtd_walkers, gsm, ts, ts_entry,
+    autoneb, path_search, mtd, mtd_walkers, gsm, ts, ts_entry,
 )
 
 __all__ = ["sp", "opt", "md", "freq", "scan", "scan_modes", "bond_monitor",
-           "saddle", "irc", "neb", "path_search", "mtd", "mtd_walkers",
-           "gsm", "ts", "ts_entry"]
+           "saddle", "irc", "neb", "autoneb", "path_search", "mtd",
+           "mtd_walkers", "gsm", "ts", "ts_entry"]
