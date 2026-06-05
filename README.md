@@ -1,8 +1,31 @@
-# Quantum Cowboy Biochemistry
+# Cowboy Quantum Chemistry
 
-One-stop shop for enzyme computational chemistry: from raw PDB to reaction barrier.
+A **reaction-agnostic, plug-and-play** pipeline for finding transition states:
+swappable **energy functions** (charge-aware MLFFs / xTB / DFT) AND swappable
+**optimizers & engines**, composed by a canonical path→saddle→Hessian→IRC core
+that's gated and driven by a user-owned `ReactionSpec`. From raw PDB to a
+validated TS + barrier. (The OPAA di-Zn phosphotriesterase theozyme is only the
+*test case* — nothing is hardcoded to it.)
 
-## Top-level CLI: `qcb`
+> The importable package stays **`quantum_engine`** and the CLI stays **`qcb`**.
+
+## The TS pipeline: `qcb ts-entry`
+
+```bash
+# reactant + product, charge-aware MLFF, standard rigor
+qcb ts-entry --entry reactant-product --reaction-spec spec.yaml \
+    --reactant R.pdb --product P.pdb --model mace-polar-m --charge 2 --rigor standard
+
+qcb reaction-spec spec.yaml --structure site.pdb   # validate/resolve a ReactionSpec
+qcb monitor site.pdb --metals --bond 0,1           # non-constraining bond/metal report
+```
+
+See [`docs/ts_workflow.md`](docs/ts_workflow.md) (canonical core + entry-point
+decision tree), [`docs/optimizers_and_engines.md`](docs/optimizers_and_engines.md)
+(method taxonomy), and [`docs/extending.md`](docs/extending.md) (register a new
+method in one line).
+
+## Lower-level ops (the building blocks)
 
 ```bash
 qcb sp       input.pdb                             # single-point energy
@@ -10,16 +33,14 @@ qcb opt      input.pdb --fmax 0.01                 # energy minimization
 qcb md       input.pdb --time 10 --temp 300        # molecular dynamics
 qcb freq     input.pdb                             # vibrational frequencies
 qcb scan     input.pdb --coord bond --indices 5 12 --start 1.5 --end 3.5 --n-steps 20
-qcb saddle   ts_guess.pdb                          # Sella saddle search
+qcb saddle   ts_guess.pdb                          # multi-backend saddle search
 qcb irc      ts.pdb --step 0.1                     # IRC from a TS
 qcb neb      reactant.pdb product.pdb              # NEB + CI-NEB
-qcb mtd      input.pdb --p-idx 133 --nuc-idx 120 --lg-idx 135 --time 100
-qcb ts       input.pdb --strategy irc              # full TS pipeline
+qcb ts       input.pdb --strategy irc              # legacy TS pipeline
 ```
 
 All ops share `--model`, `--charge`, `--fix`/`--free`, `--fix-preset`, `--outdir` flags.
-See [`docs/architecture.md`](docs/architecture.md) for the module layout and Python API,
-and [`docs/strategies.md`](docs/strategies.md) for TS search strategies.
+See [`docs/architecture.md`](docs/architecture.md) for the module layout and Python API.
 
 ## Module structure
 

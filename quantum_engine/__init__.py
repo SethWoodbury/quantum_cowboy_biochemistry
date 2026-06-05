@@ -1,6 +1,9 @@
 """
-quantum_engine — modular tools for enzyme quantum chemistry.
+quantum_engine — Cowboy Quantum Chemistry.
 ============================================================
+A reaction-agnostic, plug-and-play transition-state pipeline (swappable energy
+functions + optimizers/engines via registries). The package name stays
+``quantum_engine``; the CLI stays ``qcb``.
 
 Standalone tools that compose into pipelines. Each subpackage is
 independently importable; the same primitives drive the qcb CLI, the
@@ -23,4 +26,4 @@ Subpackages
 The CLI binary is ``qcb`` (see ``pyproject.toml`` ``[project.scripts]``).
 """
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"

@@ -1,7 +1,7 @@
 [project]
-name = "quantum-engine"
-version = "0.2.0"
-description = "Quantum engine for enzyme design — modular tools for active-site prep, MD/metadynamics, MLFF NEB/IRC/TS, and FES analysis. Composable into multi-step orchestrator pipelines."
+name = "cowboy-quantum-chemistry"
+version = "1.0.0"
+description = "Cowboy Quantum Chemistry — a reaction-agnostic, plug-and-play pipeline for finding transition states: swappable energy functions (MLFFs / xTB / DFT) AND optimizers/engines via registries, a canonical path→saddle→Hessian→IRC core, gated and reaction-spec-driven. The importable package stays `quantum_engine`; the CLI stays `qcb`."
 authors = [
     { name = "Seth M. Woodbury", email = "woodbuse@uw.edu" },
 ]
