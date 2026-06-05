@@ -33,7 +33,6 @@ from __future__ import annotations
 
 from quantum_engine.units import EV_TO_KCAL
 
-import json
 import logging
 from pathlib import Path
 from typing import Callable
@@ -57,7 +56,6 @@ log = logging.getLogger("quantum_engine.ops.gsm")
 # hartree-per-bohr), so geometries go in as bohr and forces come back converted.
 from quantum_engine.qm.pysisyphus import (  # noqa: E402
     _atoms_to_geom as _atoms_to_pysis_geom,
-    _fmax_to_thresh,
     make_pysis_calc_getter as _make_pysis_calc_getter,
 )
 
@@ -77,6 +75,35 @@ def _pysis_geom_to_ase(g, calc=None, charge: int = 0) -> Atoms:
         a.calc = calc
     a.info["charge"] = charge
     return a
+
+
+def _assemble_string_result(drive: dict, calculator_fn, charge: int, outdir: Path,
+                            tag: str) -> dict:
+    """Turn a pysis_string driver result (pysisyphus Geometry images) into the
+    standard path-result dict. Propagates unsupported/failed cleanly."""
+    import numpy as np  # noqa: PLC0415
+    if drive.get("status") in ("unsupported", "failed") or not drive.get("images"):
+        return {"status": drive.get("status", "failed"),
+                "error": drive.get("error"), "images": [], "outputs": {}}
+
+    images = [_pysis_geom_to_ase(g, calc=calculator_fn(), charge=charge)
+              for g in drive["images"]]
+    energies = [float(im.get_potential_energy()) for im in images]
+    ts_idx = int(np.argmax(energies[1:-1])) + 1 if len(energies) > 2 else 0
+
+    from ase.io import write as ase_write  # noqa: PLC0415
+    xyz = outdir / f"{tag}_path.xyz"
+    ase_write(str(xyz), images, format="extxyz")
+    barrier_fwd = (energies[ts_idx] - energies[0]) * EV_TO_KCAL
+    log.info("%s done: %d images, Δ‡fwd = %.2f kcal/mol", tag.upper(),
+             len(images), barrier_fwd)
+    return {
+        "status": drive["status"], "images": images, "ts": images[ts_idx],
+        "ts_idx": ts_idx, "reactant": images[0], "product": images[-1],
+        "energies_eV": energies, "barrier_fwd_kcal": barrier_fwd,
+        "barrier_rev_kcal": (energies[ts_idx] - energies[-1]) * EV_TO_KCAL,
+        "n_images_final": len(images), "outputs": {"path_xyz": str(xyz)},
+    }
 
 
 def run_fsm(
@@ -105,68 +132,24 @@ def run_fsm(
     """
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-
+    log.info("FSM: %d target images, fmax=%s eV/Å", n_images, fmax)
     try:
-        from pysisyphus.cos.FreezingString import FreezingString
-        from pysisyphus.optimizers.StringOptimizer import StringOptimizer
+        geom_r = _atoms_to_pysis_geom(reactant)
+        geom_p = _atoms_to_pysis_geom(product)
     except ImportError as e:
-        log.error(f"  pysisyphus not available: {e}")
+        log.error("  pysisyphus not available: %s", e)
         return {"status": "failed", "error": str(e), "outputs": {}}
-
-    log.info(f"FSM: {n_images} target images, fmax={fmax}")
-    geom_r = _atoms_to_pysis_geom(reactant)
-    geom_p = _atoms_to_pysis_geom(product)
     calc_getter = _make_pysis_calc_getter(calculator_fn, charge=charge, mult=mult)
 
-    # FSM expects a pair of geometries + a calc_getter (zero-arg callable)
-    fs = FreezingString(
-        images=[geom_r, geom_p],
-        calc_getter=calc_getter,
-        max_nodes=max_nodes,
-    )
-    opt = StringOptimizer(
-        fs,
-        out_dir=str(outdir),
-        max_cycles=200,
-        thresh=_fmax_to_thresh(fmax),     # map eV/Å fmax -> pysisyphus preset
-    )
+    from quantum_engine.qm import pysis_string  # noqa: PLC0415
     try:
-        opt.run()
-        converged = opt.is_converged if hasattr(opt, "is_converged") else True
-    except Exception as e:
-        log.error(f"  FSM run failed: {e}")
+        drive = pysis_string.drive_freezing_string(
+            geom_r, geom_p, calc_getter, max_nodes=max_nodes, fmax=fmax,
+            max_cycles=200, out_dir=outdir)
+    except Exception as e:  # noqa: BLE001
+        log.error("  FSM run failed: %s", e)
         return {"status": "failed", "error": str(e), "outputs": {}}
-
-    # Extract final images (pysisyphus coords bohr->Å, symbols re-cased)
-    images = [_pysis_geom_to_ase(g, calc=calculator_fn(), charge=charge)
-              for g in fs.images]
-
-    energies = [float(img.get_potential_energy()) for img in images]
-    import numpy as np
-    ts_idx = int(np.argmax(energies[1:-1])) + 1 if len(energies) > 2 else 0
-
-    result = {
-        "status": "converged" if converged else "not_converged",
-        "images": images,
-        "ts": images[ts_idx],
-        "ts_idx": ts_idx,
-        "reactant": images[0],
-        "product": images[-1],
-        "energies_eV": energies,
-        "barrier_fwd_kcal": (energies[ts_idx] - energies[0]) * EV_TO_KCAL,
-        "barrier_rev_kcal": (energies[ts_idx] - energies[-1]) * EV_TO_KCAL,
-        "n_images_final": len(images),
-        "outputs": {
-            "path_xyz": str(outdir / "fsm_path.xyz"),
-        },
-    }
-
-    # Write trajectory
-    from ase.io import write as ase_write
-    ase_write(str(outdir / "fsm_path.xyz"), images, format="extxyz")
-
-    log.info(f"FSM done: {len(images)} images, Δ‡fwd = {result['barrier_fwd_kcal']:.2f} kcal/mol")
-    return result
+    return _assemble_string_result(drive, calculator_fn, charge, outdir, "fsm")
 
 
 def run_gsm(
@@ -188,65 +171,24 @@ def run_gsm(
     """
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-
+    log.info("GSM: %d target images, fmax=%s eV/Å", n_images, fmax)
     try:
-        from pysisyphus.cos.GrowingString import GrowingString
-        from pysisyphus.optimizers.StringOptimizer import StringOptimizer
+        geom_r = _atoms_to_pysis_geom(reactant)
+        geom_p = _atoms_to_pysis_geom(product)
     except ImportError as e:
-        log.error(f"  pysisyphus not available: {e}")
+        log.error("  pysisyphus not available: %s", e)
         return {"status": "failed", "error": str(e), "outputs": {}}
-
-    log.info(f"GSM: {n_images} target images, fmax={fmax}")
-    geom_r = _atoms_to_pysis_geom(reactant)
-    geom_p = _atoms_to_pysis_geom(product)
     calc_getter = _make_pysis_calc_getter(calculator_fn, charge=charge, mult=mult)
 
-    gs = GrowingString(
-        images=[geom_r, geom_p],
-        calc_getter=calc_getter,
-        max_nodes=n_images,
-    )
-    opt = StringOptimizer(
-        gs,
-        out_dir=str(outdir),
-        max_cycles=300,
-        thresh=_fmax_to_thresh(fmax),     # map eV/Å fmax -> pysisyphus preset
-    )
+    from quantum_engine.qm import pysis_string  # noqa: PLC0415
     try:
-        opt.run()
-        converged = opt.is_converged if hasattr(opt, "is_converged") else True
-    except Exception as e:
-        log.error(f"  GSM run failed: {e}")
+        drive = pysis_string.drive_growing_string(
+            geom_r, geom_p, calc_getter, max_nodes=n_images, fmax=fmax,
+            max_cycles=300, out_dir=outdir)
+    except Exception as e:  # noqa: BLE001
+        log.error("  GSM run failed: %s", e)
         return {"status": "failed", "error": str(e), "outputs": {}}
-
-    images = [_pysis_geom_to_ase(g, calc=calculator_fn(), charge=charge)
-              for g in gs.images]
-
-    energies = [float(img.get_potential_energy()) for img in images]
-    import numpy as np
-    ts_idx = int(np.argmax(energies[1:-1])) + 1 if len(energies) > 2 else 0
-
-    result = {
-        "status": "converged" if converged else "not_converged",
-        "images": images,
-        "ts": images[ts_idx],
-        "ts_idx": ts_idx,
-        "reactant": images[0],
-        "product": images[-1],
-        "energies_eV": energies,
-        "barrier_fwd_kcal": (energies[ts_idx] - energies[0]) * EV_TO_KCAL,
-        "barrier_rev_kcal": (energies[ts_idx] - energies[-1]) * EV_TO_KCAL,
-        "n_images_final": len(images),
-        "outputs": {
-            "path_xyz": str(outdir / "gsm_path.xyz"),
-        },
-    }
-
-    from ase.io import write as ase_write
-    ase_write(str(outdir / "gsm_path.xyz"), images, format="extxyz")
-
-    log.info(f"GSM done: {len(images)} images, Δ‡fwd = {result['barrier_fwd_kcal']:.2f} kcal/mol")
-    return result
+    return _assemble_string_result(drive, calculator_fn, charge, outdir, "gsm")
 
 
 def run(

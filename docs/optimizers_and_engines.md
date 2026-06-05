@@ -56,12 +56,14 @@ forbids) GFN2 on metals.
 | Method   | Aliases  | Type | When |
 |----------|----------|------|------|
 | `neb`    | `ci-neb` | double-ended | **default**; geodesic CI-NEB, robust on MLFFs |
-| `fsm`    | —        | double-ended | shallow/concerted/floppy where CI-NEB struggles |
-| `gsm-de` | `gsm`    | double-ended | smoother path at slightly higher cost |
+| `gsm-de` | `gsm`    | double-ended | Growing String — smoother path; works via the version-adaptive `qm/pysis_string.py` driver |
+| `fsm`    | —        | double-ended | Freezing String — **version-gated**: unsupported on pysisyphus where `FreezingString` isn't a `ChainOfStates`; returns a clear "use gsm-de/neb" status (auto-enables when a pysisyphus bump fixes it) |
 
-SE-GSM (reactant-only) and AutoNEB are planned (drop in via `register_path`).
-Path methods only PROPOSE a TS — the saddle+Hessian+overlap+IRC-like gate is the
-acceptance authority.
+The string methods (FSM/GSM) are driven through `quantum_engine/qm/pysis_string.py`,
+which **probes** the installed pysisyphus and isolates all version-specific glue —
+`capabilities()` reports what's available. SE-GSM (reactant-only) and AutoNEB are
+planned (drop in via `register_path`). Path methods only PROPOSE a TS — the
+saddle+Hessian+overlap+IRC-like gate is the acceptance authority.
 
 ## QM-native engines (`ts_entry` via `ctx.engine`, registry `ENGINES`)
 
