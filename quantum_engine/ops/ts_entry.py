@@ -153,6 +153,7 @@ def run(
     rigor: str = "standard",
     path_method: str | None = None,
     proposer: str | None = None,
+    refiner: str | None = None,
     saddle_backend: str | None = None,
     n_images: int | None = None,
     validate: bool | None = None,
@@ -177,6 +178,13 @@ def run(
             built-in ``"midpoint"``). When set, it replaces path search — the
             proposer suggests the TS guess directly, which is then refined +
             gated exactly as usual.
+        refiner: an optional TS-guess *refiner* name (e.g. ``"aefm"``, registered
+            via ``register_ts_refiner``). When set, the guess (from path search,
+            a proposer, or a ``ts-guess`` entry) is polished by the refiner BEFORE
+            saddle-refine. This is a non-critical stage: if the refiner is
+            unavailable or fails, the pipeline falls back to the un-refined guess
+            (a WARN gate) and continues — it can never break the run. Compose with
+            ``proposer`` for the React-OT → AEFM chain.
         template: optional biotite template (for ``RES:ID:NAME`` atom tokens).
         relax_endpoints: relax R/P to clean basins before pathing (recommended).
         monitor: attach a non-constraining bond/metal report to R/TS/P.
@@ -299,6 +307,31 @@ def run(
             tangent = None
         else:  # pragma: no cover - guarded above
             raise ValueError(entry)
+
+        # ---- optional ML guess refinement (e.g. AEFM) before saddle-refine ----
+        # A refiner polishes the guess; it is NON-critical — any failure (incl.
+        # the sidecar being absent) falls back to the un-refined guess so it can
+        # never break the run. The QM saddle+Hessian+IRC gate below is unchanged.
+        if refiner and ts_guess is not None:
+            from quantum_engine.ops import ts_refine  # noqa: PLC0415
+            with Step("ts_refine", outdir, params={"refiner": refiner}) as s:
+                try:
+                    ref = ts_refine.run(refiner, _stamp(ts_guess.copy(), ctx),
+                                        charge=ctx.charge, spin=ctx.spin,
+                                        reactant=R, product=P,
+                                        outdir=outdir / "refine_guess", **kwargs)
+                except Exception as exc:  # noqa: BLE001 — refiner is non-critical
+                    log.warning("ts_refine(%s) errored (%s) — using the un-refined "
+                                "guess", refiner, exc)
+                    ref = {"status": "failed", "error": str(exc),
+                           "ts_guess": None, "confidence": None}
+                s.record(status=ref.get("status"), confidence=ref.get("confidence"))
+            ok = ref.get("status") in ("converged", "completed")
+            report.add(Gate("ts_refine", "PASS" if ok else "WARN",
+                            detail=str(ref.get("status")), value=ref.get("confidence"),
+                            fallback="saddle-refine runs on the un-refined guess"))
+            if ok and ref.get("ts_guess") is not None:
+                ts_guess = ref.get("ts_guess")
 
         # ---- saddle-refine + active-region Hessian ----
         refine_res = None

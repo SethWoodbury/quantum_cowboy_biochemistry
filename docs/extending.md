@@ -181,6 +181,35 @@ cleanly (no crash). The built-in `midpoint` proposer (geodesic midpoint of R→P
 is a dependency-free reference + baseline. Note generative models are typically
 trained on gas-phase neutral organics (Transition1x) — out of domain for
 metal/charged active sites; the `atom_map` endpoint safeguard is reused here.
+Built-in: `midpoint` (reference); `react-ot` (gated → `deps/reactot_sidecar.def`).
+
+## 8. A new TS-guess refiner (ML structure refinement)
+
+Registry: `quantum_engine.ops.ts_refine.TS_REFINERS`. A *refiner* is the mirror of
+a proposer: it takes an EXISTING TS guess and returns a **better** one
+(`(ts_guess) -> ts_guess`), where a proposer makes a guess from scratch
+(`(R, P) -> ts_guess`). Separate axes keep each contract clean and let you compose
+them: `path search / proposer → refiner → saddle+Hessian+IRC gate` (e.g. the
+React-OT proposer → AEFM refiner chain). A refiner is a learned structure prior,
+**not** an optimizer — it computes no Hessian and guarantees no saddle — so the QM
+gate after it stays the authority; the refiner only improves the guess fed in.
+
+```python
+from quantum_engine.ops.ts_refine import register_ts_refiner
+
+@register_ts_refiner("my-refiner", aliases=("mine",))
+def _my_refiner(ts_guess, *, charge, spin, reactant, product, outdir, **kw):
+    # reactant/product are optional context (ignored by guess-only refiners).
+    better = my_model.refine(ts_guess)            # ONE improved 3D guess
+    return {"ts_guess": better, "confidence": 0.9, "status": "converged", "outputs": {}}
+```
+
+Use it: `ts_entry.run(..., refiner="my-refiner")` (optionally with `proposer=` for
+the chain). The refiner stage is **non-critical**: if it's unavailable or fails,
+the run logs a WARN gate and falls back to the un-refined guess — it can never
+break the pipeline. Built-in: `identity` (a no-op baseline — there is no sound
+dependency-free "refine toward a saddle"); `aefm` (gated → `deps/aefm_sidecar.def`).
+Same domain caveat as proposers (CHNO gas-phase organics; guarded in the adapter).
 
 ## Where the registries live (quick reference)
 
@@ -191,6 +220,7 @@ metal/charged active sites; the `atom_map` endpoint safeguard is reused here.
 | Saddle          | `ops.saddle.SADDLE_OPTIMIZERS`               | `register_saddle`  | `make_saddle_optimizer` / `saddle.run` |
 | Path            | `ops.path_search.PATH_METHODS`               | `register_path`    | `make_path_method` / `path_search.run` |
 | TS proposer     | `ops.ts_propose.TS_PROPOSERS`                | `register_ts_proposer` | `make_ts_proposer` / `ts_entry` (proposer=) |
+| TS refiner      | `ops.ts_refine.TS_REFINERS`                  | `register_ts_refiner` | `make_ts_refiner` / `ts_entry` (refiner=) |
 | IRC             | `ops.irc.IRC_METHODS`                         | `register_irc`     | `make_irc` / `irc.run`            |
 | QM engine       | `qm.engine.ENGINES`                          | `register_engine`  | `make_engine` / `ts_entry` (ctx.engine) |
 

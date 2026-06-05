@@ -286,13 +286,18 @@ NEEDS_GBG_VENV = {"mace-polar-s", "mace-polar-m", "mace-polar-l", "mace-polar"}
 GAUSSIAN_ROOT = "/net/software/gaussian/g16"
 GAUSSIAN_BIN = f"{GAUSSIAN_ROOT}/g16"
 
-# Generative TS models (run in their own sidecars — torch/e3nn stacks that
-# conflict with the main container). Open weights (not gated).
-#   React-OT  — Zenodo record 13131875 (reactot-pretrained.ckpt)
-#   AEFM      — Zenodo record 16414436
+# Generative TS models (run in their own sidecars — torch stacks that conflict
+# with the main container). Open weights (not gated).
+#   React-OT  — Zenodo record 13131875, file sb-pretrained.ckpt (downloaded)
+#   AEFM      — Zenodo record 16414436 (refiner; downloaded into aefm/)
 _GEN_TS_DIR = "/net/databases/huggingface/generative_ts_models"
-REACTOT_CKPT = f"{_GEN_TS_DIR}/react-ot/reactot-pretrained.ckpt"
+REACTOT_CKPT = f"{_GEN_TS_DIR}/react-ot/sb-pretrained.ckpt"
 AEFM_MODEL_DIR = f"{_GEN_TS_DIR}/aefm"
+# AEFM refiner checkpoints (downloaded from Zenodo 16414436). The default refines
+# a generic low-fidelity guess (e.g. an xTB CI-NEB / NEB peak); the *_reactot
+# variant is tuned to refine React-OT output (the React-OT → AEFM chain).
+AEFM_MODEL = f"{AEFM_MODEL_DIR}/aefm_xtb_ci_neb.pt"
+AEFM_MODEL_REACTOT = f"{AEFM_MODEL_DIR}/aefm_reactot.pt"
 
 # ORCA — locally installed at the cluster level, multiple versions:
 ORCA_BIN = "/net/software/orca/orca_4_1_1_linux_x86-64_openmpi313/orca"

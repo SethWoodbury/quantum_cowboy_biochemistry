@@ -1,0 +1,56 @@
+Bootstrap: docker
+From: condaforge/miniforge3:latest
+
+# AEFM generative-TS *refiner* sidecar (Darouich et al., JCIM 2025).
+#
+# AEFM's stack (schnetpack>2 + torch_geometric + torchdiffeq + e3nn, python 3.12)
+# conflicts with the main qcb container, so it runs here, invoked like the UMA /
+# React-OT sidecars:
+#   apptainer exec --nv --bind /home --bind /net aefm-<date>.sif \
+#     python -m quantum_engine.cli ts-entry --refiner aefm ...
+#
+# Build (user; container builds are not done from the agent):
+#   apptainer build --fakeroot aefm-$(date +%Y%m%d).sif deps/aefm_sidecar.def
+#
+# Weights: download an AEFM checkpoint from https://zenodo.org/records/16414436
+# into  /net/databases/huggingface/generative_ts_models/aefm/  (= site.AEFM_MODEL):
+#   aefm_xtb_ci_neb.pt  — refine a generic low-fidelity guess (NEB/GSM peak)  [default]
+#   aefm_reactot.pt     — refine React-OT output (the React-OT → AEFM chain)
+#
+# The adapter (quantum_engine/qm/aefm.py) drives AEFM's own `aefm_sample` CLI, so
+# this container only needs AEFM importable + that console script on PATH. The
+# CRITICAL footgun is the torch ↔ torch-scatter ↔ torch_geometric ↔ CUDA quad —
+# install the geometric companions from the wheel index that matches the torch +
+# CUDA you pick below, then validate one refine end-to-end here (it cannot be
+# exercised in the main container).
+
+%post
+    set -e
+    . /opt/conda/etc/profile.d/conda.sh
+    # AEFM is developed/tested on python 3.12 (README).
+    conda create -y -n aefm python=3.12
+    conda activate aefm
+    PIP="pip install --no-cache-dir"
+
+    # 1) torch FIRST (pick the build matching the target GPU/CUDA).
+    $PIP torch --index-url https://download.pytorch.org/whl/cu121
+    # 2) geometric companions MUST match the torch+CUDA above (edit the URL to match).
+    $PIP torch_geometric
+    $PIP torch-scatter -f https://data.pyg.org/whl/torch-2.4.0+cu121.html
+    # 3) AEFM + its declared deps (schnetpack>2, torchdiffeq, e3nn, pot, …).
+    cd /opt && git clone https://github.com/samirdarouich/AEFM.git
+    cd /opt/AEFM && $PIP -e .
+
+%environment
+    export PYTHONNOUSERSITE=1
+    # make the `aefm` conda env the default python for `apptainer exec`
+    export PATH=/opt/conda/envs/aefm/bin:$PATH
+
+%runscript
+    exec /opt/conda/envs/aefm/bin/python "$@"
+
+%test
+    . /opt/conda/etc/profile.d/conda.sh && conda activate aefm
+    python -c "import aefm; from aefm.sampler import AEFMSampler; print('aefm OK')"
+    python -c "import shutil; assert shutil.which('aefm_sample'), 'aefm_sample not on PATH'; print('aefm_sample OK')"
+    python -c "import torch, torch_geometric, schnetpack; print('deps OK', torch.__version__)"

@@ -1271,7 +1271,8 @@ def _cmd_ts_entry(args):
         spec, ctx, entry=args.entry, outdir=outdir,
         reactant=geoms.get("reactant"), product=geoms.get("product"),
         ts_guess=geoms.get("ts_guess"), template=template, rigor=args.rigor,
-        path_method=args.path_method, saddle_backend=args.saddle_backend,
+        path_method=args.path_method, proposer=args.proposer, refiner=args.refiner,
+        saddle_backend=args.saddle_backend,
         n_images=args.n_images, validate=args.validate,
         cv_product_s=args.cv_product_s,
         execute=args.execute)   # QM-native engine: prepare-only when --no-execute
@@ -1866,6 +1867,13 @@ def main(argv=None):
                        choices=["draft", "standard", "publication"])
     p_tse.add_argument("--path-method", default=None,
                        help="Override path method (neb/fsm/gsm-de).")
+    p_tse.add_argument("--proposer", default=None,
+                       help="reactant-product: use a TS-guess proposer instead of "
+                            "path search (midpoint / react-ot[sidecar]).")
+    p_tse.add_argument("--refiner", default=None,
+                       help="Optional ML refinement of the TS guess before saddle "
+                            "(identity / aefm[sidecar]); non-critical, falls back "
+                            "to the un-refined guess. Compose with --proposer.")
     p_tse.add_argument("--saddle-backend", default=None,
                        help="Override saddle backend (sella/dimer/auto/...).")
     p_tse.add_argument("--n-images", type=int, default=None)
