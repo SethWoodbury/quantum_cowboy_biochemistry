@@ -38,7 +38,9 @@ import os, shutil, sys
 from huggingface_hub import hf_hub_download
 repo, src, dest = sys.argv[1], sys.argv[2], sys.argv[3]
 os.makedirs(os.path.dirname(dest), exist_ok=True)
-p = hf_hub_download(repo_id=repo, filename=src, token=os.environ.get("HF_TOKEN"))
+# HF_TOKEN env wins; otherwise use the token cached by `huggingface-cli login`.
+p = hf_hub_download(repo_id=repo, filename=src,
+                    token=os.environ.get("HF_TOKEN") or True)
 shutil.copy(p, dest)
 print("  ok:", dest, os.path.getsize(dest), "bytes")
 PY
