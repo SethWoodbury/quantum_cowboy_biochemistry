@@ -37,11 +37,21 @@ for dest_rel in "${!MODELS[@]}"; do
 import os, shutil, sys
 from huggingface_hub import hf_hub_download
 repo, src, dest = sys.argv[1], sys.argv[2], sys.argv[3]
-os.makedirs(os.path.dirname(dest), exist_ok=True)
-# HF_TOKEN env wins; otherwise use the token cached by `huggingface-cli login`.
-p = hf_hub_download(repo_id=repo, filename=src,
+dest_dir = os.path.dirname(dest)
+os.makedirs(dest_dir, exist_ok=True)
+# Download STRAIGHT into the (writable) destination dir via local_dir — the
+# central HF cache ($HF_HOME/hub = /net/databases/huggingface/hub) is read-only
+# here. HF_TOKEN env wins; else the token cached by `huggingface-cli login`.
+p = hf_hub_download(repo_id=repo, filename=src, local_dir=dest_dir,
                     token=os.environ.get("HF_TOKEN") or True)
-shutil.copy(p, dest)
+# local_dir preserves the repo subpath (…/checkpoints/<f>); flatten to dest.
+if os.path.abspath(p) != os.path.abspath(dest):
+    shutil.move(p, dest)
+    # tidy the now-empty repo subdirs + the local_dir bookkeeping
+    sub = os.path.dirname(p)
+    while os.path.abspath(sub) != os.path.abspath(dest_dir) and os.path.isdir(sub) and not os.listdir(sub):
+        os.rmdir(sub); sub = os.path.dirname(sub)
+    shutil.rmtree(os.path.join(dest_dir, ".cache"), ignore_errors=True)
 print("  ok:", dest, os.path.getsize(dest), "bytes")
 PY
 done
