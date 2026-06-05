@@ -82,6 +82,17 @@ def _midpoint(reactant: Atoms, product: Atoms, *, charge: int, spin: int,
 register_ts_proposer("midpoint", _midpoint, aliases=("geodesic-mid",))
 
 
+def _react_ot(reactant: Atoms, product: Atoms, *, charge, spin, atom_map, outdir,
+              **kwargs) -> dict:
+    """React-OT generative proposer (gated — lives in its own sidecar)."""
+    from quantum_engine.qm import reactot  # noqa: PLC0415
+    return reactot.run(reactant, product, charge=charge, spin=spin,
+                       atom_map=atom_map, outdir=outdir, **kwargs)
+
+
+register_ts_proposer("react-ot", _react_ot, aliases=("reactot",))
+
+
 def run(method: str, reactant: Atoms, product: Atoms, *, charge: int = 0,
         spin: int = 1, atom_map: dict | None = None, outdir: str | Path = ".",
         check_endpoints: bool = True, **kwargs) -> dict:

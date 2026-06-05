@@ -1,0 +1,36 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
+
+# React-OT generative-TS sidecar (DeepPrinciple).
+#
+# React-OT's stack (torch + e3nn + LEFTNet + pytorch-lightning) conflicts with
+# the main qcb container, so it runs here, invoked like the UMA sidecar:
+#   apptainer exec --nv --bind /home --bind /net reactot-<date>.sif \
+#     python -m quantum_engine.cli ts-entry --proposer react-ot ...
+#
+# Build (user; container builds are not done from the agent):
+#   apptainer build --fakeroot reactot-$(date +%Y%m%d).sif deps/reactot_sidecar.def
+#
+# Weights: download reactot-pretrained.ckpt from https://zenodo.org/records/13131875
+# into  /net/databases/huggingface/generative_ts_models/react-ot/  (= site.REACTOT_CKPT).
+#
+# NOTE: pin the versions React-OT's repo specifies (requirements.txt /
+# environment.yml) — the ones below are a starting point and should be matched to
+# the repo, then the adapter's batch-construction in quantum_engine/qm/reactot.py
+# validated end-to-end here (it cannot be exercised in the main container).
+
+%post
+    set -e
+    PIP="pip install --no-cache-dir"
+    $PIP ase>=3.23 numpy scipy
+    $PIP e3nn pytorch-lightning torch-geometric
+    # React-OT itself (object-aware LEFTNet TS generator)
+    cd /opt && git clone https://github.com/deepprinciple/react-ot.git
+    cd /opt/react-ot && $PIP -e .
+
+%environment
+    export PYTHONNOUSERSITE=1
+
+%test
+    python -c "from reactot.trainer.pl_trainer import SBModule; print('reactot OK')"
+    python -c "import torch, e3nn, ase; print('deps OK', torch.__version__)"

@@ -24,6 +24,18 @@ def test_make_ts_proposer_unknown_raises():
         ts_propose.make_ts_proposer("nope")
 
 
+def test_react_ot_registered_and_gated():
+    """react-ot is registered; when React-OT isn't installed (the main container),
+    it raises a clean ImportError naming the sidecar — never a cryptic error."""
+    assert "react-ot" in ts_propose.TS_PROPOSERS.names()
+    assert ts_propose.make_ts_proposer("reactot").__name__ == "_react_ot"
+    from quantum_engine.qm.reactot import reactot_available
+    if reactot_available()[0]:
+        pytest.skip("React-OT is installed in this environment")
+    with pytest.raises(ImportError, match="sidecar|React-OT"):
+        ts_propose.run("react-ot", _mol(), _mol(), charge=0, spin=1)
+
+
 def test_register_ts_proposer_extensibility():
     built = {}
 

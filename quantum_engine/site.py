@@ -286,6 +286,14 @@ NEEDS_GBG_VENV = {"mace-polar-s", "mace-polar-m", "mace-polar-l", "mace-polar"}
 GAUSSIAN_ROOT = "/net/software/gaussian/g16"
 GAUSSIAN_BIN = f"{GAUSSIAN_ROOT}/g16"
 
+# Generative TS models (run in their own sidecars — torch/e3nn stacks that
+# conflict with the main container). Open weights (not gated).
+#   React-OT  — Zenodo record 13131875 (reactot-pretrained.ckpt)
+#   AEFM      — Zenodo record 16414436
+_GEN_TS_DIR = "/net/databases/huggingface/generative_ts_models"
+REACTOT_CKPT = f"{_GEN_TS_DIR}/react-ot/reactot-pretrained.ckpt"
+AEFM_MODEL_DIR = f"{_GEN_TS_DIR}/aefm"
+
 # ORCA — locally installed at the cluster level, multiple versions:
 ORCA_BIN = "/net/software/orca/orca_4_1_1_linux_x86-64_openmpi313/orca"
 ORCA_VERSIONS = {
