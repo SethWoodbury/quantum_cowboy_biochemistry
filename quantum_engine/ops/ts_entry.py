@@ -248,7 +248,8 @@ def run(
                 pth = path_search.run(path_method, _stamp(R.copy(), ctx),
                                       _stamp(P.copy(), ctx), _calc_fn(ctx),
                                       outdir=outdir / "path", charge=ctx.charge,
-                                      n_images=n_images)
+                                      n_images=n_images,
+                                      atom_map=getattr(resolved.spec, "atom_map", None))
                 s.record(status=pth.get("status"),
                          barrier_fwd_kcal=pth.get("barrier_fwd_kcal"))
             pstatus = "PASS" if pth.get("status") in ("converged", "completed", "cached") else "WARN"

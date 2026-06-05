@@ -241,24 +241,58 @@ class BondDifferenceCVSpring:
                 f"k={self.k}, s_target={self.s_target:.2f}, mode={self.mode})")
 
 
+# Per-reaction-class CV-target HEURISTICS for the bond-difference coordinate
+# s = |r_P - r_LG| - |r_P - r_nuc| (Å). These are rough endpoint-GENERATION
+# guesses for a reaction class, NOT universal truths and NOT acceptance criteria
+# — always verify with a quick scan. Add a class by adding an entry here; the
+# pipeline never assumes one silently.
+CV_TARGET_HEURISTICS: dict[str, tuple[float, float]] = {
+    # OPAA / PTE di-Zn phosphotriesterase test case (SN2-at-phosphorus)
+    "sn2-at-phosphorus": (-2.0, 2.5),
+    # symmetric backside SN2 at carbon (e.g. Cl- + CH3Cl)
+    "sn2-at-carbon": (-1.8, 1.8),
+}
+
+
 def suggest_cv_targets(
     reactant_s: float | None = None,
     product_s: float | None = None,
+    *,
+    reaction_type: str | None = None,
 ) -> tuple[float, float]:
-    """Suggest sensible CV targets for reactant and product.
+    """Resolve bond-difference CV targets for endpoint generation.
 
-    If you have an estimate of what s should be at the reactant and product
-    (e.g., from experience or from running a quick scan), use those.
-    Otherwise, defaults based on typical SN2-at-P geometries are returned.
+    Precedence: explicit ``reactant_s``/``product_s`` win; otherwise a
+    ``reaction_type`` heuristic (see :data:`CV_TARGET_HEURISTICS`) fills the gaps.
+    With NEITHER an explicit value NOR a ``reaction_type``, this RAISES — there is
+    no silent reaction-specific default (the old ``-2.0/+2.5`` were SN2-at-P
+    heuristics and are now only returned for ``reaction_type="sn2-at-phosphorus"``).
 
     Args:
-        reactant_s: Expected CV value at reactant. Default: -2.0 Å
-        product_s: Expected CV value at product. Default: +2.5 Å
+        reactant_s / product_s: explicit CV targets (Å). Either or both.
+        reaction_type: a key of :data:`CV_TARGET_HEURISTICS` to fill any unset
+            target with that class's heuristic.
 
     Returns:
-        (s_reactant, s_product) tuple
+        ``(s_reactant, s_product)``.
+
+    Raises:
+        ValueError: if a target is unset and no (valid) ``reaction_type`` supplies it.
     """
-    return (
-        reactant_s if reactant_s is not None else -2.0,
-        product_s if product_s is not None else 2.5,
-    )
+    r, p = reactant_s, product_s
+    if reaction_type is not None:
+        key = reaction_type.lower()
+        if key not in CV_TARGET_HEURISTICS:
+            raise ValueError(
+                f"unknown reaction_type {reaction_type!r}; known: "
+                f"{sorted(CV_TARGET_HEURISTICS)} — or pass explicit "
+                f"reactant_s + product_s.")
+        hr, hp = CV_TARGET_HEURISTICS[key]
+        r = hr if r is None else r
+        p = hp if p is None else p
+    if r is None or p is None:
+        raise ValueError(
+            "suggest_cv_targets: pass explicit reactant_s AND product_s, or a "
+            f"reaction_type (known: {sorted(CV_TARGET_HEURISTICS)}). No "
+            "reaction-specific default is assumed — run a quick scan if unsure.")
+    return (float(r), float(p))

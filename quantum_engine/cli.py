@@ -1186,27 +1186,41 @@ def _cmd_ts(args):
             fix_mask &= ~free_mask
         constraint = build_fix_atoms(fix_mask)
 
-    # Auto-detect CV atoms from ligand bond-breaking defs (if ligand known)
+    # CONVENIENCE ONLY: auto-detect CV atoms from a KNOWN ligand's reference
+    # bond-breaking defs (data/ligand_bonds.py). This is a shortcut for a handful
+    # of curated ligands, not a general mechanism — for any other reaction pass
+    # --p-idx/--nuc-idx/--lg-idx explicitly (or a ReactionSpec). When a ligand IS
+    # named, a mismatch is an explicit error, never a silent None.
     p_idx = nuc_idx = lg_idx = None
     if ligand_name and bt_struct is not None:
-        try:
-            from quantum_engine.data import BOND_BREAKING_DEFS
-            if ligand_name in BOND_BREAKING_DEFS:
-                defs = BOND_BREAKING_DEFS[ligand_name]
-                nuc_name = next((d[1] for d in defs if d[3] == "attractive"), None)
-                lg_name = next((d[1] for d in defs if d[3] == "repulsive"), None)
-                p_name = defs[0][0]
-                try:
-                    p_idx = int(np.where((bt_struct.res_name == ligand_name) &
-                                          (bt_struct.atom_name == p_name))[0][0])
-                    nuc_idx = int(np.where((bt_struct.res_name == ligand_name) &
-                                            (bt_struct.atom_name == nuc_name))[0][0])
-                    lg_idx = int(np.where((bt_struct.res_name == ligand_name) &
-                                           (bt_struct.atom_name == lg_name))[0][0])
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        _log = logging.getLogger("quantum_engine.cli")
+        from quantum_engine.data import BOND_BREAKING_DEFS
+        if ligand_name not in BOND_BREAKING_DEFS:
+            _log.warning(
+                "ligand %r is not a known convenience ligand (data/ligand_bonds.py: "
+                "%s) — not auto-detecting CV atoms; pass --p-idx/--nuc-idx/--lg-idx "
+                "explicitly for this reaction.", ligand_name,
+                sorted(BOND_BREAKING_DEFS))
+        else:
+            defs = BOND_BREAKING_DEFS[ligand_name]
+            nuc_name = next((d[1] for d in defs if d[3] == "attractive"), None)
+            lg_name = next((d[1] for d in defs if d[3] == "repulsive"), None)
+            p_name = defs[0][0]
+
+            def _find(atom_name):
+                hits = np.where((bt_struct.res_name == ligand_name) &
+                                (bt_struct.atom_name == atom_name))[0]
+                if len(hits) == 0:
+                    raise SystemExit(
+                        f"qcb ts: ligand {ligand_name!r} is known but atom "
+                        f"{atom_name!r} was not found in the structure. The "
+                        "convenience defs don't match this input — pass "
+                        "--p-idx/--nuc-idx/--lg-idx explicitly.")
+                return int(hits[0])
+
+            p_idx, nuc_idx, lg_idx = _find(p_name), _find(nuc_name), _find(lg_name)
+            _log.info("auto-detected CV atoms for ligand %s: P=%d nuc=%d lg=%d",
+                      ligand_name, p_idx, nuc_idx, lg_idx)
 
     # CLI override of CV indices
     if getattr(args, "p_idx", None) is not None:

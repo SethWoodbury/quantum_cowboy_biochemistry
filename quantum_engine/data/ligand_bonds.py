@@ -1,20 +1,24 @@
-"""Default bond-breaking definitions per ligand 3-letter code.
+"""OPTIONAL reference bond-breaking definitions, keyed by ligand 3-letter code.
 
-For each known ligand in the Baker-lab phosphoesterase / hydrolase
-pipelines, this dict gives a list of ``(atom_a, atom_b, target_distance_A,
-direction)`` tuples that drive endpoint-generation for NEB / TS searches.
+This is a CONVENIENCE lookup, NOT a required part of the pipeline. It lets the
+``qcb ts`` CLI auto-fill the CV atoms for a handful of curated ligands so you
+don't have to type ``--p-idx/--nuc-idx/--lg-idx``. For ANY other reaction, the
+pipeline does not consult this file — you specify the reactive atoms directly
+(CLI flags or a ``ReactionSpec``), and ``ts_entry`` / ``scan_modes`` /
+``cv_spring`` work entirely from those. Nothing here is hardcoded into the TS
+search; it's reference data you can ignore, extend, or delete.
 
+Each entry is a list of ``(atom_a, atom_b, target_distance_A, direction)``:
 * ``direction = "attractive"`` — bond shortens (nucleophile forms bond)
 * ``direction = "repulsive"`` — bond lengthens (leaving group dissociates)
 
-These are *default* targets. ``get_smart_bond_targets()`` in
-:mod:`quantum_engine.qm.endpoints` (or the legacy
-``tools/legacy/run_neb_ts.py``) overrides them with covalent-radii-based
-values when ``--endpoint-method auto`` is used.
+These are rough *default* targets; covalent-radii-based auto-targets override
+them when an ``auto`` endpoint method is used.
 
-Adding a new ligand: drop a new key here. Convention: 3-letter PDB
-ligand code, atom names match the ligand's HETATM entries. Tests
-should reference the ligand by code, not by repeating the bond list.
+Adding a ligand: drop a new key here. Convention: 3-letter PDB code; atom names
+match the ligand's HETATM entries. The set spans more than the OPAA/PTE test
+case — see the non-PTE examples below — and is meant to grow as a shared,
+reaction-agnostic reference, not to encode any single system.
 """
 
 BOND_BREAKING_DEFS: dict[str, list[tuple[str, str, float, str]]] = {
@@ -43,9 +47,22 @@ BOND_BREAKING_DEFS: dict[str, list[tuple[str, str, float, str]]] = {
         ("P1", "O3", 1.4, "attractive"),
         ("P1", "O7", 3.5, "repulsive"),
     ],
-    # ─── Non-PTE ───
+    # ─── Non-PTE examples (this table is reaction-agnostic reference data) ───
     "PT4": [
         ("C7", "C8", 2.5, "repulsive"),
         ("C7", "C5", 1.4, "attractive"),
+    ],
+    # Generic SN2-at-carbon, e.g. an alkyl halide: nucleophile forms C-Nu while
+    # the C-X leaving-group bond breaks. Atom names are placeholders — adjust to
+    # your residue's HETATM names.
+    "MCL": [
+        ("C1", "NU", 1.5, "attractive"),   # nucleophile attacks carbon
+        ("C1", "CL", 2.6, "repulsive"),    # halide leaves
+    ],
+    # Generic carboxylic-ester hydrolysis (acyl C attacked by water O, alkoxy
+    # leaving group departs).
+    "EST": [
+        ("C1", "OW", 1.4, "attractive"),   # water oxygen forms bond to carbonyl C
+        ("C1", "O2", 2.4, "repulsive"),    # alkoxy/leaving oxygen departs
     ],
 }
