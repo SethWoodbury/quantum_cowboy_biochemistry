@@ -78,53 +78,123 @@ def _require() -> None:
 
 
 # --------------------------------------------------------------------------
-# ASE <-> pysisyphus glue
+# ASE <-> pysisyphus glue (UNIT-RIGOROUS — see units note below)
 # --------------------------------------------------------------------------
-def _atoms_to_geom(atoms: Atoms, coord_type: str = "cart"):
-    """Build a fresh pysisyphus :class:`Geometry` from an ASE ``Atoms``.
+# pysisyphus is atomic-units throughout: a :class:`Geometry` stores cartesian
+# coordinates in BOHR (its constructor does NOT convert — whatever you pass is
+# treated as bohr), and calculators are called with coords in BOHR and must
+# return energy in HARTREE and forces in HARTREE/BOHR. ASE is Å / eV / (eV/Å).
+# We therefore convert at BOTH boundaries:
+#   * ASE positions (Å)  -> Geometry coords:  × ANG2BOHR
+#   * pysisyphus coords (bohr) -> ASE atoms:   × BOHR2ANG
+#   * ASE energy (eV)   -> pysisyphus:         × (1/AU2EV)
+#   * ASE forces (eV/Å) -> pysisyphus:         × EVANG2AUBOHR  (= 0.019447)
+#   * fmax threshold (eV/Å) -> nearest named ``thresh`` preset (see _fmax_to_thresh)
+# This is shared by the saddle backends here AND ops/gsm.py (one adapter, no
+# divergence). Getting the model Hessians / trust radii / Gaussian thresholds
+# right requires the coords/energy/forces to be in genuine atomic units.
 
-    Coords go in flat angstrom; pysisyphus stores them internally as bohr,
-    but :class:`Geometry` itself works in angstrom unless ``coord_type='mwcartesian'``.
-    """
+def _atoms_to_geom(atoms: Atoms, coord_type: str = "cart"):
+    """Build a fresh pysisyphus :class:`Geometry` (BOHR) from an ASE ``Atoms`` (Å)."""
     from pysisyphus.Geometry import Geometry
+    from pysisyphus.constants import ANG2BOHR
     return Geometry(
         atoms.get_chemical_symbols(),
-        atoms.get_positions().flatten(),
+        atoms.get_positions().flatten() * ANG2BOHR,   # Å -> bohr
         coord_type=coord_type,
     )
 
 
-def _make_pysis_calc(ase_calc, *, charge: int = 0, mult: int = 1):
-    """Wrap an ASE ``Calculator`` so pysisyphus can call it.
+# pysisyphus optimizers take a NAMED convergence preset (``thresh=``), not a
+# scalar force tolerance — there is no ``max_force_thresh`` kwarg. We therefore
+# map the caller's fmax (eV/Å) to the preset whose max-force criterion (in
+# hartree/bohr) is multiplicatively closest. Presets (max_force, hartree/bohr):
+_PYSIS_THRESH_PRESETS: tuple[tuple[str, float], ...] = (
+    ("gau_vtight", 2.0e-6),
+    ("gau_tight", 1.5e-5),
+    ("baker", 3.0e-4),
+    ("gau", 4.5e-4),
+    ("gau_loose", 2.5e-3),
+    ("nwchem_loose", 4.5e-3),
+)
 
-    pysisyphus calculators expose ``get_energy`` / ``get_forces`` /
-    ``get_hessian`` over ``(atom_symbols, flat_bohr_coords)``. ASE works in
-    angstrom — we convert at the boundary.
+
+def _fmax_to_thresh(fmax_ev_ang: float) -> str:
+    """Map an fmax in eV/Å to the closest pysisyphus ``thresh`` preset name."""
+    from pysisyphus.constants import EVANG2AUBOHR
+    target_au = max(float(fmax_ev_ang) * EVANG2AUBOHR, 1e-12)
+    log_t = np.log(target_au)
+    name, _ = min(_PYSIS_THRESH_PRESETS,
+                  key=lambda kv: abs(np.log(kv[1]) - log_t))
+    return name
+
+
+_ASE_PYSIS_CALC_CLS = None
+
+
+def _import_pysis_calculator_base():
+    """Import pysisyphus's base ``Calculator`` class robustly.
+
+    ``pysisyphus.calculators.__init__`` eagerly imports EVERY calculator,
+    including ``Remote`` → ``paramiko`` → ``cryptography``. That paramiko import
+    fails with a spurious ``cryptography InternalError: Unknown OpenSSL error``
+    whenever another already-loaded library (e.g. torch/MACE in a normal MLFF
+    run) has left the OpenSSL error stack dirty. We don't need any of the remote
+    calculators, so on failure we load ``Calculator.py`` directly from disk,
+    bypassing the package ``__init__`` (its own imports are paramiko-free).
     """
-    _require()
-    from pysisyphus.calculators.Calculator import Calculator
-    from pysisyphus.constants import BOHR2ANG
+    try:
+        from pysisyphus.calculators.Calculator import Calculator
+        return Calculator
+    except Exception as exc:  # noqa: BLE001 — paramiko/OpenSSL flakiness, etc.
+        log.debug("pysisyphus.calculators package import failed (%s); loading "
+                  "Calculator.py directly", exc)
+    import importlib.util
+    import pysisyphus
+    calc_py = Path(pysisyphus.__file__).resolve().parent / "calculators" / "Calculator.py"
+    spec = importlib.util.spec_from_file_location(
+        "quantum_engine._pysis_calculator_base", str(calc_py))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.Calculator
 
-    class _AseCalc(Calculator):
-        def __init__(self):
+
+def _ase_pysis_calc_cls():
+    """Lazily build (once) the shared ASE→pysisyphus Calculator class.
+
+    Defined inside a function so ``import quantum_engine.qm.pysisyphus`` does not
+    require pysisyphus to be importable (only *using* the adapter does).
+    """
+    global _ASE_PYSIS_CALC_CLS
+    if _ASE_PYSIS_CALC_CLS is not None:
+        return _ASE_PYSIS_CALC_CLS
+    _require()
+    Calculator = _import_pysis_calculator_base()
+    from pysisyphus.constants import AU2EV, BOHR2ANG, EVANG2AUBOHR
+    _ev2au = 1.0 / AU2EV
+
+    class AsePysisCalculator(Calculator):
+        """ASE calculator behind pysisyphus's atomic-unit calc interface."""
+
+        def __init__(self, ase_calc, *, charge: int = 0, mult: int = 1):
             super().__init__(charge=charge, mult=mult)
             self.ase_calc = ase_calc
+            self._charge = int(charge)
 
         def _eval(self, atom_symbols, coords_bohr):
             from ase import Atoms as _Atoms
-            positions = np.asarray(coords_bohr).reshape(-1, 3) * BOHR2ANG
-            a = _Atoms(symbols=list(atom_symbols), positions=positions)
+            positions_ang = np.asarray(coords_bohr, dtype=float).reshape(-1, 3) * BOHR2ANG
+            # pysisyphus normalises element symbols to lowercase ('o','cl');
+            # ASE needs proper case ('O','Cl'). str.capitalize handles 1- and
+            # 2-letter symbols correctly.
+            symbols = [str(s).capitalize() for s in atom_symbols]
+            a = _Atoms(symbols=symbols, positions=positions_ang)
             a.calc = self.ase_calc
-            a.info["charge"] = charge
+            a.info["charge"] = self._charge
             energy_ev = float(a.get_potential_energy())
-            forces_ev_per_a = a.get_forces()
-            # Convert to pysisyphus units: hartree, hartree/bohr.
-            # pysisyphus *also* internally treats forces in hartree/bohr and
-            # energy in hartree, but its ASE bridge (FakeASE) just keeps the
-            # numbers consistent. For our purposes we keep eV / (eV/Å) — Sella
-            # / RS-P-RFO only care that the energy and gradient are
-            # *consistent*, not their absolute units.
-            return energy_ev, forces_ev_per_a
+            forces_eva = np.asarray(a.get_forces(), dtype=float)
+            # -> hartree, hartree/bohr
+            return energy_ev * _ev2au, forces_eva * EVANG2AUBOHR
 
         def get_energy(self, atoms, coords, **kw):
             energy, _ = self._eval(atoms, coords)
@@ -134,7 +204,32 @@ def _make_pysis_calc(ase_calc, *, charge: int = 0, mult: int = 1):
             energy, forces = self._eval(atoms, coords)
             return {"energy": energy, "forces": forces.flatten()}
 
-    return _AseCalc()
+    _ASE_PYSIS_CALC_CLS = AsePysisCalculator
+    return _ASE_PYSIS_CALC_CLS
+
+
+def make_pysis_calc(ase_calc, *, charge: int = 0, mult: int = 1):
+    """Wrap a single ASE ``Calculator`` for pysisyphus (atomic-unit boundary)."""
+    return _ase_pysis_calc_cls()(ase_calc, charge=charge, mult=mult)
+
+
+def make_pysis_calc_getter(calc_fn, *, charge: int = 0, mult: int = 1):
+    """Return a zero-arg ``calc_getter`` yielding a FRESH adapter per call.
+
+    pysisyphus string methods (FSM/GSM) instantiate one calculator per image;
+    ``calc_fn`` is the QCB per-image ASE-calculator factory.
+    """
+    cls = _ase_pysis_calc_cls()
+
+    def calc_getter():
+        return cls(calc_fn(), charge=charge, mult=mult)
+
+    return calc_getter
+
+
+def _make_pysis_calc(ase_calc, *, charge: int = 0, mult: int = 1):
+    """Back-compat shim — prefer :func:`make_pysis_calc`."""
+    return make_pysis_calc(ase_calc, charge=charge, mult=mult)
 
 
 # --------------------------------------------------------------------------
@@ -182,8 +277,7 @@ def rsprfo_ts(
     opt = RSPRFOptimizer(
         geom,
         max_cycles=max_steps,
-        thresh="gau",                     # let pysisyphus map fmax via its own tol
-        max_force_thresh=fmax,
+        thresh=_fmax_to_thresh(fmax),     # map eV/Å fmax -> pysisyphus preset
         hessian_init=hessian_init,
         out_dir=str(outdir),
     )
@@ -279,8 +373,7 @@ def dimer_ts(
     opt = PreconLBFGS(
         geom,
         max_cycles=max_steps,
-        max_force_thresh=fmax,
-        thresh="gau",
+        thresh=_fmax_to_thresh(fmax),     # map eV/Å fmax -> pysisyphus preset
         out_dir=str(outdir),
     )
     opt.run()

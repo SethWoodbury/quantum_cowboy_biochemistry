@@ -35,7 +35,6 @@ from quantum_engine.units import EV_TO_KCAL
 
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Callable
 
@@ -44,51 +43,40 @@ from ase import Atoms
 log = logging.getLogger("quantum_engine.ops.gsm")
 
 
-# Add pysisyphus to path (installed as a git submodule under deps/)
-_PYSIS_PATH = Path(__file__).resolve().parents[2] / "deps" / "pysisyphus"
-if _PYSIS_PATH.exists() and str(_PYSIS_PATH) not in sys.path:
-    sys.path.insert(0, str(_PYSIS_PATH))
+# NB: pysisyphus path resolution is handled ONCE, correctly, by
+# quantum_engine.qm.pysisyphus._ensure_pysisyphus_on_path() (imported below) —
+# it prefers an INSTALLED pysisyphus and only falls back to the vendored
+# deps/pysisyphus when none is installed. We deliberately do NOT insert the
+# vendored copy here: doing so unconditionally shadowed the working installed
+# package with the incomplete vendored tree (missing the generated version.py),
+# which made FSM/GSM silently fail with "pysisyphus not available".
+
+# Unit-correct ASE<->pysisyphus glue lives in ONE place (qm/pysisyphus.py) and is
+# shared by the saddle backends AND the string methods here — no divergence. See
+# the units note there: pysisyphus is atomic-units throughout (bohr / hartree /
+# hartree-per-bohr), so geometries go in as bohr and forces come back converted.
+from quantum_engine.qm.pysisyphus import (  # noqa: E402
+    _atoms_to_geom as _atoms_to_pysis_geom,
+    _fmax_to_thresh,
+    make_pysis_calc_getter as _make_pysis_calc_getter,
+)
 
 
-def _atoms_to_pysis_geom(atoms: Atoms):
-    """Convert ASE Atoms to a pysisyphus Geometry."""
-    from pysisyphus.Geometry import Geometry
-    return Geometry(
-        atoms.get_chemical_symbols(),
-        atoms.get_positions().flatten(),
-    )
+def _pysis_geom_to_ase(g, calc=None, charge: int = 0) -> Atoms:
+    """Final pysisyphus Geometry -> ASE Atoms: coords bohr->Å, symbols re-cased.
 
-
-def _make_pysis_calc_getter(calc_fn: Callable, charge: int = 0):
-    """Build a pysisyphus calc_getter: zero-arg callable returning a fresh Calculator.
-
-    pysisyphus expects calc_getter() to return a new Calculator instance each call
-    (one per image) to avoid shared-state issues.
+    pysisyphus stores element symbols lowercase and coordinates in bohr.
     """
-    from pysisyphus.calculators.Calculator import Calculator
-
-    class _AsePysisCalc(Calculator):
-        def __init__(self):
-            super().__init__(charge=charge, mult=1)
-            self.ase_calc = calc_fn()
-
-        def get_forces(self, atoms, coords):
-            from ase import Atoms as _Atoms
-            ase = _Atoms(symbols=atoms, positions=coords.reshape(-1, 3))
-            ase.calc = self.ase_calc
-            ase.info["charge"] = charge
-            return {
-                "energy": ase.get_potential_energy(),
-                "forces": ase.get_forces().flatten(),
-            }
-
-        def get_energy(self, atoms, coords):
-            return {"energy": self.get_forces(atoms, coords)["energy"]}
-
-    def calc_getter():
-        return _AsePysisCalc()
-
-    return calc_getter
+    import numpy as np
+    from pysisyphus.constants import BOHR2ANG
+    n = len(g.atoms)
+    positions = np.asarray(g.coords, dtype=float).reshape(n, 3) * BOHR2ANG
+    symbols = [str(s).capitalize() for s in g.atoms]
+    a = Atoms(symbols=symbols, positions=positions)
+    if calc is not None:
+        a.calc = calc
+    a.info["charge"] = charge
+    return a
 
 
 def run_fsm(
@@ -97,6 +85,7 @@ def run_fsm(
     calculator_fn: Callable,
     outdir: str | Path = ".",
     charge: int = 0,
+    mult: int = 1,
     n_images: int = 15,
     fmax: float = 0.05,
     max_nodes: int = 30,
@@ -109,8 +98,9 @@ def run_fsm(
         calculator_fn: zero-arg callable returning a fresh ASE calculator
         outdir: output directory
         charge: system charge
+        mult: spin multiplicity (2S+1) — threaded to the pysisyphus calc
         n_images: target number of images in the final path
-        fmax: convergence criterion on orthogonal force
+        fmax: convergence criterion on orthogonal force (eV/Å)
         max_nodes: safety cap on node additions
     """
     outdir = Path(outdir)
@@ -126,7 +116,7 @@ def run_fsm(
     log.info(f"FSM: {n_images} target images, fmax={fmax}")
     geom_r = _atoms_to_pysis_geom(reactant)
     geom_p = _atoms_to_pysis_geom(product)
-    calc_getter = _make_pysis_calc_getter(calculator_fn, charge)
+    calc_getter = _make_pysis_calc_getter(calculator_fn, charge=charge, mult=mult)
 
     # FSM expects a pair of geometries + a calc_getter (zero-arg callable)
     fs = FreezingString(
@@ -138,7 +128,7 @@ def run_fsm(
         fs,
         out_dir=str(outdir),
         max_cycles=200,
-        max_force_thresh=fmax,
+        thresh=_fmax_to_thresh(fmax),     # map eV/Å fmax -> pysisyphus preset
     )
     try:
         opt.run()
@@ -147,14 +137,9 @@ def run_fsm(
         log.error(f"  FSM run failed: {e}")
         return {"status": "failed", "error": str(e), "outputs": {}}
 
-    # Extract final images
-    images = []
-    for g in fs.images:
-        n = len(g.atoms)
-        a = Atoms(symbols=g.atoms, positions=g.coords.reshape(n, 3))
-        a.calc = calculator_fn()
-        a.info["charge"] = charge
-        images.append(a)
+    # Extract final images (pysisyphus coords bohr->Å, symbols re-cased)
+    images = [_pysis_geom_to_ase(g, calc=calculator_fn(), charge=charge)
+              for g in fs.images]
 
     energies = [float(img.get_potential_energy()) for img in images]
     import numpy as np
@@ -190,6 +175,7 @@ def run_gsm(
     calculator_fn: Callable,
     outdir: str | Path = ".",
     charge: int = 0,
+    mult: int = 1,
     n_images: int = 15,
     fmax: float = 0.045,
     **kwargs,
@@ -197,6 +183,8 @@ def run_gsm(
     """Growing String Method.
 
     Similar interface to FSM but produces a fully-optimized string at the end.
+    ``mult`` is the spin multiplicity (2S+1), threaded to the pysisyphus calc;
+    ``fmax`` is in eV/Å.
     """
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -211,7 +199,7 @@ def run_gsm(
     log.info(f"GSM: {n_images} target images, fmax={fmax}")
     geom_r = _atoms_to_pysis_geom(reactant)
     geom_p = _atoms_to_pysis_geom(product)
-    calc_getter = _make_pysis_calc_getter(calculator_fn, charge)
+    calc_getter = _make_pysis_calc_getter(calculator_fn, charge=charge, mult=mult)
 
     gs = GrowingString(
         images=[geom_r, geom_p],
@@ -222,7 +210,7 @@ def run_gsm(
         gs,
         out_dir=str(outdir),
         max_cycles=300,
-        max_force_thresh=fmax,
+        thresh=_fmax_to_thresh(fmax),     # map eV/Å fmax -> pysisyphus preset
     )
     try:
         opt.run()
@@ -231,13 +219,8 @@ def run_gsm(
         log.error(f"  GSM run failed: {e}")
         return {"status": "failed", "error": str(e), "outputs": {}}
 
-    images = []
-    for g in gs.images:
-        n = len(g.atoms)
-        a = Atoms(symbols=g.atoms, positions=g.coords.reshape(n, 3))
-        a.calc = calculator_fn()
-        a.info["charge"] = charge
-        images.append(a)
+    images = [_pysis_geom_to_ase(g, calc=calculator_fn(), charge=charge)
+              for g in gs.images]
 
     energies = [float(img.get_potential_energy()) for img in images]
     import numpy as np
