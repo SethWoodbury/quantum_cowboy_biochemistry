@@ -213,12 +213,19 @@ MACE_MODELS = {
         None,
     ),
 
-    # FairChem eSEN — OMol25-trained equivariant Smooth Energy Network. NOT yet
-    # downloaded (add to download_uma_models.sh + populate); routed through the
-    # same FairChem/UMA builder (fairchem-core, the UMA sidecar). The path is the
-    # expected location so make_calc(...) error messages point at the right dir.
+    # FairChem eSEN — OMol25-trained equivariant Smooth Energy Network. The
+    # eSEN-S *conserving* checkpoint (forces = true energy gradients; the right
+    # variant for saddle/TS work) is facebook/OMol25 ::
+    # checkpoints/esen_sm_conserving_all.pt — GATED (FAIR Chemistry License,
+    # manual approval). NOT yet downloaded; routed through the same FairChem/UMA
+    # builder (fairchem-core, the UMA sidecar). To populate, with an approved
+    # HF_TOKEN:
+    #   python -c "from huggingface_hub import hf_hub_download as d; import shutil,os; \
+    #     dst='$_HF_HUB_BASE/models--facebook--esen-sm-conserving-all-omol'; os.makedirs(dst,exist_ok=True); \
+    #     p=d(repo_id='facebook/OMol25', filename='checkpoints/esen_sm_conserving_all.pt', token=os.environ['HF_TOKEN']); \
+    #     shutil.copy(p, dst+'/esen_sm_conserving_all.pt')"
     "esen-s": _resolve_mace("esen-s",
-        f"{_HF_HUB_BASE}/models--facebook--esen-sm-conserving-all-omol/esen-sm-conserving-all-omol.pt",
+        f"{_HF_HUB_BASE}/models--facebook--esen-sm-conserving-all-omol/esen_sm_conserving_all.pt",
         None,
     ),
 
