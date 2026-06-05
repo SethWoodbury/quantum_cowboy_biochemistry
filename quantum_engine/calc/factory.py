@@ -33,6 +33,8 @@ import os
 from dataclasses import dataclass
 from typing import Callable
 
+from quantum_engine.registry import PredicateRegistry
+
 log = logging.getLogger("quantum_engine.calc")
 
 
@@ -50,19 +52,35 @@ def list_models() -> dict[str, str]:
     return dict(MACE_MODELS)
 
 
-# Alias-name → family. ``mace`` is the catch-all default (also covers any
-# absolute .model path the user passes through).
+# ---------------------------------------------------------------------------
+# Energy-function registry — the PRIMARY plug-and-play axis. Each MLFF/QC family
+# is a (label, predicate-over-model-alias, builder) entry; first matching
+# predicate wins, so a new family drops in via one ``register_energy(...)`` call.
+# ``mace`` is the IMPLICIT default (NOT a registry entry): when no predicate
+# matches, dispatch falls back to it — so a newly-registered family is never
+# shadowed by a catch-all, and absolute ``.model`` paths route to MACE. Builders
+# share a uniform keyword signature so dispatch needs no per-family branches:
+#     builder(model, *, model_path, registry_path, head, device,
+#             default_dtype, charge, spin) -> ASE Calculator
+# ---------------------------------------------------------------------------
+ENERGY_FAMILIES: PredicateRegistry = PredicateRegistry("energy")
+
+
+def register_energy(label: str, predicate: Callable[[str], bool], builder):
+    """Register an energy-function family. ``predicate(model_alias)`` selects it;
+    ``builder`` constructs the calculator. Registration order = match priority;
+    anything that matches no family falls back to the implicit ``mace`` default."""
+    return ENERGY_FAMILIES.register(label, predicate, builder)
+
+
 def _family_of(model: str) -> str:
-    m = model.lower()
-    if m.startswith("uma-") or "fairchem" in m:
-        return "uma"
-    if m.startswith("orb"):
-        return "orb"
-    if m.startswith("aimnet"):
-        return "aimnet"
-    if m.startswith("gfn") or m in ("xtb", "g-xtb", "gfnff"):
-        return "qc"          # semiempirical: GFN0/1/2-xTB, GFN-FF, g-xTB
-    return "mace"
+    """Alias → family label (``uma``/``orb``/``aimnet``/``qc``/``mace``).
+
+    Thin view over :data:`ENERGY_FAMILIES`; ``mace`` is the implicit fallback
+    when no registered predicate matches.
+    """
+    label, _ = ENERGY_FAMILIES.match(model)
+    return label or "mace"
 
 
 @dataclass
@@ -298,6 +316,51 @@ def _make_uma(model: str, model_path: str | None, device: str,
 
 
 # ---------------------------------------------------------------------------
+# Uniform builders + family registration. Each adapts the family-specific
+# ``_make_*`` to the shared builder signature, so ``make_calc`` dispatches with
+# no per-family ``if``. Only the SPECIFIC families are registered; ``mace`` is
+# the implicit fallback in ``make_calc`` (also covers any absolute .model path).
+# ---------------------------------------------------------------------------
+def _build_uma(model, *, model_path, registry_path, head, device,
+               default_dtype, charge, spin):
+    # UMA gets the registry path even when not on disk, so it can emit a precise
+    # "checkpoint not on disk at <path>" error instead of a generic one.
+    return _make_uma(model, model_path or registry_path, device, charge, spin)
+
+
+def _build_orb(model, *, model_path, registry_path, head, device,
+               default_dtype, charge, spin):
+    return _make_orb(model, model_path, device, charge, spin)
+
+
+def _build_aimnet(model, *, model_path, registry_path, head, device,
+                  default_dtype, charge, spin):
+    return _make_aimnet(model, model_path, device, charge, spin)
+
+
+def _build_qc(model, *, model_path, registry_path, head, device,
+              default_dtype, charge, spin):
+    from quantum_engine.calc.qc_calc import make_qc_calc  # noqa: PLC0415
+    return make_qc_calc(model, charge=charge or 0, spin=spin or 1)
+
+
+def _build_mace(model, *, model_path, registry_path, head, device,
+                default_dtype, charge, spin):
+    return _make_mace(model, model_path, head, device, default_dtype, charge)
+
+
+register_energy("uma", lambda m: m.lower().startswith("uma-") or "fairchem" in m.lower(),
+                _build_uma)
+register_energy("orb", lambda m: m.lower().startswith("orb"), _build_orb)
+register_energy("aimnet", lambda m: m.lower().startswith("aimnet"), _build_aimnet)
+register_energy("qc",
+                lambda m: m.lower().startswith("gfn") or m.lower() in ("xtb", "g-xtb", "gfnff"),
+                _build_qc)
+# NB: no "mace" entry — it is the implicit fallback in make_calc (see _build_mace
+# below + the match()-miss path), so it can never shadow a registered family.
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 def make_calc(
@@ -325,7 +388,9 @@ def make_calc(
         spin: 2S+1 multiplicity. ORB / AIMNet2 / UMA. Ignored by MACE.
     """
     models = list_models()
-    family = _family_of(model)
+    family, builder = ENERGY_FAMILIES.match(model)
+    if builder is None:                      # mace catch-all should prevent this
+        family, builder = "mace", _build_mace
 
     # Resolve to a local file path (or None → family-specific auto-download).
     if os.path.isfile(model):
@@ -338,17 +403,9 @@ def make_calc(
                         f"falling back to family auto-download")
         model_path = None
 
-    if family == "uma":
-        return _make_uma(model, model_path or models.get(model), device,
-                         charge, spin)
-    if family == "orb":
-        return _make_orb(model, model_path, device, charge, spin)
-    if family == "aimnet":
-        return _make_aimnet(model, model_path, device, charge, spin)
-    if family == "qc":
-        from quantum_engine.calc.qc_calc import make_qc_calc  # noqa: PLC0415
-        return make_qc_calc(model, charge=charge or 0, spin=spin or 1)
-    return _make_mace(model, model_path, head, device, default_dtype, charge)
+    return builder(model, model_path=model_path, registry_path=models.get(model),
+                   head=head, device=device, default_dtype=default_dtype,
+                   charge=charge, spin=spin)
 
 
 def make_calc_fn(**kwargs) -> Callable[[], "Calculator"]:

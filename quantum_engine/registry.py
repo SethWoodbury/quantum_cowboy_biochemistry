@@ -105,6 +105,10 @@ class PredicateRegistry:
         self._entries.append((label, predicate, builder))
         return builder
 
+    def unregister(self, label: str) -> None:
+        """Remove all entries registered under ``label`` (no-op if absent)."""
+        self._entries = [e for e in self._entries if e[0] != label]
+
     def match(self, name: str):
         for label, pred, builder in self._entries:
             try:

@@ -69,3 +69,13 @@ def test_predicate_registry_bad_predicate_skipped():
     p.register("bad", lambda m: 1 / 0, "x")              # raises -> skipped
     p.register("ok", lambda m: True, "y")
     assert p.match("anything") == ("ok", "y")
+
+
+def test_predicate_registry_unregister():
+    p = PredicateRegistry("energy")
+    p.register("uma", lambda m: m.startswith("uma-"), "uma_builder")
+    p.register("mace", lambda m: True, "mace_builder")
+    p.unregister("uma")
+    assert p.labels() == ["mace"]
+    assert p.match("uma-s-1p1") == ("mace", "mace_builder")  # falls through now
+    p.unregister("absent")  # no-op, must not raise
