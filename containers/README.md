@@ -42,10 +42,28 @@ apptainer exec --nv --bind /home --bind /net containers/aefm-<date>.sif \
   python -m quantum_engine.cli ts-entry --entry ts-guess --refiner aefm ...
 ```
 
-**Energy-backend caveat:** these sidecars carry the *generative* model only, not
-an MLFF/xTB energy backend. The proposer/refiner produces a GUESS; the downstream
-saddle-refine → Hessian → IRC gate needs an energy calculator. So either (a) add an
-energy backend (e.g. xtb) to the sidecar for one-shot `ts-entry`, or (b) run the
-proposer/refiner to get the guess, then feed it to the main container's
-`ts-entry --entry ts-guess` (which has the MLFF). Both adapters are CHNO-/gas-phase
-guarded (out of domain for the di-Zn theozyme).
+**Energy-backend caveat + the two-step handoff.** These sidecars carry the
+*generative* model only, not an MLFF/xTB energy backend. The proposer/refiner
+produces a GUESS; the downstream saddle-refine → Hessian → IRC gate needs an energy
+calculator. So run it in two steps: the generative step in its sidecar (emits a
+guess), then the validated `ts-entry --entry ts-guess` in the main container (which
+has the MLFF). The dedicated `ts-propose` / `ts-refine` subcommands do step 1:
+
+```bash
+# step 1a — React-OT proposes a TS guess (in its sidecar)
+apptainer exec --nv --bind /home --bind /net containers/reactot-<date>.sif \
+  env PYTHONPATH=$PWD python -m quantum_engine.cli ts-propose \
+    --method react-ot --reactant R.xyz --product P.xyz --out guess.xyz
+
+# step 1b (optional) — AEFM refines a guess (in its sidecar)
+apptainer exec --nv --bind /home --bind /net containers/aefm-<date>.sif \
+  env PYTHONPATH=$PWD python -m quantum_engine.cli ts-refine \
+    --method aefm --ts-guess guess.xyz --out refined.xyz
+
+# step 2 — refine + Hessian + IRC gate in the MAIN container (has the MLFF)
+apptainer exec --nv --bind /home --bind /net <main>.sif \
+  python -m quantum_engine.cli ts-entry --entry ts-guess \
+    --ts-guess refined.xyz --reaction-spec rxn.yaml --model mace-omol ...
+```
+
+Both adapters are CHNO-/gas-phase guarded (out of domain for the di-Zn theozyme).

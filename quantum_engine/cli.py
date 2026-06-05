@@ -1278,6 +1278,52 @@ def _cmd_ts_entry(args):
         execute=args.execute)   # QM-native engine: prepare-only when --no-execute
 
 
+def _cmd_ts_propose(args):
+    """Run ONE TS-guess proposer (e.g. react-ot) and write the guess.
+
+    The first half of the sidecar two-step handoff: run the generative proposer in
+    its sidecar to emit a guess, then feed the guess to the main container's
+    ``ts-entry --entry ts-guess`` (which has the MLFF for saddle-refine + the gate).
+    """
+    from ase.io import write as ase_write
+    from quantum_engine.io import load_structure
+    from quantum_engine.ops import ts_propose
+
+    R = load_structure(args.reactant)[0]
+    P = load_structure(args.product)[0]
+    outdir = Path(args.outdir) if args.outdir else Path("qcb-ts-propose-out")
+    res = ts_propose.run(args.method, R, P, charge=args.charge or 0,
+                         spin=args.spin or 1, outdir=outdir)
+    ts = res.get("ts_guess")
+    if ts is not None and args.out:
+        ase_write(args.out, ts, format="extxyz")
+        res.setdefault("outputs", {})["out"] = args.out
+    return res
+
+
+def _cmd_ts_refine(args):
+    """Run ONE TS-guess refiner (e.g. aefm) and write the refined guess.
+
+    The first half of the sidecar two-step handoff: run the refiner in its sidecar
+    to polish a guess, then feed the result to ``ts-entry --entry ts-guess``.
+    """
+    from ase.io import write as ase_write
+    from quantum_engine.io import load_structure
+    from quantum_engine.ops import ts_refine
+
+    guess = load_structure(args.ts_guess)[0]
+    R = load_structure(args.reactant)[0] if args.reactant else None
+    P = load_structure(args.product)[0] if args.product else None
+    outdir = Path(args.outdir) if args.outdir else Path("qcb-ts-refine-out")
+    res = ts_refine.run(args.method, guess, charge=args.charge or 0,
+                        spin=args.spin or 1, reactant=R, product=P, outdir=outdir)
+    ts = res.get("ts_guess")
+    if ts is not None and args.out:
+        ase_write(args.out, ts, format="extxyz")
+        res.setdefault("outputs", {})["out"] = args.out
+    return res
+
+
 def _cmd_monitor(args):
     """Non-constraining bond + metal-coordination report on a structure."""
     from quantum_engine.io import load_structure
@@ -1889,6 +1935,33 @@ def main(argv=None):
     p_tse.add_argument("--outdir", default=None)
     p_tse.add_argument("--log-level", default="INFO")
 
+    # ts-propose — run ONE TS-guess proposer standalone (sidecar two-step handoff)
+    p_tpr = sub.add_parser(
+        "ts-propose", help="Run a single TS-guess proposer (e.g. react-ot) and write "
+                           "the guess (sidecar step 1 → feed ts-entry --entry ts-guess).")
+    p_tpr.add_argument("--method", required=True, help="Proposer (midpoint/react-ot/...)")
+    p_tpr.add_argument("--reactant", required=True, help="Reactant geometry")
+    p_tpr.add_argument("--product", required=True, help="Product geometry")
+    p_tpr.add_argument("--charge", type=int, default=None)
+    p_tpr.add_argument("--spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_tpr.add_argument("--out", default=None, help="Write the guess here (xyz) for the handoff.")
+    p_tpr.add_argument("--outdir", default=None)
+    p_tpr.add_argument("--log-level", default="INFO")
+
+    # ts-refine — run ONE TS-guess refiner standalone (sidecar two-step handoff)
+    p_trf = sub.add_parser(
+        "ts-refine", help="Run a single TS-guess refiner (e.g. aefm) and write the "
+                          "refined guess (sidecar step 1 → feed ts-entry --entry ts-guess).")
+    p_trf.add_argument("--method", required=True, help="Refiner (identity/aefm/...)")
+    p_trf.add_argument("--ts-guess", required=True, help="TS-guess geometry to refine")
+    p_trf.add_argument("--reactant", default=None, help="Optional R context (refiner-dependent)")
+    p_trf.add_argument("--product", default=None, help="Optional P context (refiner-dependent)")
+    p_trf.add_argument("--charge", type=int, default=None)
+    p_trf.add_argument("--spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_trf.add_argument("--out", default=None, help="Write the refined guess here (xyz).")
+    p_trf.add_argument("--outdir", default=None)
+    p_trf.add_argument("--log-level", default="INFO")
+
     # monitor — non-constraining bond + metal-coordination report
     p_mon = sub.add_parser(
         "monitor", help="Non-constraining bond + metal-coordination report")
@@ -2330,6 +2403,8 @@ def main(argv=None):
         "neb": _cmd_neb, "mtd": _cmd_mtd,
         "gsm": _cmd_gsm, "ts": _cmd_ts,
         "ts-entry": _cmd_ts_entry,
+        "ts-propose": _cmd_ts_propose,
+        "ts-refine": _cmd_ts_refine,
         "monitor": _cmd_monitor,
         "reaction-spec": _cmd_reaction_spec,
         "run": _cmd_run,
