@@ -9,13 +9,18 @@ Available ops:
     md       — molecular dynamics
     freq     — vibrational frequency analysis
     scan     — 1D/2D coordinate scan
-    saddle   — Sella saddle-point search
-    irc      — intrinsic reaction coordinate
+    saddle   — multi-backend saddle-point search (registry: make_saddle_optimizer)
+    irc      — intrinsic reaction coordinate (registry: make_irc)
     neb      — nudged elastic band
+    gsm      — FSM / double-ended GSM path search
+    path_search — unified path-method factory (registry: make_path_method)
     mtd      — well-tempered metadynamics
     ts       — high-level TS pipeline (composes saddle/irc/neb/mtd)
 """
-from quantum_engine.ops import sp, opt, md, freq, scan, saddle, irc, neb, mtd, mtd_walkers, gsm, ts
+from quantum_engine.ops import (
+    sp, opt, md, freq, scan, saddle, irc, neb, path_search, mtd,
+    mtd_walkers, gsm, ts,
+)
 
 __all__ = ["sp", "opt", "md", "freq", "scan", "saddle", "irc", "neb",
-           "mtd", "mtd_walkers", "gsm", "ts"]
+           "path_search", "mtd", "mtd_walkers", "gsm", "ts"]

@@ -36,10 +36,95 @@ from typing import Any, Sequence
 import numpy as np
 from ase import Atoms
 
+from quantum_engine.registry import Registry
+
 log = logging.getLogger("quantum_engine.ops.saddle")
 
 
-# Names accepted by ``backend=``. Keep in sync with cli.py argument choices.
+# ---------------------------------------------------------------------------
+# Saddle-backend registry — the plug-and-play axis. A NEW saddle optimiser drops
+# in via one ``register_saddle(name, runner)`` call (no edits to ``_dispatch_one``
+# or ``run``). Each runner has the uniform signature
+#     runner(atoms, *, calculator, outdir, constraint, fmax, max_steps,
+#            initial_mode_vector, eigh_drivers, **extra) -> dict
+# returning the standard ``saddle.run`` result dict.
+# ---------------------------------------------------------------------------
+SADDLE_OPTIMIZERS: Registry = Registry("saddle-optimizer")
+
+
+def register_saddle(name: str, runner=None, *, aliases: tuple[str, ...] = (),
+                    overwrite: bool = False):
+    """Register a saddle-optimiser backend (decorator or imperative)."""
+    return SADDLE_OPTIMIZERS.register(name, runner, aliases=aliases,
+                                      overwrite=overwrite)
+
+
+def make_saddle_optimizer(backend: str):
+    """Return the saddle-backend runner registered under ``backend`` (name/alias).
+
+    ``"auto"`` is handled by :func:`run` (cascade), not here.
+    """
+    if backend not in SADDLE_OPTIMIZERS:
+        raise ValueError(
+            f"Unknown saddle backend {backend!r}. "
+            f"Choices: {SADDLE_OPTIMIZERS.names() + ['auto']}")
+    return SADDLE_OPTIMIZERS.get(backend)
+
+
+def _run_sella(atoms, *, calculator, outdir, constraint, fmax, max_steps,
+               initial_mode_vector, eigh_drivers, **extra) -> dict:
+    from quantum_engine.qm import sella as qm_sella
+    return qm_sella.run(
+        atoms, calculator, outdir=outdir, constraint=constraint,
+        fmax=fmax, max_steps=max_steps, coords="cart",
+        try_eigh_drivers=eigh_drivers, **extra)
+
+
+def _run_sella_internal(atoms, *, calculator, outdir, constraint, fmax, max_steps,
+                        initial_mode_vector, eigh_drivers, **extra) -> dict:
+    from quantum_engine.qm import sella as qm_sella
+    return qm_sella.run(
+        atoms, calculator, outdir=outdir, constraint=constraint,
+        fmax=fmax, max_steps=max_steps, coords="internal",
+        try_eigh_drivers=eigh_drivers, **extra)
+
+
+def _run_dimer(atoms, *, calculator, outdir, constraint, fmax, max_steps,
+               initial_mode_vector, eigh_drivers, **extra) -> dict:
+    from quantum_engine.qm import dimer as qm_dimer
+    return qm_dimer.run(
+        atoms, calculator, outdir=outdir, constraint=constraint,
+        fmax=fmax, max_steps=max_steps,
+        initial_mode_vector=initial_mode_vector, **extra)
+
+
+def _run_pysis_rsprfo(atoms, *, calculator, outdir, constraint, fmax, max_steps,
+                      initial_mode_vector, eigh_drivers, **extra) -> dict:
+    from quantum_engine.qm import pysisyphus as qm_pysis
+    return qm_pysis.rsprfo_ts(
+        atoms, calculator=calculator, outdir=outdir, fmax=fmax, max_steps=max_steps,
+        charge=int(atoms.info.get("charge", 0)), **extra)
+
+
+def _run_pysis_dimer(atoms, *, calculator, outdir, constraint, fmax, max_steps,
+                     initial_mode_vector, eigh_drivers, **extra) -> dict:
+    from quantum_engine.qm import pysisyphus as qm_pysis
+    return qm_pysis.dimer_ts(
+        atoms, calculator=calculator, outdir=outdir, fmax=fmax, max_steps=max_steps,
+        charge=int(atoms.info.get("charge", 0)),
+        initial_mode_vector=initial_mode_vector, **extra)
+
+
+register_saddle("sella", _run_sella)
+register_saddle("sella-internal", _run_sella_internal)
+register_saddle("dimer", _run_dimer)
+register_saddle("pysisyphus-rsprfo", _run_pysis_rsprfo, aliases=("rsprfo", "rs-p-rfo"))
+register_saddle("pysisyphus-dimer", _run_pysis_dimer)
+
+
+# Built-in backend names accepted by ``backend=`` (snapshot for cli choices).
+# Runtime validation uses the live registry so dynamically-registered backends
+# are accepted too. Keep in sync with cli.py argument choices.
 KNOWN_BACKENDS = (
     "sella",
     "sella-internal",
@@ -68,53 +153,19 @@ def _dispatch_one(
     extra: dict[str, Any],
 ) -> dict:
     """Run a single backend once and return its result dict."""
-    if backend == "sella":
-        from quantum_engine.qm import sella as qm_sella
-        return qm_sella.run(
-            atoms, calculator,
-            outdir=outdir, constraint=constraint,
-            fmax=fmax, max_steps=max_steps,
-            coords="cart",
-            try_eigh_drivers=eigh_drivers,
-            **extra,
-        )
-    if backend == "sella-internal":
-        from quantum_engine.qm import sella as qm_sella
-        return qm_sella.run(
-            atoms, calculator,
-            outdir=outdir, constraint=constraint,
-            fmax=fmax, max_steps=max_steps,
-            coords="internal",
-            try_eigh_drivers=eigh_drivers,
-            **extra,
-        )
-    if backend == "dimer":
-        from quantum_engine.qm import dimer as qm_dimer
-        return qm_dimer.run(
-            atoms, calculator,
-            outdir=outdir, constraint=constraint,
-            fmax=fmax, max_steps=max_steps,
-            initial_mode_vector=initial_mode_vector,
-            **extra,
-        )
-    if backend == "pysisyphus-rsprfo":
-        from quantum_engine.qm import pysisyphus as qm_pysis
-        return qm_pysis.rsprfo_ts(
-            atoms, calculator=calculator,
-            outdir=outdir, fmax=fmax, max_steps=max_steps,
-            charge=int(atoms.info.get("charge", 0)),
-            **extra,
-        )
-    if backend == "pysisyphus-dimer":
-        from quantum_engine.qm import pysisyphus as qm_pysis
-        return qm_pysis.dimer_ts(
-            atoms, calculator=calculator,
-            outdir=outdir, fmax=fmax, max_steps=max_steps,
-            charge=int(atoms.info.get("charge", 0)),
-            initial_mode_vector=initial_mode_vector,
-            **extra,
-        )
-    raise ValueError(f"Unknown backend {backend!r}; known: {KNOWN_BACKENDS}")
+    try:
+        runner = SADDLE_OPTIMIZERS.get(backend)
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown backend {backend!r}; known: "
+            f"{SADDLE_OPTIMIZERS.names() + ['auto']}") from exc
+    return runner(
+        atoms,
+        calculator=calculator, outdir=outdir, constraint=constraint,
+        fmax=fmax, max_steps=max_steps,
+        initial_mode_vector=initial_mode_vector, eigh_drivers=eigh_drivers,
+        **extra,
+    )
 
 
 def run(
@@ -163,8 +214,9 @@ def run(
                                       their failure modes (only set in
                                       cascade mode).
     """
-    if backend not in KNOWN_BACKENDS:
-        raise ValueError(f"backend={backend!r} not in {KNOWN_BACKENDS}")
+    if backend != "auto" and backend not in SADDLE_OPTIMIZERS:
+        raise ValueError(
+            f"backend={backend!r} not in {SADDLE_OPTIMIZERS.names() + ['auto']}")
 
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
