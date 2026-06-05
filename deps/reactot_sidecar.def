@@ -9,8 +9,13 @@ From: pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime
 #   apptainer exec --nv --bind /home --bind /net reactot-<date>.sif \
 #     python -m quantum_engine.cli ts-entry --proposer react-ot ...
 #
-# Build (user; container builds are not done from the agent):
-#   apptainer build --fakeroot reactot-$(date +%Y%m%d).sif deps/reactot_sidecar.def
+# Build (validated 2026-06-05):
+#   export APPTAINER_CACHEDIR=/tmp/apptainer_cache APPTAINER_TMPDIR=/tmp/apptainer_tmp
+#   apptainer build --fakeroot --ignore-fakeroot-command \
+#     containers/reactot-$(date +%Y%m%d).sif deps/reactot_sidecar.def
+#   --ignore-fakeroot-command: this host isn't in /etc/subuid, so apptainer builds
+#   in a root-mapped namespace where the fakeroot wrapper is broken/absent; %post
+#   runs as the namespaced root, which is why apt needs APT::Sandbox::User=root below.
 #
 # Weights: download the React-OT checkpoint from https://zenodo.org/records/13131875
 # into  /net/databases/huggingface/generative_ts_models/react-ot/  (= site.REACTOT_CKPT).
@@ -27,9 +32,22 @@ From: pytorch/pytorch:2.2.1-cuda12.1-cudnn8-runtime
 %post
     set -e
     PIP="pip install --no-cache-dir"
+    # git is absent from the pytorch (debian) base image; install via apt. In the
+    # rootless (single-uid) build, apt's http method can't drop to its _apt sandbox
+    # user (setgroups/seteuid: Operation not permitted) — disable that sandbox with
+    # APT::Sandbox::User=root. (conda-install git self-conflicts in this base image.)
+    apt-get -o APT::Sandbox::User=root update && \
+        apt-get -o APT::Sandbox::User=root install -y --no-install-recommends git && \
+        rm -rf /var/lib/apt/lists/*
     # torch 2.2.1 ships in the base image; pin the rest of the stack to env.yaml.
+    # ipdb is a HARD dep: reactot/diffusion/en_sb.py imports it at module top, and
+    # that module is in the parse_rxn_xyzs/make_pred load chain. (pandas/torchmetrics
+    # arrive transitively via pymatgen / pytorch-lightning.)
     $PIP numpy==1.26.4 pytorch-lightning==2.4.0
-    $PIP ase==3.23.0 pymatgen networkx torchdiffeq lmdb rich timm
+    $PIP ase==3.23.0 pymatgen networkx torchdiffeq lmdb rich timm ipdb
+    # quantum_engine's own runtime deps so `python -m quantum_engine.cli` runs in
+    # this sidecar (numpy/scipy already present; scipy via torch-sparse).
+    $PIP matplotlib biotite
     # torch_geometric companions matched to torch 2.2.1 + cu121:
     $PIP torch_geometric
     $PIP torch-scatter torch-sparse torch-cluster \

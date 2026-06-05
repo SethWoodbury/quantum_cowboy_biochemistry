@@ -121,6 +121,7 @@ def run(ts_guess: Atoms, *, charge: int = 0, spin: int = 1, reactant=None,
     outdir = Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
     in_xyz = outdir / "aefm_in.xyz"
     store = (outdir / "aefm_out").resolve()      # absolute: hydra chdirs the run
+    store.mkdir(parents=True, exist_ok=True)      # AEFMSampler writes here but won't mkdir it
 
     # AEFM identifies each sample by atoms.info["rxn"]; extxyz preserves it.
     g = ts_guess.copy()
@@ -132,7 +133,9 @@ def run(ts_guess: Atoms, *, charge: int = 0, spin: int = 1, reactant=None,
         f"globals.model={mdl}",
         f"globals.samples_path={in_xyz.resolve()}",
         f"aefmsampler.store_path={store}",
-        "aefmsampler.save_trajectory=false",
+        # save_trajectory isn't in sample.yaml's struct, so hydra needs '+' to add
+        # it (it IS an AEFMSampler ctor kwarg). Skips per-sample trajectory dirs.
+        "+aefmsampler.save_trajectory=false",
     ]
     if device:
         cmd.append(f"aefmsampler.sampler.device={device}")

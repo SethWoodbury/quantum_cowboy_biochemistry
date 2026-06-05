@@ -9,8 +9,11 @@ From: condaforge/miniforge3:latest
 #   apptainer exec --nv --bind /home --bind /net aefm-<date>.sif \
 #     python -m quantum_engine.cli ts-entry --refiner aefm ...
 #
-# Build (user; container builds are not done from the agent):
-#   apptainer build --fakeroot aefm-$(date +%Y%m%d).sif deps/aefm_sidecar.def
+# Build (validated 2026-06-05 — refined a 14-atom CHON guess end-to-end via the adapter):
+#   export APPTAINER_CACHEDIR=/tmp/apptainer_cache APPTAINER_TMPDIR=/tmp/apptainer_tmp
+#   apptainer build --fakeroot --ignore-fakeroot-command \
+#     containers/aefm-$(date +%Y%m%d).sif deps/aefm_sidecar.def
+#   (--ignore-fakeroot-command: host isn't in /etc/subuid → root-mapped namespace.)
 #
 # Weights: download an AEFM checkpoint from https://zenodo.org/records/16414436
 # into  /net/databases/huggingface/generative_ts_models/aefm/  (= site.AEFM_MODEL):
@@ -31,15 +34,29 @@ From: condaforge/miniforge3:latest
     conda create -y -n aefm python=3.12
     conda activate aefm
     PIP="pip install --no-cache-dir"
+    # git is needed to clone AEFM; install it into the env (apt needs fakeroot).
+    conda install -y -c conda-forge git
 
-    # 1) torch FIRST (pick the build matching the target GPU/CUDA).
-    $PIP torch --index-url https://download.pytorch.org/whl/cu121
-    # 2) geometric companions MUST match the torch+CUDA above (edit the URL to match).
+    # 1) torch FIRST, PINNED. schnetpack 2.2.0 needs torch>=2.5.0; torch-scatter
+    #    cu121 wheels exist up to torch 2.5.1 — so 2.5.1 is the compatible apex.
+    $PIP torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+    # 2) geometric companions MUST match the torch+CUDA above (URL pinned to 2.5.1).
     $PIP torch_geometric
-    $PIP torch-scatter -f https://data.pyg.org/whl/torch-2.4.0+cu121.html
-    # 3) AEFM + its declared deps (schnetpack>2, torchdiffeq, e3nn, pot, …).
+    $PIP torch-scatter -f https://data.pyg.org/whl/torch-2.5.1+cu121.html
+    # 3) AEFM's inference deps. NOTE: aefm.utils.analysis (pulled in transitively by
+    #    the sampler import chain) imports py3Dmol + pyscf + geometric AT MODULE LOAD,
+    #    so those three are REQUIRED even for pure refinement — only tblite (used just
+    #    in training configs) is safely omitted. The trailing torch==2.5.1 PIN stops
+    #    schnetpack (needs >=2.5.0) from upgrading torch past the matching
+    #    torch-scatter wheel. matplotlib+biotite are quantum_engine's own runtime deps
+    #    (so `python -m quantum_engine.cli` runs inside this sidecar); numpy/scipy/ase
+    #    come transitively.
+    $PIP "schnetpack>2.0.0" "torchdiffeq>0.2" e3nn "pot>0.9" pymatgen \
+         hydra-core omegaconf "ase>=3.23" tqdm rich matplotlib biotite \
+         py3Dmol pyscf geometric "torch==2.5.1"
+    # 4) AEFM itself, with --no-deps so pip doesn't drag the omitted training deps in.
     cd /opt && git clone https://github.com/samirdarouich/AEFM.git
-    cd /opt/AEFM && $PIP -e .
+    cd /opt/AEFM && $PIP -e . --no-deps
 
 %environment
     export PYTHONNOUSERSITE=1
