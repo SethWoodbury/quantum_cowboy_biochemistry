@@ -18,12 +18,13 @@ Available ops:
     path_search — unified path-method factory (registry: make_path_method)
     mtd      — well-tempered metadynamics
     ts       — high-level TS pipeline (composes saddle/irc/neb/mtd)
+    ts_entry — reaction-agnostic TS orchestrator (ReactionSpec/RunContext → validated TS)
 """
 from quantum_engine.ops import (
     sp, opt, md, freq, scan, scan_modes, bond_monitor, saddle, irc, neb,
-    path_search, mtd, mtd_walkers, gsm, ts,
+    path_search, mtd, mtd_walkers, gsm, ts, ts_entry,
 )
 
 __all__ = ["sp", "opt", "md", "freq", "scan", "scan_modes", "bond_monitor",
            "saddle", "irc", "neb", "path_search", "mtd", "mtd_walkers",
-           "gsm", "ts"]
+           "gsm", "ts", "ts_entry"]
