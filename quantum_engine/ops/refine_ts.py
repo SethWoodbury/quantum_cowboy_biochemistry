@@ -199,6 +199,12 @@ class RefineTSCriteria:
     n_imag_expected: int = 1
     imag_cm_cutoff: float = -50.0  # imag freq must be MORE NEGATIVE than this
     imag_mode_overlap: float = 0.5  # frac of imag-mode amplitude on reactive atoms
+    # A mode counts toward n_imag only if it is MORE NEGATIVE than this. The
+    # default -50 cm⁻¹ excludes near-zero trans/rot contaminants that a
+    # finite-difference partial Hessian inevitably produces (esp. for small
+    # molecules where the active region is the whole system); a real reaction
+    # mode is hundreds of cm⁻¹. Loosen (e.g. -30) for floppy/weak-mode TSs.
+    n_imag_cutoff: float = -50.0
 
 
 @dataclass
@@ -382,7 +388,9 @@ def run(
     # Step 3: diagnostics + pass/fail
     # ------------------------------------------------------------------
     freqs_cm = np.asarray(freq_result["frequencies_cm"])
-    n_imag = int(np.sum(freqs_cm < -10))
+    # Count only SIGNIFICANT imaginary modes — near-zero negatives are trans/rot
+    # FD-Hessian noise, not reaction modes (see RefineTSCriteria.n_imag_cutoff).
+    n_imag = int(np.sum(freqs_cm < criteria.n_imag_cutoff))
     imag_freq_cm = float(freqs_cm[0]) if len(freqs_cm) else float("nan")
     modes = np.load(freq_result["outputs"]["modes"])
     overlap = _imag_mode_overlap(modes[0], reactive_idx) if len(modes) else 0.0
@@ -397,7 +405,7 @@ def run(
     checks.append(RefineTSCheck(
         name="n_imag_match",
         passed=n_imag == criteria.n_imag_expected,
-        detail=f"observed {n_imag} imag modes (< -10 cm⁻¹), "
+        detail=f"observed {n_imag} imag modes (< {criteria.n_imag_cutoff:.0f} cm⁻¹), "
                f"expected {criteria.n_imag_expected}",
         value=n_imag,
     ))

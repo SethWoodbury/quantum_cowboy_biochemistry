@@ -100,6 +100,7 @@ def _refine(ts_guess, ctx, resolved, outdir, preset, saddle_backend,
     from quantum_engine.ops import refine_ts  # noqa: PLC0415
     from quantum_engine.ops.refine_ts import RefineTSCriteria  # noqa: PLC0415
     crit = RefineTSCriteria(n_imag_expected=1, imag_cm_cutoff=preset.imag_cm_cutoff,
+                            n_imag_cutoff=preset.imag_cm_cutoff,
                             imag_mode_overlap=preset.imag_overlap_min)
     # resolved.reactive are 0-based ASE indices -> pass unambiguously as "0:idx"
     reactive = [f"0:{i}" for i in resolved.reactive] or None
