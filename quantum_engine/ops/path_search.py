@@ -119,6 +119,8 @@ def _run_fsm(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any], 
     from quantum_engine.ops import gsm
     if constraint is not None:
         log.warning("path-method 'fsm' does not support ASE constraints; ignoring")
+    # spin → multiplicity (2S+1) from the stamped endpoint; explicit mult wins.
+    kwargs.setdefault("mult", int(reactant.info.get("spin", 1)))
     return gsm.run(reactant, product, calculator_fn, outdir, method="fsm",
                    charge=charge, **kwargs)
 
@@ -128,6 +130,7 @@ def _run_gsm_de(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any
     from quantum_engine.ops import gsm
     if constraint is not None:
         log.warning("path-method 'gsm-de' does not support ASE constraints; ignoring")
+    kwargs.setdefault("mult", int(reactant.info.get("spin", 1)))   # spin → 2S+1
     return gsm.run(reactant, product, calculator_fn, outdir, method="gsm",
                    charge=charge, **kwargs)
 

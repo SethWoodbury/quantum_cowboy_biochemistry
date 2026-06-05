@@ -101,6 +101,9 @@ def _run_dimer(atoms, *, calculator, outdir, constraint, fmax, max_steps,
 def _run_pysis_rsprfo(atoms, *, calculator, outdir, constraint, fmax, max_steps,
                       initial_mode_vector, eigh_drivers, **extra) -> dict:
     from quantum_engine.qm import pysisyphus as qm_pysis
+    # spin → multiplicity (2S+1), threaded from the stamped atoms.info; an
+    # explicit caller-supplied mult (in **extra) wins.
+    extra.setdefault("mult", int(atoms.info.get("spin", 1)))
     return qm_pysis.rsprfo_ts(
         atoms, calculator=calculator, outdir=outdir, fmax=fmax, max_steps=max_steps,
         charge=int(atoms.info.get("charge", 0)), **extra)
@@ -109,6 +112,7 @@ def _run_pysis_rsprfo(atoms, *, calculator, outdir, constraint, fmax, max_steps,
 def _run_pysis_dimer(atoms, *, calculator, outdir, constraint, fmax, max_steps,
                      initial_mode_vector, eigh_drivers, **extra) -> dict:
     from quantum_engine.qm import pysisyphus as qm_pysis
+    extra.setdefault("mult", int(atoms.info.get("spin", 1)))   # spin → 2S+1
     return qm_pysis.dimer_ts(
         atoms, calculator=calculator, outdir=outdir, fmax=fmax, max_steps=max_steps,
         charge=int(atoms.info.get("charge", 0)),

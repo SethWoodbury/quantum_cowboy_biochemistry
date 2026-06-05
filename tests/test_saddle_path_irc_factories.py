@@ -66,9 +66,9 @@ def test_saddle_run_dispatches_to_sella(monkeypatch, tmp_path):
     assert res["backend_used"] == "sella"
 
 
-def test_saddle_run_pysis_injects_charge(monkeypatch, tmp_path):
-    """The pysisyphus runner must inject atoms.info['charge'] (current
-    behaviour — spin/mult unification is a separate, verified change)."""
+def test_saddle_run_pysis_injects_charge_and_mult(monkeypatch, tmp_path):
+    """The pysisyphus runner injects atoms.info['charge'] AND threads
+    atoms.info['spin'] → multiplicity (2S+1)."""
     import quantum_engine.qm.pysisyphus as qm_pysis
     from quantum_engine.ops import saddle
 
@@ -80,9 +80,11 @@ def test_saddle_run_pysis_injects_charge(monkeypatch, tmp_path):
                 "energy_eV": -1.0, "backend": "pysisyphus-rsprfo", "outputs": {}}
 
     monkeypatch.setattr(qm_pysis, "rsprfo_ts", fake_rsprfo)
-    saddle.run(_h2(charge=-2), calculator=object(), outdir=tmp_path,
+    atoms = _h2(charge=-2)
+    atoms.info["spin"] = 3          # triplet
+    saddle.run(atoms, calculator=object(), outdir=tmp_path,
                backend="pysisyphus-rsprfo")
-    assert seen["charge"] == -2
+    assert seen["charge"] == -2 and seen["mult"] == 3
 
 
 def test_register_saddle_adds_backend(monkeypatch, tmp_path):
@@ -155,9 +157,10 @@ def test_path_run_dispatches_gsm(monkeypatch, tmp_path, method, expect):
 
     monkeypatch.setattr(gsm, "run", fake_gsm_run)
     # constraint is passed but must be warned-and-ignored by FSM/GSM, not crash.
-    path_search.run(method, _h2(), _h2(), (lambda: object()),
+    r = _h2(); r.info["spin"] = 2                 # doublet → mult threads through
+    path_search.run(method, r, _h2(), (lambda: object()),
                     outdir=tmp_path, charge=-1, constraint=object())
-    assert seen["method"] == expect and seen["charge"] == -1
+    assert seen["method"] == expect and seen["charge"] == -1 and seen["mult"] == 2
 
 
 # ===========================================================================
