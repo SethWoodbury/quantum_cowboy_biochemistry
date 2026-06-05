@@ -152,6 +152,7 @@ def run(
     ts_guess: Atoms | None = None,
     rigor: str = "standard",
     path_method: str | None = None,
+    proposer: str | None = None,
     saddle_backend: str | None = None,
     n_images: int | None = None,
     validate: bool | None = None,
@@ -171,6 +172,11 @@ def run(
         reactant/product/ts_guess: input geometries for the chosen entry.
         rigor: ``"draft"`` / ``"standard"`` / ``"publication"`` (preset).
         path_method/saddle_backend/n_images/validate: per-run overrides of the preset.
+        proposer: (reactant-product only) a TS-guess proposer name (e.g. a
+            generative model registered via ``register_ts_proposer``, or the
+            built-in ``"midpoint"``). When set, it replaces path search — the
+            proposer suggests the TS guess directly, which is then refined +
+            gated exactly as usual.
         template: optional biotite template (for ``RES:ID:NAME`` atom tokens).
         relax_endpoints: relax R/P to clean basins before pathing (recommended).
         monitor: attach a non-constraining bond/metal report to R/TS/P.
@@ -253,22 +259,39 @@ def run(
             else:
                 R, P = reactant.copy(), product.copy()
 
-            # ---- path search → TS guess ----
-            from quantum_engine.ops import path_search  # noqa: PLC0415
-            with Step("path_search", outdir,
-                      params={"method": path_method, "n_images": n_images}) as s:
-                pth = path_search.run(path_method, _stamp(R.copy(), ctx),
-                                      _stamp(P.copy(), ctx), _calc_fn(ctx),
-                                      outdir=outdir / "path", charge=ctx.charge,
-                                      n_images=n_images,
-                                      atom_map=getattr(resolved.spec, "atom_map", None))
-                s.record(status=pth.get("status"),
-                         barrier_fwd_kcal=pth.get("barrier_fwd_kcal"))
-            pstatus = "PASS" if pth.get("status") in ("converged", "completed", "cached") else "WARN"
-            report.add(Gate("path_search", pstatus, detail=str(pth.get("status")),
-                            fallback="saddle-refine still runs on the peak guess"))
-            ts_guess = pth.get("ts")
-            tangent = _path_tangent(pth.get("images"), int(pth.get("ts_idx", -1)))
+            amap = getattr(resolved.spec, "atom_map", None)
+            if proposer:
+                # ---- generative/heuristic TS proposer → TS guess (skip path) ----
+                from quantum_engine.ops import ts_propose  # noqa: PLC0415
+                with Step("ts_propose", outdir, params={"proposer": proposer}) as s:
+                    prop = ts_propose.run(proposer, _stamp(R.copy(), ctx),
+                                          _stamp(P.copy(), ctx), charge=ctx.charge,
+                                          spin=ctx.spin, atom_map=amap,
+                                          outdir=outdir / "propose", **kwargs)
+                    s.record(status=prop.get("status"),
+                             confidence=prop.get("confidence"))
+                ok = prop.get("status") in ("converged", "completed")
+                report.add(Gate("ts_propose", "PASS" if ok else "WARN",
+                                detail=str(prop.get("status")), value=prop.get("confidence"),
+                                fallback="saddle-refine still runs on the proposed guess"))
+                ts_guess = prop.get("ts_guess")
+                tangent = None
+            else:
+                # ---- path search → TS guess ----
+                from quantum_engine.ops import path_search  # noqa: PLC0415
+                with Step("path_search", outdir,
+                          params={"method": path_method, "n_images": n_images}) as s:
+                    pth = path_search.run(path_method, _stamp(R.copy(), ctx),
+                                          _stamp(P.copy(), ctx), _calc_fn(ctx),
+                                          outdir=outdir / "path", charge=ctx.charge,
+                                          n_images=n_images, atom_map=amap)
+                    s.record(status=pth.get("status"),
+                             barrier_fwd_kcal=pth.get("barrier_fwd_kcal"))
+                pstatus = "PASS" if pth.get("status") in ("converged", "completed", "cached") else "WARN"
+                report.add(Gate("path_search", pstatus, detail=str(pth.get("status")),
+                                fallback="saddle-refine still runs on the peak guess"))
+                ts_guess = pth.get("ts")
+                tangent = _path_tangent(pth.get("images"), int(pth.get("ts_idx", -1)))
 
         elif entry == "ts-guess":
             if ts_guess is None:
@@ -278,15 +301,24 @@ def run(
             raise ValueError(entry)
 
         # ---- saddle-refine + active-region Hessian ----
-        with Step("refine_ts", outdir, params={"backend": saddle_backend}) as s:
-            refine_res = _refine(ts_guess, ctx, resolved, outdir / "refine_ts",
-                                 preset, saddle_backend, tangent, template)
-            ts_atoms = refine_res.get("ts_atoms")
-            s.record(overall_pass=refine_res.get("overall_pass"),
-                     n_imag=refine_res.get("n_imag"),
-                     imag_freq_cm=refine_res.get("imag_freq_cm"))
-        for g in _saddle_gates(refine_res, preset):
-            report.add(g)
+        refine_res = None
+        ts_atoms = None
+        if ts_guess is None:
+            # path search / proposer produced no guess — fail cleanly (a critical
+            # FAIL gate, no fallback) instead of crashing the refine step.
+            report.add(Gate("ts_guess_available", "FAIL",
+                            detail="no TS guess was produced (path search or "
+                                   "proposer returned none) — nothing to refine"))
+        else:
+            with Step("refine_ts", outdir, params={"backend": saddle_backend}) as s:
+                refine_res = _refine(ts_guess, ctx, resolved, outdir / "refine_ts",
+                                     preset, saddle_backend, tangent, template)
+                ts_atoms = refine_res.get("ts_atoms")
+                s.record(overall_pass=refine_res.get("overall_pass"),
+                         n_imag=refine_res.get("n_imag"),
+                         imag_freq_cm=refine_res.get("imag_freq_cm"))
+            for g in _saddle_gates(refine_res, preset):
+                report.add(g)
 
         # ---- IRC-like validation ----
         val_res = None

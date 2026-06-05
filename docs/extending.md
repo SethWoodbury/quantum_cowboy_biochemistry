@@ -154,6 +154,34 @@ register_engine("myqm", run_myqm_engine)
 
 ---
 
+## 7. A new TS-guess proposer (generative / heuristic)
+
+Registry: `quantum_engine.ops.ts_propose.TS_PROPOSERS`. A *proposer* suggests a
+TS **guess** directly from a reactant + product, **skipping path search** — the
+integration point for generative TS models (diffusion / flow-matching:
+OA-ReactDiff, React-OT, AEFM, …). The guess then feeds the SAME canonical gate
+(`ts_entry` → refine → partial-Hessian → IRC), so a proposer only *suggests* a TS;
+the gate stays the acceptance authority.
+
+```python
+from quantum_engine.ops.ts_propose import register_ts_proposer
+
+@register_ts_proposer("my-model", aliases=("mine",))
+def _my_proposer(reactant, product, *, charge, spin, atom_map, outdir, **kw):
+    # reactant & product arrive atom-order-consistent (mapped i→i); the model
+    # may condition on charge/spin. Return ONE 3D guess (+ optional confidence).
+    ts = my_model.predict_ts(reactant, product, charge=charge, spin=spin)
+    return {"ts_guess": ts, "confidence": 0.9, "status": "converged", "outputs": {}}
+```
+
+Use it: `ts_entry.run(spec, ctx, entry="reactant-product", reactant=R, product=P,
+proposer="my-model")` — the proposer replaces path search; everything downstream
+is unchanged. A `ts_guess` of `None` / a non-`converged` status fails the run
+cleanly (no crash). The built-in `midpoint` proposer (geodesic midpoint of R→P)
+is a dependency-free reference + baseline. Note generative models are typically
+trained on gas-phase neutral organics (Transition1x) — out of domain for
+metal/charged active sites; the `atom_map` endpoint safeguard is reused here.
+
 ## Where the registries live (quick reference)
 
 | Axis            | Registry object                              | Register fn        | Factory / dispatch                |
@@ -162,6 +190,7 @@ register_engine("myqm", run_myqm_engine)
 | Minimizer       | `opt.factory.OPTIMIZERS`                      | `register_optimizer` | `make_optimizer(backend, ...)`  |
 | Saddle          | `ops.saddle.SADDLE_OPTIMIZERS`               | `register_saddle`  | `make_saddle_optimizer` / `saddle.run` |
 | Path            | `ops.path_search.PATH_METHODS`               | `register_path`    | `make_path_method` / `path_search.run` |
+| TS proposer     | `ops.ts_propose.TS_PROPOSERS`                | `register_ts_proposer` | `make_ts_proposer` / `ts_entry` (proposer=) |
 | IRC             | `ops.irc.IRC_METHODS`                         | `register_irc`     | `make_irc` / `irc.run`            |
 | QM engine       | `qm.engine.ENGINES`                          | `register_engine`  | `make_engine` / `ts_entry` (ctx.engine) |
 
