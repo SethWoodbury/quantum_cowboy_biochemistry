@@ -1244,6 +1244,75 @@ def _cmd_ts(args):
     )
 
 
+def _cmd_ts_entry(args):
+    """Reaction-agnostic TS orchestrator (ReactionSpec/RunContext → validated TS)."""
+    from quantum_engine.io import load_structure
+    from quantum_engine.ops import ts_entry
+    from quantum_engine.reaction_spec import ReactionSpec, RunContext
+
+    spec = ReactionSpec.from_yaml(args.reaction_spec)
+    spec.validate()
+    ctx = RunContext(charge=args.charge or 0, spin=args.spin or 1,
+                     model=args.model, head=args.head, engine=args.engine,
+                     device=args.device)
+
+    template = None
+    geoms: dict[str, object] = {}
+    for key, path in (("reactant", args.reactant), ("product", args.product),
+                      ("ts_guess", args.ts_guess)):
+        if path:
+            atoms, bt, _ = load_structure(path)
+            geoms[key] = atoms
+            if template is None and bt is not None:
+                template = bt
+
+    outdir = Path(args.outdir) if args.outdir else Path("qcb-ts-entry-out")
+    return ts_entry.run(
+        spec, ctx, entry=args.entry, outdir=outdir,
+        reactant=geoms.get("reactant"), product=geoms.get("product"),
+        ts_guess=geoms.get("ts_guess"), template=template, rigor=args.rigor,
+        path_method=args.path_method, saddle_backend=args.saddle_backend,
+        n_images=args.n_images, validate=args.validate,
+        cv_product_s=args.cv_product_s,
+        execute=args.execute)   # QM-native engine: prepare-only when --no-execute
+
+
+def _cmd_monitor(args):
+    """Non-constraining bond + metal-coordination report on a structure."""
+    from quantum_engine.io import load_structure
+    from quantum_engine.ops.bond_monitor import monitor_bonds
+
+    atoms, _bt, _ = load_structure(args.input)
+    bonds = [tuple(int(x) for x in b.split(",")) for b in (args.bond or [])]
+    outdir = Path(args.outdir) if args.outdir else None
+    return monitor_bonds(
+        atoms, bonds=bonds, metals=("auto" if args.metals else None),
+        label="monitor", outdir=outdir, write_json=outdir is not None)
+
+
+def _cmd_reaction_spec(args):
+    """Validate (and optionally resolve against a structure) a ReactionSpec YAML."""
+    from quantum_engine.reaction_spec import ReactionSpec
+    spec = ReactionSpec.from_yaml(args.spec)
+    spec.validate()
+    out: dict[str, object] = {
+        "status": "valid",
+        "forming_bonds": len(spec.forming_bonds),
+        "breaking_bonds": len(spec.breaking_bonds),
+        "reactive_atoms": len(spec.reactive_atoms),
+        "has_cv": spec.cv is not None,
+        "has_atom_map": spec.atom_map is not None,
+    }
+    if args.structure:
+        from quantum_engine.io import load_structure
+        atoms, bt, _ = load_structure(args.structure)
+        r = spec.resolve(atoms, bt)
+        out["resolved"] = {"forming": r.forming, "breaking": r.breaking,
+                           "reactive": r.reactive,
+                           "cv_bond_difference": r.cv_bond_difference}
+    return out
+
+
 def main(argv=None):
     # `protonate` carries a complete standalone CLI of its own. Intercept it
     # before the qcb argparse so all its flags (and its own -h) work cleanly.
@@ -1772,6 +1841,65 @@ def main(argv=None):
                       help="(legacy-subprocess only) additional flags to pass to run_neb_ts.py")
     p_ts.add_argument("--log-level", default="INFO")
 
+    # ts-entry — the reaction-agnostic orchestrator (ReactionSpec/RunContext)
+    p_tse = sub.add_parser(
+        "ts-entry",
+        help="Reaction-agnostic TS orchestrator: a ReactionSpec + entry point "
+             "→ validated TS (path → saddle → Hessian → IRC-like), gated.")
+    p_tse.add_argument("--entry", required=True,
+                       choices=["ts-guess", "reactant-product", "reactant-only"])
+    p_tse.add_argument("--reaction-spec", required=True,
+                       help="Path to a ReactionSpec YAML (forming/breaking bonds, "
+                            "cv, reactive_atoms, atom_map).")
+    p_tse.add_argument("--reactant", default=None, help="Reactant geometry (PDB/XYZ/CIF)")
+    p_tse.add_argument("--product", default=None, help="Product geometry")
+    p_tse.add_argument("--ts-guess", default=None, help="TS-guess geometry")
+    p_tse.add_argument("--model", default="mace-omol", help="Energy-function alias")
+    p_tse.add_argument("--head", default=None)
+    p_tse.add_argument("--charge", type=int, default=None)
+    p_tse.add_argument("--spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_tse.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
+    p_tse.add_argument("--engine", default=None,
+                       help="QM-native engine (e.g. 'orca'); default None = ASE "
+                            "calculator path (MLFF / xTB).")
+    p_tse.add_argument("--rigor", default="standard",
+                       choices=["draft", "standard", "publication"])
+    p_tse.add_argument("--path-method", default=None,
+                       help="Override path method (neb/fsm/gsm-de).")
+    p_tse.add_argument("--saddle-backend", default=None,
+                       help="Override saddle backend (sella/dimer/auto/...).")
+    p_tse.add_argument("--n-images", type=int, default=None)
+    p_tse.add_argument("--validate", action=argparse.BooleanOptionalAction,
+                       default=None, help="Force/skip the IRC-like validation "
+                                          "(default: per --rigor).")
+    p_tse.add_argument("--cv-product-s", type=float, default=None,
+                       help="reactant-only: product-side CV target s (Å).")
+    p_tse.add_argument("--execute", action=argparse.BooleanOptionalAction,
+                       default=True,
+                       help="QM-native engine only: --no-execute writes the input "
+                            "(e.g. an ORCA NEB-TS job to sbatch) without running it.")
+    p_tse.add_argument("--outdir", default=None)
+    p_tse.add_argument("--log-level", default="INFO")
+
+    # monitor — non-constraining bond + metal-coordination report
+    p_mon = sub.add_parser(
+        "monitor", help="Non-constraining bond + metal-coordination report")
+    p_mon.add_argument("input", help="Structure (PDB/XYZ/CIF)")
+    p_mon.add_argument("--bond", action="append", default=None, metavar="i,j",
+                       help="0-based atom index pair to measure (repeatable).")
+    p_mon.add_argument("--metals", action="store_true",
+                       help="Auto-detect metals + report their coordination shells.")
+    p_mon.add_argument("--outdir", default=None, help="If set, also write a JSON report.")
+    p_mon.add_argument("--log-level", default="INFO")
+
+    # reaction-spec — validate / resolve a ReactionSpec YAML
+    p_rs = sub.add_parser(
+        "reaction-spec", help="Validate (and optionally resolve) a ReactionSpec YAML")
+    p_rs.add_argument("spec", help="Path to the ReactionSpec YAML")
+    p_rs.add_argument("--structure", default=None,
+                      help="Resolve atom tokens against this structure (PDB/XYZ/CIF).")
+    p_rs.add_argument("--log-level", default="INFO")
+
     # chemoton-explore — steered Chemoton reaction-network exploration
     p_ce = sub.add_parser("chemoton-explore",
                           help="Steered Chemoton reaction-network exploration "
@@ -2193,6 +2321,9 @@ def main(argv=None):
         "pipeline": _cmd_pipeline,
         "neb": _cmd_neb, "mtd": _cmd_mtd,
         "gsm": _cmd_gsm, "ts": _cmd_ts,
+        "ts-entry": _cmd_ts_entry,
+        "monitor": _cmd_monitor,
+        "reaction-spec": _cmd_reaction_spec,
         "run": _cmd_run,
         "protonate": _cmd_protonate,
         "list-models": _cmd_list_models,
@@ -2228,7 +2359,8 @@ def main(argv=None):
                 print(f"    {k}: {v}")
     print("=" * 60)
 
-    return 0 if result.get("status") in ("converged", "completed", "cached") else 1
+    return 0 if result.get("status", "ok") in (
+        "converged", "completed", "cached", "valid", "prepared", "ok") else 1
 
 
 if __name__ == "__main__":
