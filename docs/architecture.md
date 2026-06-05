@@ -1,6 +1,21 @@
 # Architecture
 
-**Package:** `quantum_engine`  ·  **CLI binary:** `qcb`  (installed by `pip install -e .`)
+**Package:** `quantum_engine`  ·  **CLI:** `python -m quantum_engine.cli <op>`
+(the `qcb` shorthand; run from the container — not pip-installed there)
+
+## Plug-and-play (v1.0)
+
+Every pluggable axis is a **registry** — a new energy function / minimizer /
+saddle / path method / IRC backend / QM engine drops in via a one-line
+`register_*` call, no edits to the orchestrator or CLI. The two orthogonal axes
+are the **energy function** (any ASE `Calculator`) and the **optimizer / TS
+engine**. The reaction is a user-owned `ReactionSpec`; run state is a
+`RunContext`; `ops/ts_entry.py` is the orchestrator. See:
+
+- [ts_workflow.md](ts_workflow.md) — canonical core + entry-point decision tree + gates
+- [optimizers_and_engines.md](optimizers_and_engines.md) — method taxonomy + orthogonality rules
+- [extending.md](extending.md) — register a new method (copy-paste templates)
+- [dependencies_and_paths.md](dependencies_and_paths.md) — models, binaries, containers, paths
 
 ## Package layout
 
@@ -10,10 +25,14 @@ quantum_engine/
   site.py              # cluster paths + MLFF model registry (env-overridable)
   units.py             # unit-conversion constants (EV_TO_KCAL, FREQ_CONV, ...)
   select.py            # constraint grammar + fix-presets (residue/atoms/chain/...)
+  registry.py          # Registry / PredicateRegistry — the extensibility backbone
+  reaction_spec.py     # ReactionSpec + RunContext (reaction-agnostic input)
+  logging_utils.py     # Step (human log + machine <stage>.json), get_logger
   calc/
-    factory.py         # make_calc(model=...) — dispatches MACE / ORB / AIMNet2 / UMA
+    factory.py         # make_calc(model=...) + register_energy (ENERGY_FAMILIES)
+    qc_calc.py         # xTB / g-xTB as ASE calcs (the `qc` energy family)
   opt/
-    factory.py         # make_optimizer(backend=...) — ASE (LBFGS/FIRE/BFGS) + torch-sim
+    factory.py         # make_optimizer + register_optimizer (OPTIMIZERS registry)
     base.py            # Optimizer interface + OptResult
   io/
     structure.py       # load_structure(), write_pdb() — PDB/XYZ/CIF via biotite
@@ -22,7 +41,14 @@ quantum_engine/
     legacy_enzts.py    # translate old enz-ts YAML -> qcb config schema
   ops/                 # Gaussian-style operations (each returns a result dict)
     sp / opt / md / freq / scan / saddle / irc / neb / mtd     # primitives
-    ts.py              # native TS pipeline (composes saddle/irc/neb/mtd)
+    gates.py           # Gate / GateReport (PASS/WARN/FAIL → gates.json)
+    saddle.py          # make_saddle_optimizer + register_saddle (SADDLE_OPTIMIZERS)
+    path_search.py     # make_path_method + register_path (neb/fsm/gsm-de) + atom-map guard
+    irc.py             # make_irc + register_irc (IRC_METHODS)
+    scan_modes.py      # bond-difference / two-sided / auto reaction-coordinate scans
+    bond_monitor.py    # non-constraining bond + metal-coordination report
+    ts_entry.py        # the reaction-agnostic TS orchestrator (canonical core)
+    ts.py              # legacy native TS pipeline (composes saddle/irc/neb/mtd)
     ts_pipeline_v2.py  # YAML-driven, resumable, multi-stage TS orchestrator
     refine_ts.py       # post-NEB saddle + partial-Hessian validation
     expanded_hessian.py / imag_mode_displace.py   # tiered TS validation
@@ -41,8 +67,11 @@ quantum_engine/
     protonate.py       # PROPKA pKa prediction helper (get_pka_dict)
     charge / cap / extract / convert / validate_pdb
   qm/                  # external QM-engine + path-search backends
-    gaussian / orca / xtb / xtb_refine / crest / autode       # working
-    sella / dimer / pysisyphus                                # saddle/TS engines
+    engine.py          # ENGINES registry + register_engine + run_orca_engine (NEB-TS/OptTS)
+    calc.py            # make_qm_calc — ORCA as an ASE calculator (mode A)
+    orca.py            # ORCA input-gen (incl. NEB-TS) + output parser + run_orca
+    gaussian / xtb / xtb_refine / crest / autode              # working
+    sella / dimer / pysisyphus                                # saddle/TS engines (shared unit-correct pysisyphus adapter)
     submit.py          # SLURM script generation
   analysis/            # barriers (Eyring), fes, geometry, kde
   data/                # chebi / mcsa / ligand_bonds loaders
