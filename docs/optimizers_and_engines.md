@@ -53,17 +53,22 @@ forbids) GFN2 on metals.
 
 ## Path methods (`path_search.run`, registry `PATH_METHODS`)
 
-| Method   | Aliases  | Type | When |
-|----------|----------|------|------|
-| `neb`    | `ci-neb` | double-ended | **default**; geodesic CI-NEB, robust on MLFFs |
-| `gsm-de` | `gsm`    | double-ended | Growing String — smoother path; works via the version-adaptive `qm/pysis_string.py` driver |
-| `fsm`    | —        | double-ended | Freezing String — **version-gated**: unsupported on pysisyphus where `FreezingString` isn't a `ChainOfStates`; returns a clear "use gsm-de/neb" status (auto-enables when a pysisyphus bump fixes it) |
+| Method     | Aliases   | Type | When |
+|------------|-----------|------|------|
+| `neb`      | `ci-neb`  | double-ended | **default**; geodesic CI-NEB, robust on MLFFs |
+| `gsm-de`   | `gsm`     | double-ended | Growing String via **pysisyphus** (the version-adaptive `qm/pysis_string.py` driver) |
+| `pygsm-de` | `pygsm`   | double-ended | Growing String via **pyGSM** (Zimmerman) — a mature, pysisyphus-independent alternative; `qm/pygsm.py` |
+| `gsm-se`   | `se-gsm`  | **single-ended** | reactant + `driving_coords` (product unknown) via pyGSM; the only reactant-only string method. pyGSM's SE-GSM is finicky on the vendored version — wired + **fails cleanly** (status, no crash) when it can't converge |
+| `fsm`      | —         | double-ended | Freezing String — **version-gated**: unsupported where pysisyphus `FreezingString` isn't a `ChainOfStates`; clean "use gsm-de/neb" status (auto-enables on a pysisyphus fix) |
 
-The string methods (FSM/GSM) are driven through `quantum_engine/qm/pysis_string.py`,
-which **probes** the installed pysisyphus and isolates all version-specific glue —
-`capabilities()` reports what's available. SE-GSM (reactant-only) and AutoNEB are
-planned (drop in via `register_path`). Path methods only PROPOSE a TS — the
-saddle+Hessian+overlap+IRC-like gate is the acceptance authority.
+Two independent string-method backends are isolated behind small, **probed**
+drivers: `qm/pysis_string.py` (pysisyphus FSM/GSM) and `qm/pygsm.py` (pyGSM
+DE/SE-GSM). Each reports availability (`capabilities()` / `pygsm_available()`)
+and returns a clean status rather than crashing when a method/version can't run.
+Single-ended `gsm-se` takes only a reactant + driving coordinates; `path_search.run`
+skips the double-ended endpoint check for it. AutoNEB is a planned `register_path`
+add. Path methods only PROPOSE a TS — the saddle+Hessian+overlap+IRC-like gate is
+the acceptance authority.
 
 ## QM-native engines (`ts_entry` via `ctx.engine`, registry `ENGINES`)
 

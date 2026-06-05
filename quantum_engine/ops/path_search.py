@@ -135,40 +135,92 @@ def _run_gsm_de(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any
                    charge=charge, **kwargs)
 
 
+def _n_images_to_nodes(kwargs: dict) -> None:
+    """pyGSM counts ``n_nodes``; the rest of the pipeline says ``n_images``. Map
+    it so an explicit --n-images isn't silently dropped for pyGSM."""
+    if "n_images" in kwargs and "n_nodes" not in kwargs:
+        kwargs["n_nodes"] = kwargs.pop("n_images")
+    else:
+        kwargs.pop("n_images", None)
+
+
+def _run_pygsm_de(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any], *,
+                  outdir, constraint, charge, **kwargs) -> dict:
+    """Double-ended GSM via the vendored pyGSM (pysisyphus-independent)."""
+    from quantum_engine.qm import pygsm
+    if constraint is not None:
+        log.warning("path-method 'pygsm-de' does not support ASE constraints; ignoring")
+    kwargs.setdefault("mult", int(reactant.info.get("spin", 1)))
+    _n_images_to_nodes(kwargs)
+    return pygsm.run_de_gsm(reactant, product, calculator_fn, outdir=outdir,
+                            charge=charge, **kwargs)
+
+
+def _run_gsm_se(reactant: Atoms, product: Atoms, calculator_fn: Callable[[], Any], *,
+                outdir, constraint, charge, **kwargs) -> dict:
+    """Single-ended GSM via pyGSM — product is ignored; the string grows from the
+    reactant along ``driving_coords`` (required, pyGSM grammar e.g.
+    ``[("ADD", i, j), ("BREAK", k, l)]``, 1-based)."""
+    from quantum_engine.qm import pygsm
+    driving = kwargs.pop("driving_coords", None)
+    kwargs.setdefault("mult", int(reactant.info.get("spin", 1)))
+    _n_images_to_nodes(kwargs)
+    return pygsm.run_se_gsm(reactant, calculator_fn, driving, outdir=outdir,
+                            charge=charge, **kwargs)
+
+
 register_path("neb", _run_neb, aliases=("ci-neb",))
 register_path("fsm", _run_fsm)
 register_path("gsm-de", _run_gsm_de, aliases=("gsm",))
+register_path("pygsm-de", _run_pygsm_de, aliases=("pygsm",))
+register_path("gsm-se", _run_gsm_se, aliases=("se-gsm",))
+
+# Single-ended methods take only a reactant (+ driving coords); path_search.run
+# skips the double-ended endpoint-consistency check for these.
+SINGLE_ENDED: frozenset[str] = frozenset({"gsm-se", "se-gsm"})
 
 
-def run(method: str, reactant: Atoms, product: Atoms,
-        calculator_fn: Callable[[], Any], *,
+def run(method: str, reactant: Atoms, product: Atoms | None = None,
+        calculator_fn: Callable[[], Any] = None, *,
         outdir: str | Path = ".", constraint=None, charge: int = 0,
         atom_map: dict | None = None, check_endpoints: bool = True,
         **kwargs) -> dict:
-    """Dispatch a double-ended path search to ``method`` (name/alias).
+    """Dispatch a reaction-path search to ``method`` (name/alias).
+
+    Double-ended: ``"neb"`` (alias ``ci-neb``), ``"gsm-de"`` (alias ``gsm``),
+    ``"pygsm-de"`` (alias ``pygsm``), ``"fsm"`` (version-gated). Single-ended:
+    ``"gsm-se"`` (alias ``se-gsm``) — only a reactant + ``driving_coords``.
 
     Args:
-        method: ``"neb"`` (alias ``ci-neb``), ``"fsm"``, or ``"gsm-de"`` (alias
-            ``gsm``). Unknown methods raise ValueError listing the choices.
-        reactant, product: endpoint ``Atoms`` (basins; atom order must match).
+        method: a registered path method (unknown → ValueError listing choices).
+        reactant: reactant ``Atoms``.
+        product: product ``Atoms`` for double-ended methods (ignored / may be
+            ``None`` for single-ended).
         calculator_fn: zero-arg callable returning a FRESH calculator per image.
         outdir, constraint, charge: forwarded; ``constraint`` is honoured by NEB
-            and warned-and-ignored by FSM/GSM (which lack ASE-constraint hooks).
-        atom_map: optional ``{reactant_idx: product_idx}``; the product is
-            reordered to the reactant's order before pathing.
+            and warned-and-ignored by the string methods (no ASE-constraint hook).
+        atom_map: optional ``{reactant_idx: product_idx}`` (double-ended); the
+            product is reordered to the reactant's order before pathing.
         check_endpoints: validate endpoint index/element consistency first
-            (default True — guards against interpolating mismatched atoms).
-        **kwargs: method-specific knobs (``n_images``, ``k_spring``, ``fmax_*``,
-            ``max_nodes`` …) forwarded to the underlying runner.
+            (double-ended only; default True).
+        **kwargs: method-specific knobs (``n_images``/``n_nodes``, ``k_spring``,
+            ``fmax``, ``driving_coords`` …) forwarded to the underlying runner.
     """
-    if check_endpoints:
-        rep = check_endpoint_consistency(reactant, product, atom_map)
-        if rep["needs_reorder"] and atom_map is not None:
-            log.info("path_search: reordering product to the reactant's atom order "
-                     "per atom_map")
-            product = reorder_product_to_match(product, atom_map)
+    single_ended = method.lower() in SINGLE_ENDED
+    if not single_ended:
+        if product is None:
+            raise ValueError(
+                f"path method {method!r} is double-ended and needs a product; "
+                f"single-ended methods are {sorted(SINGLE_ENDED)}.")
+        if check_endpoints:
+            rep = check_endpoint_consistency(reactant, product, atom_map)
+            if rep["needs_reorder"] and atom_map is not None:
+                log.info("path_search: reordering product to the reactant's atom "
+                         "order per atom_map")
+                product = reorder_product_to_match(product, atom_map)
     runner = make_path_method(method)
-    log.info("path_search.run: method=%s, charge=%d", method, charge)
+    log.info("path_search.run: method=%s%s, charge=%d", method,
+             " (single-ended)" if single_ended else "", charge)
     return runner(reactant, product, calculator_fn,
                   outdir=Path(outdir), constraint=constraint, charge=charge,
                   **kwargs)

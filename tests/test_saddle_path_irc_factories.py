@@ -114,15 +114,14 @@ def test_register_saddle_adds_backend(monkeypatch, tmp_path):
 # ===========================================================================
 def test_path_registry_lists_builtins():
     from quantum_engine.ops.path_search import PATH_METHODS
-    assert set(PATH_METHODS.names()) == {"neb", "fsm", "gsm-de"}
+    assert {"neb", "fsm", "gsm-de", "pygsm-de", "gsm-se"} <= set(PATH_METHODS.names())
 
 
 def test_make_path_method_alias_and_unknown():
     from quantum_engine.ops.path_search import make_path_method, _run_neb, _run_gsm_de
     assert make_path_method("ci-neb") is _run_neb       # alias
     assert make_path_method("gsm") is _run_gsm_de       # alias
-    with pytest.raises(ValueError, match="Unknown path method"):
-        make_path_method("gsm-se")   # SE-GSM deliberately not registered yet
+    assert make_path_method("se-gsm").__name__ == "_run_gsm_se"   # pyGSM single-ended
     with pytest.raises(ValueError, match="Unknown path method"):
         make_path_method("nope")
 
