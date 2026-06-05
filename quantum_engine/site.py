@@ -146,6 +146,12 @@ MACE_MODELS = {
         f"{_HF_HUB_BASE}/models--ACEsuit--mace-omol-0/MACE-omol-0-extra-large-1024.model",
         None,
     ),
+    # MACE-OMol25 — discoverability alias for the OMol25-trained, charge-aware
+    # MACE above (== mace-omol; same weights).
+    "mace-omol25": _resolve_mace("mace-omol25",
+        f"{_HF_HUB_BASE}/models--ACEsuit--mace-omol-0/MACE-omol-0-extra-large-1024.model",
+        None,
+    ),
 
     # Multi-head (7 DFT levels in one model)
     "mace-mh": _resolve_mace("mace-mh",
@@ -199,6 +205,20 @@ MACE_MODELS = {
     ),
     "uma-m-1p1": _resolve_mace("uma-m-1p1",
         f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-m-1p1/uma-m-1p1.pt",
+        None,
+    ),
+    # UMA-M — discoverability alias for uma-m-1p1 (the current medium UMA).
+    "uma-m": _resolve_mace("uma-m",
+        f"{_HF_HUB_BASE}/models--facebook--fairchem-uma-m-1p1/uma-m-1p1.pt",
+        None,
+    ),
+
+    # FairChem eSEN — OMol25-trained equivariant Smooth Energy Network. NOT yet
+    # downloaded (add to download_uma_models.sh + populate); routed through the
+    # same FairChem/UMA builder (fairchem-core, the UMA sidecar). The path is the
+    # expected location so make_calc(...) error messages point at the right dir.
+    "esen-s": _resolve_mace("esen-s",
+        f"{_HF_HUB_BASE}/models--facebook--esen-sm-conserving-all-omol/esen-sm-conserving-all-omol.pt",
         None,
     ),
 

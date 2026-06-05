@@ -26,12 +26,23 @@ The package is NOT pip-installed in the image — invoke as
 
 ## Model weights
 
-- MLFF weights: `/net/databases/huggingface/mlFF_models/...` (registered in
-  `site.MACE_MODELS`). A new model = an entry there + (optionally) a
-  `register_energy` family (see [extending.md](extending.md)).
+`/net/databases/huggingface/mlFF_models/` is the **single canonical location** for
+every MLFF weight the codebase references (`site._HF_HUB_BASE`); all
+`site.MACE_MODELS` paths resolve under it. A new model = an entry there +
+(optionally) a `register_energy` family (see [extending.md](extending.md)).
+
+Present + wired (alias → family): the MACE family (`mace-mp`, `mace-off-*`,
+`mace-omol` / **`mace-omol25`** [OMol25, charge-aware], `mace-mh`/`mace-mh-1`,
+`mace-polar-*`), UMA (`uma-sm`, `uma-s-1p1`, `uma-s-1p2`, `uma-m-1p1` /
+**`uma-m`**), `orb-mol-conservative`, `aimnet2-rxn`. `qcb list-models` shows them.
+
 - UMA checkpoints: download via
   `/net/databases/huggingface/mlFF_models/download_uma_models.sh` (needs an
   `HF_TOKEN`; FAIR Chemistry License). 11 GB for `uma-m-1p1`.
+- **eSEN** (`esen-s`, FairChem OMol25-trained) is **wired but not yet downloaded**
+  — it routes through the same fairchem-core path as UMA (the UMA sidecar) and
+  errors with a clear "checkpoint not on disk" until you add it to the download
+  script and populate `models--facebook--esen-*`.
 
 ## External binaries (host/cluster, not in the container)
 
