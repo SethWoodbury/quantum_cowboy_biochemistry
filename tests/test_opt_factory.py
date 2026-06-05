@@ -10,18 +10,26 @@ import pytest
 
 def test_list_backends_includes_all_known():
     from quantum_engine.opt import list_backends, BACKENDS
-    backends = list_backends()
-    assert backends == [
+    backends = set(list_backends())
+    # Registry-backed: the core + modern backends must all be present (order is
+    # alphabetical now, so check membership, not a fixed list).
+    assert {
         "ase-lbfgs", "ase-fire", "ase-bfgs",
+        "ase-precon-lbfgs", "ase-fire2",
         "torch-sim-fire", "torch-sim-lbfgs",
-    ]
-    assert set(backends) == set(BACKENDS.keys())
+    } <= backends
+    assert backends == set(BACKENDS.keys())
 
 
 def test_make_optimizer_each_backend_constructs():
     from quantum_engine.opt import make_optimizer, list_backends
     for name in list_backends():
-        opt = make_optimizer(name, fmax=0.05, max_steps=10)
+        try:
+            opt = make_optimizer(name, fmax=0.05, max_steps=10)
+        except ImportError:
+            # Backend dep absent in this env (e.g. FIRE2 on an older ASE) —
+            # construction surfaces it; that's expected, skip it here.
+            continue
         assert opt.name == name
         assert opt.fmax == 0.05
         assert opt.max_steps == 10
@@ -30,9 +38,35 @@ def test_make_optimizer_each_backend_constructs():
 def test_make_optimizer_rejects_unknown_backend():
     from quantum_engine.opt import make_optimizer
     with pytest.raises(ValueError, match="Unknown optimizer backend"):
-        make_optimizer("ase-LBFGS")  # case-sensitive
-    with pytest.raises(ValueError, match="Unknown optimizer backend"):
         make_optimizer("does-not-exist")
+
+
+def test_make_optimizer_is_case_insensitive_and_alias_aware():
+    """Registry lookups are case-insensitive + alias-aware (a UX improvement
+    over the old case-sensitive dict)."""
+    from quantum_engine.opt import make_optimizer
+    assert make_optimizer("ASE-LBFGS").name == "ase-lbfgs"   # case-insensitive
+    assert make_optimizer("lbfgs").name == "ase-lbfgs"       # alias
+
+
+def test_register_optimizer_adds_new_backend():
+    """A brand-new minimizer drops in via one register_optimizer() call — the
+    core extensibility promise. Clean up after so we don't leak global state."""
+    from quantum_engine.opt.factory import (
+        OPTIMIZERS, register_optimizer, make_optimizer, list_backends)
+    from quantum_engine.opt.ase_optimizers import AseLbfgsOptimizer
+
+    class _MyMin(AseLbfgsOptimizer):
+        name = "my-min"
+
+    register_optimizer("my-min", lambda: _MyMin, aliases=("mine",))
+    try:
+        assert "my-min" in list_backends()
+        assert make_optimizer("my-min").name == "my-min"
+        assert make_optimizer("MINE").name == "my-min"   # alias + case-insensitive
+    finally:
+        OPTIMIZERS.unregister("my-min")
+    assert "my-min" not in OPTIMIZERS
 
 
 def test_torch_sim_lbfgs_stub_raises_on_run():

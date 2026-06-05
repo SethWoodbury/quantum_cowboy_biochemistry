@@ -126,3 +126,27 @@ class AseBfgsOptimizer(_AseOptimizerBase):
         super().__init__(**kwargs)
         from ase.optimize import BFGS  # noqa: PLC0415 - lazy import
         self._ase_cls = BFGS
+
+
+class AsePreconLbfgsOptimizer(_AseOptimizerBase):
+    """Preconditioned LBFGS — much better scaling on large (>100-atom) systems
+    than plain LBFGS/FIRE. Uses ASE's Exp preconditioner by default."""
+    name = "ase-precon-lbfgs"
+    _maxstep_kwarg = "maxstep"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        from ase.optimize.precon import PreconLBFGS  # noqa: PLC0415
+        self._ase_cls = PreconLBFGS
+
+
+class AseFire2Optimizer(_AseOptimizerBase):
+    """FIRE2 — improved timestep schedule over FIRE (Becker et al.). Requires a
+    recent ASE; registered but only usable where ``ase.optimize.FIRE2`` exists."""
+    name = "ase-fire2"
+    _maxstep_kwarg = "maxstep"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        from ase.optimize import FIRE2  # noqa: PLC0415
+        self._ase_cls = FIRE2

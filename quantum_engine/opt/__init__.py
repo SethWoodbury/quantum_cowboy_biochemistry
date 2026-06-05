@@ -14,7 +14,12 @@ Public API
 ----------
 ``make_optimizer(backend: str, **cfg) -> Optimizer``
     Factory. Backend strings: ``"ase-lbfgs"`` (default), ``"ase-fire"``,
-    ``"ase-bfgs"``, ``"torch-sim-fire"``, ``"torch-sim-lbfgs"``.
+    ``"ase-bfgs"``, ``"ase-precon-lbfgs"``, ``"ase-fire2"``,
+    ``"torch-sim-fire"``, ``"torch-sim-lbfgs"`` (+ aliases ``lbfgs``/``fire``/
+    ``bfgs``/``precon``/``fire2``; case-insensitive).
+
+``register_optimizer(name, factory_fn, *, requires_torch_sim=False, aliases=())``
+    Register a NEW minimizer backend at runtime — the extensibility hook.
 
 ``Optimizer.run(atoms, calculator) -> OptResult``
     Run the relaxation. ``atoms`` may already have ``.calc`` set; if not,
@@ -34,12 +39,20 @@ Example
 """
 
 from quantum_engine.opt.base import Optimizer, OptResult
-from quantum_engine.opt.factory import make_optimizer, list_backends, BACKENDS
+from quantum_engine.opt.factory import (
+    OPTIMIZERS,
+    BACKENDS,
+    make_optimizer,
+    list_backends,
+    register_optimizer,
+)
 
 __all__ = [
     "Optimizer",
     "OptResult",
     "make_optimizer",
     "list_backends",
+    "register_optimizer",
+    "OPTIMIZERS",
     "BACKENDS",
 ]
