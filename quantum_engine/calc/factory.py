@@ -351,9 +351,11 @@ def _build_mace(model, *, model_path, registry_path, head, device,
 
 register_energy("uma", lambda m: m.lower().startswith("uma-") or "fairchem" in m.lower(),
                 _build_uma)
-# eSEN (FairChem, OMol25-trained) loads through the same fairchem-core path as
-# UMA (load_predict_unit + FAIRChemCalculator), so it reuses the UMA builder.
+# eSEN + AllScAIP (FairChem, OMol25-trained) load through the same fairchem-core
+# path as UMA (load_predict_unit + FAIRChemCalculator), so they reuse the UMA
+# builder. (Use the *conserving* checkpoints for TS/saddle work — see site.py.)
 register_energy("esen", lambda m: m.lower().startswith("esen"), _build_uma)
+register_energy("allscaip", lambda m: m.lower().startswith("allscaip"), _build_uma)
 register_energy("orb", lambda m: m.lower().startswith("orb"), _build_orb)
 register_energy("aimnet", lambda m: m.lower().startswith("aimnet"), _build_aimnet)
 register_energy("qc",

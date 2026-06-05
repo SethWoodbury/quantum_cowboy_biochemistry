@@ -28,7 +28,7 @@ def test_mace_is_implicit_default_not_registered():
     # mace is NOT a registry entry — it's the fallback when nothing matches, so
     # it can never shadow a newly-registered family appended after it.
     assert "mace" not in ENERGY_FAMILIES.labels()
-    assert ENERGY_FAMILIES.labels() == ["uma", "esen", "orb", "aimnet", "qc"]
+    assert ENERGY_FAMILIES.labels() == ["uma", "esen", "allscaip", "orb", "aimnet", "qc"]
 
 
 def test_match_returns_label_and_builder():

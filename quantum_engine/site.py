@@ -213,19 +213,39 @@ MACE_MODELS = {
         None,
     ),
 
-    # FairChem eSEN — OMol25-trained equivariant Smooth Energy Network. The
-    # eSEN-S *conserving* checkpoint (forces = true energy gradients; the right
-    # variant for saddle/TS work) is facebook/OMol25 ::
-    # checkpoints/esen_sm_conserving_all.pt — GATED (FAIR Chemistry License,
-    # manual approval). NOT yet downloaded; routed through the same FairChem/UMA
-    # builder (fairchem-core, the UMA sidecar). To populate, with an approved
-    # HF_TOKEN:
-    #   python -c "from huggingface_hub import hf_hub_download as d; import shutil,os; \
-    #     dst='$_HF_HUB_BASE/models--facebook--esen-sm-conserving-all-omol'; os.makedirs(dst,exist_ok=True); \
-    #     p=d(repo_id='facebook/OMol25', filename='checkpoints/esen_sm_conserving_all.pt', token=os.environ['HF_TOKEN']); \
-    #     shutil.copy(p, dst+'/esen_sm_conserving_all.pt')"
-    "esen-s": _resolve_mace("esen-s",
+    # ── FairChem OMol25 extra checkpoints (facebook/OMol25, GATED — FAIR
+    # Chemistry License, manual approval). All route through the same
+    # fairchem-core path as UMA (the UMA sidecar). Populate with
+    # deps/download_omol25_models.sh (needs an approved HF_TOKEN).
+    #
+    # IMPORTANT — *conserving* vs *direct*: only the CONSERVING checkpoints have
+    # forces = -dE/dx (true energy gradients), which the saddle + partial-Hessian
+    # + IRC gate REQUIRES. The DIRECT models predict forces with a separate head
+    # (faster, non-conservative) — fine for single-points / MD, but NOT valid for
+    # TS/saddle/Hessian work. Use esen-*-conserving / allscaip-*-conserving for
+    # transition states.
+    "esen-s": _resolve_mace("esen-s",   # alias: eSEN-sm-conserving (TS-suitable)
         f"{_HF_HUB_BASE}/models--facebook--esen-sm-conserving-all-omol/esen_sm_conserving_all.pt",
+        None,
+    ),
+    "esen-sm-conserving": _resolve_mace("esen-sm-conserving",
+        f"{_HF_HUB_BASE}/models--facebook--esen-sm-conserving-all-omol/esen_sm_conserving_all.pt",
+        None,
+    ),
+    "esen-sm-direct": _resolve_mace("esen-sm-direct",   # direct: NOT for TS
+        f"{_HF_HUB_BASE}/models--facebook--esen-sm-direct-all-omol/esen_sm_direct_all.pt",
+        None,
+    ),
+    "esen-md-direct": _resolve_mace("esen-md-direct",   # direct: NOT for TS
+        f"{_HF_HUB_BASE}/models--facebook--esen-md-direct-all-omol/esen_md_direct_all.pt",
+        None,
+    ),
+    "allscaip-md-conserving": _resolve_mace("allscaip-md-conserving",  # TS-suitable
+        f"{_HF_HUB_BASE}/models--facebook--allscaip-omol102m-md-cons/AllScAIP-OMol102M-md-cons.pt",
+        None,
+    ),
+    "allscaip-md-direct": _resolve_mace("allscaip-md-direct",   # direct: NOT for TS
+        f"{_HF_HUB_BASE}/models--facebook--allscaip-omol102m-md-d/AllScAIP-OMol102M-md-d.pt",
         None,
     ),
 
