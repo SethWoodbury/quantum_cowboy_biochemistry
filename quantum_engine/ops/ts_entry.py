@@ -186,10 +186,21 @@ def run(
         raise ValueError(f"entry={entry!r} not in {ENTRIES}")
     if rigor not in RIGOR:
         raise ValueError(f"rigor={rigor!r} not in {sorted(RIGOR)}")
-    if ctx.engine:                       # fail fast (before any compute) — Phase 6
-        raise NotImplementedError(
-            f"engine={ctx.engine!r}: the QM-native engine gateway is Phase 6. "
-            "Use engine=None (an ASE calculator: MLFF or xTB) for now.")
+
+    # QM-native engine gateway: route the whole TS step to the package's own
+    # optimizer (e.g. ORCA NEB-TS / OptTS) instead of the ASE-calculator path.
+    if ctx.engine:
+        configure_logging()
+        from quantum_engine.qm.engine import make_engine  # noqa: PLC0415
+        log.info("ts_entry: routing to QM-native engine=%s (entry=%s)",
+                 ctx.engine, entry)
+        engine_kw = dict(kwargs)
+        if n_images is not None:            # forward an explicit n_images (M4)
+            engine_kw.setdefault("n_images", n_images)
+        runner = make_engine(ctx.engine)
+        return runner(reaction, ctx, entry=entry, outdir=Path(outdir),
+                      reactant=reactant, product=product, ts_guess=ts_guess,
+                      **engine_kw)
     preset = RIGOR[rigor]
     path_method = path_method or preset.path_method
     saddle_backend = saddle_backend or preset.saddle_backend

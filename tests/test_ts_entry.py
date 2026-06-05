@@ -8,6 +8,7 @@ math — with no MLFF/GPU/saddle compute.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -169,12 +170,22 @@ def test_validate_override_forces_validation(patched, tmp_path):
     assert patched["validate_called"] is True
 
 
-# ---- engine guard ----
-def test_engine_not_none_raises_phase6(tmp_path):
-    ctx = RunContext(engine="orca", model="dft")
-    with pytest.raises(NotImplementedError, match="Phase 6"):
+# ---- engine routing (QM-native gateway) ----
+def test_engine_routes_to_qm_native(tmp_path):
+    """ctx.engine != None routes the whole step to the QM-native engine
+    (ORCA here); execute=False just prepares the input (no ORCA needed)."""
+    ctx = RunContext(engine="orca", model="b3lyp/def2-SVP", charge=0, spin=1)
+    res = ts_entry.run(_resolved(), ctx, entry="ts-guess", ts_guess=_atoms(),
+                       outdir=tmp_path, execute=False)
+    assert res["engine"] == "orca" and res["status"] == "prepared"
+    assert Path(res["outputs"]["input"]).exists()
+
+
+def test_engine_unknown_raises(tmp_path):
+    ctx = RunContext(engine="nwchem", model="dft")
+    with pytest.raises(ValueError, match="Unknown engine"):
         ts_entry.run(_resolved(), ctx, entry="ts-guess", ts_guess=_atoms(),
-                     outdir=tmp_path)
+                     outdir=tmp_path, execute=False)
 
 
 # ---- gates.json emitted ----
