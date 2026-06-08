@@ -277,8 +277,12 @@ MH_DEFAULT_HEADS = {
     "mace-mh": "omol",
 }
 
-# Models that need gbg222's venv (has graph_electrostatics for POLAR)
-NEEDS_GBG_VENV = {"mace-polar-s", "mace-polar-m", "mace-polar-l", "mace-polar"}
+# NOTE: MACE-POLAR is now BAKED INTO the main container (deps/quantum_chem.def
+# installs graph_longrange + the PolarMACE fork in %post; the %test asserts
+# PolarMACE imports). So mace-polar-* loads in-process — no separate venv/sidecar.
+# The factory's polar guard (calc/factory.py) only raises if those imports actually
+# fail (i.e. an older container without the fork); in the current sif it passes.
+# (The old NEEDS_GBG_VENV set was unused dead code and has been removed.)
 
 # ── External QM packages ───────────────────────────────────────
 # Cluster-installed packages we shell out to. Each path is the binary

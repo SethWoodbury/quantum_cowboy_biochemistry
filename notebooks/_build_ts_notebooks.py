@@ -192,22 +192,37 @@ def defaults(profile):
         return dict(
             unprot='f"{THEOZYME_DIR}opaa_3l7g_optimal_maximal_theozyme_pxn_unprotonated.pdb"',
             prot='f"{PROTOMERS_DIR}opaa_3l7g_optimal_maximal_theozyme_pxn.pdb"',
-            model="'mace-mh-1'", head="'omol'", charge="0", spin="1",
+            model="'mace-polar-m'", head="None", charge="0", spin="1",
             # SN2-at-P: O_nuc(hydroxide)..P forming, P..O_lg breaking. EDIT serials per structure.
             f_nuc="'serial:1872'", f_elec="'serial:1850'", b_p="'serial:1850'", b_lg="'serial:1860'",
             scan_nuc="1871", scan_p="1849",   # 0-based = serial-1 (for qcb scan / fix-bond)
             react_serials="1872, 1850, 1860",   # 1-based serials (for refine-ts/validate-ts)
-            ptm='{"A:169": "KCX"}', ligand_charges='{"PXN": -1}',
+            ptm='{}',              # OPAA construct: NO post-translational modification (no KCX)
+            ligand_charges='{}',   # net charge of the protonated system = 0 (set on --charge)
         )
     return dict(
         unprot='f"{SYSTEM_DIR}structure_unprotonated.pdb"   # EDIT',
         prot='f"{PROTOMERS_DIR}structure.pdb"               # EDIT',
-        model="'mace-mh-1'", head="'omol'", charge="0", spin="1",
+        model="'mace-polar-m'", head="None", charge="0", spin="1",
         f_nuc="'serial:NUC'", f_elec="'serial:ELEC'", b_p="'serial:ELEC'", b_lg="'serial:LG'",
         scan_nuc="0", scan_p="1",
         react_serials="1, 2, 3",
         ptm='{}', ligand_charges='{}',
     )
+
+
+# Shared ENERGY MODEL guidance block (the plethora of plug-and-play models).
+MODEL_MENU = '''\
+### ENERGY MODEL (plug-and-play: change `model`/`head`; container_for() picks the sif) ###
+# Charged METAL active sites (e.g. di-Zn) — use a CHARGE-AWARE model:
+#   mace-polar-m : polarizable + long-range electrostatics — IDEAL for a charged metal
+#                  pocket (DEFAULT; baked into MAIN_SIF, loads in-process). sizes -s|-m|-l
+#   mace-omol    : wB97M-V/OMol25, charge-aware, highest accuracy (large GPU: A6000/H200)
+#   mace-mh-1    : multi-head foundation model -> set head='omol' for the OMol25 head
+#   orb-mol-conservative : Orbital-Materials, charge/spin-aware, Zn-capable (true gradients)
+#   uma-m-1p1 / esen-sm-conserving / allscaip-md-conserving : FairChem (route to UMA_SIF)
+# Organic-only (NO metals): mace-off-* (wB97M organic) ; aimnet2-rxn (CHON, TS-tuned).
+# AVOID GFN2-xTB on metals (not charge-aware there). --head applies to MACE multi-head only.'''
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -451,15 +466,12 @@ input_pdb = {D['prot']}        # the geometry to relax (reactant / product / ts-
 out_dir     = f"{{RELAX_MINIMIZE_DIR}}relax/"
 relaxed_pdb = f"{{out_dir}}relaxed.pdb"
 
-### ENERGY MODEL (plug-and-play) ###
-# Charged metal active sites: 'mace-mh-1' --head 'omol' (charge-aware, loads in MAIN_SIF) or
-# 'mace-omol' (best accuracy, needs A6000/H200). 'uma-m-1p1'/'esen-sm-conserving' route to UMA_SIF.
-# AVOID GFN2-xTB on metals (not charge-aware there). See INIT comments + docs/optimizers_and_engines.md.
+{MODEL_MENU}
 model  = {D['model']}
-head   = {D['head']}            # MACE multi-head only (e.g. 'omol'); None otherwise
+head   = {D['head']}            # MACE multi-head only (e.g. 'omol' for mace-mh-1); None for polar/omol
 device = "cuda"
-charge = {D['charge']}              # FULL-cluster net charge — EDIT per system (NOT read from the spec YAML)
-spin   = {D['spin']}              # multiplicity 2S+1
+charge = {D['charge']}              # FULL-cluster net charge (CLI-only; the spec YAML ignores charge/spin)
+spin   = {D['spin']}              # MULTIPLICITY (2S+1): no radicals -> S=0 -> multiplicity 1 -> spin=1
 
 ### CONSTRAINTS ###
 fix_preset = "ca-only"          # 'none' | 'ca-only' | 'backbone' | 'backbone-water'
@@ -522,12 +534,16 @@ def cell_scan(profile, step):
 relaxed_pdb = f"{{RELAX_MINIMIZE_DIR}}relax/relaxed.pdb"   # usually the CA-frozen relaxed cluster
 
 ### OUTPUTS ###
-out_dir      = f"{{SCAN_DIR}}scan/"
-ts_guess_pdb = f"{{out_dir}}ts_guess.pdb"
+# A 1-D relaxed scan IS a (single-ended, 1-coordinate) PATH SEARCH: it yields a TS
+# GUESS (highest-E frame) AND approximate reactant/product endpoints (the two ends).
+out_dir           = f"{{SCAN_DIR}}scan/"
+ts_guess_pdb      = f"{{out_dir}}ts_guess.pdb"        # max-energy frame -> Step refine-ts
+reactant_scan_pdb = f"{{out_dir}}reactant_scan.pdb"  # first frame (approx reactant) -> minimize next
+product_scan_pdb  = f"{{out_dir}}product_scan.pdb"   # last frame  (approx product)  -> minimize next
 
 ### ENERGY MODEL ###
-model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, spin = {D['charge']}, {D['spin']}
+model, head, device = {D['model']}, {D['head']}, "cuda"   # default mace-polar-m (see relax cell's menu)
+charge, spin = {D['charge']}, {D['spin']}                 # net charge (CLI-only); spin=multiplicity=1
 
 ### CONSTRAINTS ###
 fix_preset = "ca-only"          # the scanned bond is auto-pinned ON TOP of this preset
@@ -560,7 +576,7 @@ cmd_scan  = qcb_cmd(model, "scan", relaxed_pdb, "--model", model, "--charge", ch
                     "--coord", scan_coord, "--indices", *scan_indices,
                     "--start", scan_start, "--end", scan_end, "--n-steps", scan_n_steps,
                     "--fmax", scan_fmax, "--outdir", out_dir)
-extract_py = f"{{out_dir}}extract_max_e.py"
+extract_py = f"{{out_dir}}extract_frames.py"
 Path(extract_py).write_text(textwrap.dedent(f"""\\
     import ase.io as io
     from quantum_engine.io import load_structure, write_pdb
@@ -568,8 +584,10 @@ Path(extract_py).write_text(textwrap.dedent(f"""\\
     e = lambda a: a.info.get('energy_eV', a.get_potential_energy())
     i = max(range(len(frames)), key=lambda k: e(frames[k]))
     _, bt, _ = load_structure(r'{{template_pdb}}')
-    write_pdb(frames[i], bt, r'{{ts_guess_pdb}}', total_charge={{charge}})
-    print(f'TS guess = frame {{{{i}}}}/{{{{len(frames)}}}} -> {{ts_guess_pdb}}')
+    write_pdb(frames[0],  bt, r'{{reactant_scan_pdb}}', total_charge={{charge}})
+    write_pdb(frames[-1], bt, r'{{product_scan_pdb}}',  total_charge={{charge}})
+    write_pdb(frames[i],  bt, r'{{ts_guess_pdb}}',      total_charge={{charge}})
+    print(f'TS guess = frame {{{{i}}}}/{{{{len(frames)}}}} ; reactant=frame 0 ; product=frame {{{{len(frames)-1}}}}')
 """))
 cmd_extract = [*APPTAINER(container_for(model)), "python", extract_py]
 commands.append(" ".join(str(x) for x in cmd_scan))
@@ -578,8 +596,126 @@ with open(commands_file_path, "w") as f:
     f.write("\\n".join(commands) + "\\n")
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
-print(f"\\n# Outputs: {{out_dir}}scan-trajectory.xyz, scan-summary.json, scan.png ; {{ts_guess_pdb}}")
+print(f"\\n# Outputs: {{out_dir}}scan-trajectory.xyz, scan-summary.json, scan.png")
+print(f"#          TS guess: {{ts_guess_pdb}} ; endpoints: {{reactant_scan_pdb}}, {{product_scan_pdb}}")
 {sbatch(qtime="24:00:00", cpj=2, cpus="8", mem="64g", queue="gpu", gpu="'small'")}
+'''
+    return [("markdown", md), ("code", code)]
+
+
+def cell_min_endpoints(profile, step):
+    D = defaults(profile)
+    md = f"# **STEP {step}: Minimize the Reactant & Product Endpoints (`qcb opt`)**"
+    code = f'''\
+##################################################################
+###  MINIMIZE ENDPOINTS  (scan ends -> TRUE reactant / product) ###
+##################################################################
+# WHY: the barrier is E(TS) - E(reactant_min); you must compare two TRUE stationary
+# points. The scan's first/last frames are constraint-biased approximations, so relax
+# each to a real minimum. Use the SAME CA-frozen scaffold + model/charge/spin as the TS
+# so the energies are comparable. Reactive bonds are FREE here (no --fix-bond) — these are
+# basins, not the TS. These two minima are also what verify-irc-like should reproduce.
+
+### INPUTS ###
+reactant_scan_pdb = f"{{SCAN_DIR}}scan/reactant_scan.pdb"   # first scan frame
+product_scan_pdb  = f"{{SCAN_DIR}}scan/product_scan.pdb"    # last  scan frame
+
+### OUTPUTS ###
+out_dir = f"{{RELAX_MINIMIZE_DIR}}endpoints/"
+R_min   = f"{{out_dir}}reactant_min.pdb"
+P_min   = f"{{out_dir}}product_min.pdb"
+
+### ENERGY MODEL ###
+model, head, device = {D['model']}, {D['head']}, "cuda"   # default mace-polar-m (see relax cell's menu)
+charge, spin = {D['charge']}, {D['spin']}                 # net charge (CLI-only); spin=multiplicity=1
+
+### CONSTRAINTS ###
+fix_preset = "ca-only"          # same scaffold as the TS; reactive bonds FREE (no pin)
+
+### OPT PARAMETERS ###
+optimizer, fmax, max_steps = "lbfgs", 0.03, 500   # tighter fmax for clean basins
+
+### COMMAND / SUBMIT FILE NAMES ###
+commands_name      = f"{{PROJECT_NAME}}_min_endpoints"
+commands_file_path = os.path.join(CMDS_DIR, commands_name)
+
+### SANITY CHECKS ###
+for p in (reactant_scan_pdb, product_scan_pdb):
+    if not Path(p).is_file():
+        raise FileNotFoundError(f"scan endpoint not found: {{p}}  (run the scan step first)")
+Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+### GENERATE COMMANDS ###
+commands = []
+for _src, _dst in [(reactant_scan_pdb, R_min), (product_scan_pdb, P_min)]:
+    cmd = qcb_cmd(model, "opt", _src, "--model", model, "--charge", charge, "--spin", spin,
+                  "--device", device, "--fix-preset", fix_preset, "--optimizer", optimizer,
+                  "--fmax", fmax, "--max-steps", max_steps, "--outdir", out_dir, "--output-pdb", _dst)
+    if head: cmd += ["--head", head]
+    commands.append(" ".join(str(x) for x in cmd))
+with open(commands_file_path, "w") as f:
+    f.write("\\n".join(commands) + "\\n")
+print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
+for c in commands: print("\\n" + c)
+print(f"\\n# Outputs: {{R_min}} , {{P_min}}  (barrier = E(TS) - E(reactant_min))")
+{sbatch(qtime="12:00:00", cpj=2, cpus="8", mem="64g", queue="gpu", gpu="'small'")}
+'''
+    return [("markdown", md), ("code", code)]
+
+
+def cell_neb_opaa(profile, step):
+    D = defaults(profile)
+    md = f"# **STEP {step}: *(optional, more rigorous)* CI-NEB between the minimized endpoints (`qcb neb`)**"
+    code = f'''\
+##################################################################
+###  OPTIONAL: DOUBLE-ENDED CI-NEB  (more rigorous than 1-D scan) ###
+##################################################################
+# OPTIONAL alternative path search. A 1-D scan can slice BESIDE the true saddle for an
+# ASYNCHRONOUS SN2-at-P (P-O_nuc and P-O_lg not changing in lockstep). A double-ended
+# geodesic CI-NEB between the two MINIMIZED endpoints relaxes all orthogonal DOFs at every
+# image, so its climbing image is a better guess. Feed it to refine-ts via --from-neb.
+# (If your scan peak already refines to a clean 1-imag-mode saddle, you can skip this.)
+
+### INPUTS ###
+reactant_min = f"{{RELAX_MINIMIZE_DIR}}endpoints/reactant_min.pdb"
+product_min  = f"{{RELAX_MINIMIZE_DIR}}endpoints/product_min.pdb"
+
+### OUTPUTS ###
+out_dir = f"{{PATH_SEARCH_DIR}}neb/"
+
+### ENERGY MODEL ###
+model, head, device = {D['model']}, {D['head']}, "cuda"
+charge, spin = {D['charge']}, {D['spin']}
+
+### NEB PARAMETERS ###
+fix_preset    = "ca-only"
+n_images      = 17              # publication-tier; 11 for a quicker pass
+interpolation = "geodesic"      # REQUIRED for dense/charged sites (never 'linear')
+optimizer     = "fire"
+
+### COMMAND / SUBMIT FILE NAMES ###
+commands_name      = f"{{PROJECT_NAME}}_neb"
+commands_file_path = os.path.join(CMDS_DIR, commands_name)
+
+### SANITY CHECKS ###
+for p in (reactant_min, product_min):
+    if not Path(p).is_file():
+        raise FileNotFoundError(f"minimized endpoint not found: {{p}}  (run min-endpoints first)")
+Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+### GENERATE COMMANDS ###
+commands = []
+cmd = qcb_cmd(model, "neb", reactant_min, product_min, "--model", model, "--charge", charge,
+              "--spin", spin, "--device", device, "--fix-preset", fix_preset, "--n-images", n_images,
+              "--interpolation", interpolation, "--optimizer", optimizer, "--outdir", out_dir)
+if head: cmd += ["--head", head]
+commands.append(" ".join(str(x) for x in cmd))
+with open(commands_file_path, "w") as f:
+    f.write("\\n".join(commands) + "\\n")
+print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
+for c in commands: print("\\n" + c)
+print(f"\\n# Output dir: {{out_dir}}  → in refine-ts set  from_neb = '{{out_dir}}'")
+{sbatch(qtime="24:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1203,23 +1339,42 @@ def overview_opaa():
     return ("markdown", r"""# OPAA di-Zn phosphotriesterase — TS pipeline (ordered protocol)
 
 The recommended in-order protocol for the OPAA di-Zn theozyme (SN2 at phosphorus), a
-charged metal active site. A focused subset of the generalized notebook with OPAA inputs
-pre-filled — **edit the atom serials, charge/spin, and input PDB for your structure**
-(nothing is hardcoded beyond example values).
+charged metal active site, synthesized from a committee review (3 independent agents +
+codex) of the docs + code. A focused subset of the generalized notebook with OPAA inputs
+pre-filled — **edit the atom serials and input PDB for your structure** (only example
+values are filled; nothing is hardcoded).
 
-**Protocol:** `0` protonate (KCX, ligand charges) → `1` monitor (--metals) →
-`2` reaction-spec (O_nuc→P forming, P→O_lg breaking) → `3` CA-frozen relax (+ bond-pinned
-TS-region option) → `4` 1-D relaxed scan → TS guess (+ endpoints) → `5` refine-ts
-(`--backend auto`) → `6` validate-ts (tier b, Zn-shell active region) → `7` verify-irc-like
-(watch for a pentacoordinate intermediate) → `8` optional ORCA DFT reference.
+**What "path search" vs "refine to a saddle" means** (a question worth nailing): a
+**path search** *proposes* a TS GUESS along the reaction coordinate — the **1-D relaxed
+scan** here IS a (single-ended) path search, and it hands you a TS guess **plus**
+approximate reactant/product endpoints. **`refine-ts` is a SEPARATE step**: it optimizes
+that guess to an *exact* first-order saddle and runs the Hessian gate — it does NOT search
+a path. So you need a guess (scan or NEB) *before* refine-ts. And yes — you then
+**energy-minimize the endpoints** to true basins, because the barrier is
+`E(TS) − E(reactant_min)`.
 
-**Model guidance for the charged di-Zn site:** default **`mace-mh-1 --head omol`**
-(charge-aware, loads in MAIN_SIF). For production accuracy use **`mace-omol`** (needs
-A6000/H200). `mace-polar-m` is ideal in principle (explicit polarization) but does NOT load
-without the POLAR fork — don't default to it. **Never** GFN2-xTB on the metals. **Don't** use
-React-OT/AEFM here (CHNO/gas-phase only). **Charge/spin are CLI-only** (the spec YAML ignores
-them): set `--charge` to the full-cluster net charge (di-Zn(II) + bridging OH⁻ + phosphate
-≈ −2 to −3) and `--spin 1` (closed-shell).""")
+**Protocol:** `0` protonate (no PTM) → `1` monitor (--metals) → `2` reaction-spec
+(O_nuc→P forming, P→O_lg breaking) → `3` CA-frozen relax of the cluster (reactant basin) →
+`4` 1-D relaxed scan → TS guess **+ R/P endpoint frames** → `5` **minimize the R & P
+endpoints** (true basins) → `6` *(optional)* CI-NEB between the minima (more rigorous guess
+for an asynchronous step) → `7` refine-ts (`--backend auto`, 1 imaginary mode) →
+`8` validate-ts (tier b, Zn-shell active region) → `9` verify-irc-like → `10` optional ORCA DFT.
+
+**Model:** default **`mace-polar-m`** (MACE-POLAR-1-M) — polarizable + long-range
+electrostatics, ideal for the charged di-Zn pocket, and **baked into MAIN_SIF so it loads
+in-process**. `mace-omol` is the higher-accuracy second pass (large GPU); `mace-mh-1 --head
+omol` and `orb-mol-conservative` are charge-aware alternatives; UMA/eSEN route to UMA_SIF.
+**Never** GFN2-xTB on the metals. **Don't** use React-OT/AEFM here — they are CHNO/gas-phase
+only and HARD-FAIL on Zn/P.
+
+**Charge & spin (pre-filled):** net charge of the protonated system = **0** (no PTM); no
+radicals → S=0 → **multiplicity = 1**, so `--spin 1` (the `--spin` flag IS the multiplicity
+2S+1). Charge/spin are **CLI-only** — the reaction-spec YAML ignores them.
+
+**Watch for a pentacoordinate intermediate.** Organophosphate hydrolysis at P is often
+*stepwise* through a trigonal-bipyramidal phosphorane (both P–O bonds ~1.7 Å, CV s≈0). If
+`verify-irc-like` lands in such a basin and an all-real Hessian confirms it's a minimum, it's
+a real intermediate — split into two TS searches (R→intermediate, intermediate→P).""")
 
 
 def build(profile):
@@ -1231,7 +1386,7 @@ def build(profile):
     cells += cells_init(profile)
     if profile == "opaa":
         seq = [cell_protonate, cell_monitor, cell_reaction_spec, cell_relax, cell_scan,
-               cell_refine_ts, cell_validate, cell_irc, cell_dft]
+               cell_min_endpoints, cell_neb_opaa, cell_refine_ts, cell_validate, cell_irc, cell_dft]
     else:
         seq = [cell_protonate, cell_monitor, cell_reaction_spec, cell_relax, cell_scan,
                cell_neb, cell_gsm, cell_single_ended, cell_ts_entry, cell_reactot, cell_aefm,
