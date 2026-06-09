@@ -65,8 +65,10 @@ def _common_parser_setup(parser: argparse.ArgumentParser, needs_structure: bool 
                         help="Head for multi-head models (e.g., 'omol' for mace-mh)")
     parser.add_argument("--charge", type=int, default=None,
                         help="System net charge (default: inferred from PDB REMARK)")
-    parser.add_argument("--spin", type=int, default=None,
-                        help="Spin multiplicity 2S+1 (default: 1 if no charge ledger).")
+    parser.add_argument("--multiplicity", dest="spin", type=int, default=None,
+                        help="Spin multiplicity M=2S+1 (1=singlet, 2=doublet, 3=triplet; default 1).")
+    parser.add_argument("--spin", dest="_spin_S", type=int, default=None,
+                        help="Spin quantum number S; converted to multiplicity 2S+1. Prefer --multiplicity.")
     parser.add_argument("--charge-ledger", default=None,
                         help="Path to YAML/JSON charge ledger; sets total + spin "
                              "and propagates to output PDB REMARKs. Validated "
@@ -1514,8 +1516,10 @@ def main(argv=None):
                          help="Head for multi-head models (e.g. 'omol' for mace-mh)")
     p_refts.add_argument("--charge", type=int, default=None,
                          help="System net charge (default: inferred from PDB REMARK)")
-    p_refts.add_argument("--spin", type=int, default=None,
-                         help="Spin multiplicity 2S+1 (default: 1).")
+    p_refts.add_argument("--multiplicity", dest="spin", type=int, default=None,
+                         help="Spin multiplicity M=2S+1 (1=singlet, 2=doublet, 3=triplet; default 1).")
+    p_refts.add_argument("--spin", dest="_spin_S", type=int, default=None,
+                         help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_refts.add_argument("--charge-ledger", default=None,
                          help="Path to YAML/JSON charge ledger; sets total + spin "
                               "and propagates to output PDB REMARKs.")
@@ -1672,8 +1676,10 @@ def main(argv=None):
         help="Head selector for multi-head models (e.g. 'omol' for mace-mh).")
     p_neb.add_argument("--charge", type=int, default=None,
         help="System net charge. Default: inferred from PDB REMARK or filename.")
-    p_neb.add_argument("--spin", type=int, default=None,
-        help="Spin multiplicity 2S+1 (default: 1).")
+    p_neb.add_argument("--multiplicity", dest="spin", type=int, default=None,
+        help="Spin multiplicity M=2S+1 (1=singlet, 2=doublet, 3=triplet; default 1).")
+    p_neb.add_argument("--spin", dest="_spin_S", type=int, default=None,
+        help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_neb.add_argument("--charge-ledger", default=None,
         help="Path to YAML/JSON charge ledger; takes precedence over --charge.")
     p_neb.add_argument("--device", default="cuda", choices=["cuda", "cpu"],
@@ -1905,7 +1911,8 @@ def main(argv=None):
     p_tse.add_argument("--model", default="mace-omol", help="Energy-function alias")
     p_tse.add_argument("--head", default=None)
     p_tse.add_argument("--charge", type=int, default=None)
-    p_tse.add_argument("--spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_tse.add_argument("--multiplicity", dest="spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_tse.add_argument("--spin", dest="_spin_S", type=int, default=None, help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_tse.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     p_tse.add_argument("--engine", default=None,
                        help="QM-native engine (e.g. 'orca'); default None = ASE "
@@ -1944,7 +1951,8 @@ def main(argv=None):
     p_tpr.add_argument("--reactant", required=True, help="Reactant geometry")
     p_tpr.add_argument("--product", required=True, help="Product geometry")
     p_tpr.add_argument("--charge", type=int, default=None)
-    p_tpr.add_argument("--spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_tpr.add_argument("--multiplicity", dest="spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_tpr.add_argument("--spin", dest="_spin_S", type=int, default=None, help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_tpr.add_argument("--out", default=None, help="Write the guess here (xyz) for the handoff.")
     p_tpr.add_argument("--outdir", default=None)
     p_tpr.add_argument("--log-level", default="INFO")
@@ -1958,7 +1966,8 @@ def main(argv=None):
     p_trf.add_argument("--reactant", default=None, help="Optional R context (refiner-dependent)")
     p_trf.add_argument("--product", default=None, help="Optional P context (refiner-dependent)")
     p_trf.add_argument("--charge", type=int, default=None)
-    p_trf.add_argument("--spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_trf.add_argument("--multiplicity", dest="spin", type=int, default=None, help="Multiplicity 2S+1")
+    p_trf.add_argument("--spin", dest="_spin_S", type=int, default=None, help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_trf.add_argument("--out", default=None, help="Write the refined guess here (xyz).")
     p_trf.add_argument("--allow-out-of-domain", action="store_true",
                        help="Let a refiner run on out-of-training-domain elements (e.g. "
@@ -2086,7 +2095,8 @@ def main(argv=None):
     p_er.add_argument("--charge-ledger", default=None,
                        help="Optional ledger.yaml (validated and propagated).")
     p_er.add_argument("--charge", type=int, default=None)
-    p_er.add_argument("--spin", type=int, default=None)
+    p_er.add_argument("--multiplicity", dest="spin", type=int, default=None)
+    p_er.add_argument("--spin", dest="_spin_S", type=int, default=None, help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_er.add_argument("--fmax", type=float, default=0.02,
                        help="Convergence target (eV/Å). Tighter than scan "
                             "defaults — that's the whole point. Bump to 0.03 "
@@ -2136,7 +2146,8 @@ def main(argv=None):
     p_s2d.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     p_s2d.add_argument("--charge-ledger", default=None)
     p_s2d.add_argument("--charge", type=int, default=None)
-    p_s2d.add_argument("--spin", type=int, default=None)
+    p_s2d.add_argument("--multiplicity", dest="spin", type=int, default=None)
+    p_s2d.add_argument("--spin", dest="_spin_S", type=int, default=None, help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_s2d.add_argument("--fmax", type=float, default=0.05,
                         help="Per-grid-point optimizer fmax. Looser than "
                              "release stage — FixBondLengths holds geometry.")
@@ -2219,7 +2230,8 @@ def main(argv=None):
     p_ms.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     p_ms.add_argument("--charge-ledger", default=None)
     p_ms.add_argument("--charge", type=int, default=None)
-    p_ms.add_argument("--spin", type=int, default=None)
+    p_ms.add_argument("--multiplicity", dest="spin", type=int, default=None)
+    p_ms.add_argument("--spin", dest="_spin_S", type=int, default=None, help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_ms.add_argument("--max-variants", type=int, default=200,
                        help="Cap on emitted variants (defensive default).")
     p_ms.add_argument("--log-level", default="INFO",
@@ -2247,7 +2259,8 @@ def main(argv=None):
     p_vts.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     p_vts.add_argument("--charge-ledger", default=None)
     p_vts.add_argument("--charge", type=int, default=None)
-    p_vts.add_argument("--spin", type=int, default=None)
+    p_vts.add_argument("--multiplicity", dest="spin", type=int, default=None)
+    p_vts.add_argument("--spin", dest="_spin_S", type=int, default=None, help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_vts.add_argument("--reactive-atoms", nargs="+", required=True,
                         help="Atoms whose motion defines the reaction "
                              "coordinate (1-based PDB serials, '0:idx', "
@@ -2313,7 +2326,8 @@ def main(argv=None):
     p_vil.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     p_vil.add_argument("--charge-ledger", default=None)
     p_vil.add_argument("--charge", type=int, default=None)
-    p_vil.add_argument("--spin", type=int, default=None)
+    p_vil.add_argument("--multiplicity", dest="spin", type=int, default=None)
+    p_vil.add_argument("--spin", dest="_spin_S", type=int, default=None, help="Spin quantum number S; converted to multiplicity 2S+1 (prefer --multiplicity).")
     p_vil.add_argument("--displacement", type=float, default=0.20,
                         help="Displacement magnitude (Å). Default 0.20. "
                              "Bump to 0.30-0.50 for stiff TS.")
@@ -2387,6 +2401,19 @@ def main(argv=None):
     )
 
     args = parser.parse_args(argv)
+
+    # Resolve --spin (the spin quantum number S) into the multiplicity field
+    # (args.spin holds the MULTIPLICITY M=2S+1 that the handlers/RunContext expect).
+    # --multiplicity sets M directly; --spin sets S and is converted here. Giving
+    # both is an error. (crest-mace has no _spin_S — its --spin is unpaired electrons.)
+    _spin_S = getattr(args, "_spin_S", None)
+    if _spin_S is not None:
+        if getattr(args, "spin", None) is not None:
+            parser.error("pass either --multiplicity (M=2S+1) or --spin (S), not both")
+        args.spin = 2 * int(_spin_S) + 1
+        print(f"# --spin={_spin_S} interpreted as spin quantum number S "
+              f"→ multiplicity {args.spin} (=2S+1); use --multiplicity to set M directly.",
+              file=sys.stderr)
 
     # --verbose flag overrides --log-level for chemoton-explore
     if getattr(args, "verbose", False):

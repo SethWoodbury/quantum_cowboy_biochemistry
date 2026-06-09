@@ -394,7 +394,7 @@ def cell_reaction_spec(profile, step):
 #
 # ATOM TOKENS: "serial:N" (1-based PDB serial, RECOMMENDED), "CHAIN:RESID:NAME"
 #              (e.g. "A:169:NZ"), or a bare 0-based ASE index. Use one style consistently.
-# IMPORTANT: charge & spin are NOT read from this YAML — always pass --charge/--spin on
+# IMPORTANT: charge & multiplicity are NOT read from this YAML — always pass --charge/--multiplicity on
 #            every qcb command (the YAML keys would be silently ignored).
 
 print_commands = True
@@ -470,8 +470,9 @@ relaxed_pdb = f"{{out_dir}}relaxed.pdb"
 model  = {D['model']}
 head   = {D['head']}            # MACE multi-head only (e.g. 'omol' for mace-mh-1); None for polar/omol
 device = "cuda"
-charge = {D['charge']}              # FULL-cluster net charge (CLI-only; the spec YAML ignores charge/spin)
-spin   = {D['spin']}              # MULTIPLICITY (2S+1): no radicals -> S=0 -> multiplicity 1 -> spin=1
+charge       = {D['charge']}        # FULL-cluster net charge (CLI-only; the spec YAML ignores charge/multiplicity)
+multiplicity = {D['spin']}        # spin MULTIPLICITY M=2S+1 (1=singlet/no radicals, 2=doublet, 3=triplet)
+                                    # NOTE: the CLI flag is --multiplicity. (--spin takes S and converts to 2S+1.)
 
 ### CONSTRAINTS ###
 fix_preset = "ca-only"          # 'none' | 'ca-only' | 'backbone' | 'backbone-water'
@@ -496,7 +497,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 
 ### GENERATE COMMANDS ###
 commands = []
-cmd  = qcb_cmd(model, "opt", input_pdb, "--model", model, "--charge", charge, "--spin", spin, "--device", device)
+cmd  = qcb_cmd(model, "opt", input_pdb, "--model", model, "--charge", charge, "--multiplicity", multiplicity, "--device", device)
 if head: cmd += ["--head", head]
 cmd += ["--fix-preset", fix_preset]
 for s in extra_fix:  cmd += ["--fix", s]
@@ -543,7 +544,7 @@ product_scan_pdb  = f"{{out_dir}}product_scan.pdb"   # last frame  (approx produ
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"   # default mace-polar-m (see relax cell's menu)
-charge, spin = {D['charge']}, {D['spin']}                 # net charge (CLI-only); spin=multiplicity=1
+charge, multiplicity = {D['charge']}, {D['spin']}                 # net charge (CLI-only); multiplicity M=2S+1 (1=singlet)
 
 ### CONSTRAINTS ###
 fix_preset = "ca-only"          # the scanned bond is auto-pinned ON TOP of this preset
@@ -572,7 +573,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 # 1) the scan; 2) a tiny helper that extracts the max-energy frame as a TS-guess PDB.
 commands = []
 cmd_scan  = qcb_cmd(model, "scan", relaxed_pdb, "--model", model, "--charge", charge,
-                    "--spin", spin, "--device", device, "--fix-preset", fix_preset,
+                    "--multiplicity", multiplicity, "--device", device, "--fix-preset", fix_preset,
                     "--coord", scan_coord, "--indices", *scan_indices,
                     "--start", scan_start, "--end", scan_end, "--n-steps", scan_n_steps,
                     "--fmax", scan_fmax, "--outdir", out_dir)
@@ -627,7 +628,7 @@ P_min   = f"{{out_dir}}product_min.pdb"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"   # default mace-polar-m (see relax cell's menu)
-charge, spin = {D['charge']}, {D['spin']}                 # net charge (CLI-only); spin=multiplicity=1
+charge, multiplicity = {D['charge']}, {D['spin']}                 # net charge (CLI-only); multiplicity M=2S+1 (1=singlet)
 
 ### CONSTRAINTS ###
 fix_preset = "ca-only"          # same scaffold as the TS; reactive bonds FREE (no pin)
@@ -648,7 +649,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 for _src, _dst in [(reactant_scan_pdb, R_min), (product_scan_pdb, P_min)]:
-    cmd = qcb_cmd(model, "opt", _src, "--model", model, "--charge", charge, "--spin", spin,
+    cmd = qcb_cmd(model, "opt", _src, "--model", model, "--charge", charge, "--multiplicity", multiplicity,
                   "--device", device, "--fix-preset", fix_preset, "--optimizer", optimizer,
                   "--fmax", fmax, "--max-steps", max_steps, "--outdir", out_dir, "--output-pdb", _dst)
     if head: cmd += ["--head", head]
@@ -685,7 +686,7 @@ out_dir = f"{{PATH_SEARCH_DIR}}neb/"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, spin = {D['charge']}, {D['spin']}
+charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### NEB PARAMETERS ###
 fix_preset    = "ca-only"
@@ -706,7 +707,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 cmd = qcb_cmd(model, "neb", reactant_min, product_min, "--model", model, "--charge", charge,
-              "--spin", spin, "--device", device, "--fix-preset", fix_preset, "--n-images", n_images,
+              "--multiplicity", multiplicity, "--device", device, "--fix-preset", fix_preset, "--n-images", n_images,
               "--interpolation", interpolation, "--optimizer", optimizer, "--outdir", out_dir)
 if head: cmd += ["--head", head]
 commands.append(" ".join(str(x) for x in cmd))
@@ -741,7 +742,7 @@ out_dir = f"{{PATH_SEARCH_DIR}}neb/"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, spin = {D['charge']}, {D['spin']}
+charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### CONSTRAINTS ###
 fix_preset = "ca-only"
@@ -768,7 +769,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 cmd  = qcb_cmd(model, "neb", reactant_pdb, product_pdb, "--model", model, "--charge", charge,
-               "--spin", spin, "--device", device, "--fix-preset", fix_preset,
+               "--multiplicity", multiplicity, "--device", device, "--fix-preset", fix_preset,
                "--n-images", n_images, "--interpolation", interpolation, "--optimizer", optimizer,
                "--outdir", out_dir)
 if head: cmd += ["--head", head]
@@ -792,7 +793,7 @@ def cell_gsm(profile, step):
 ###     GROWING / FREEZING STRING   (qcb gsm; needs R AND P)   ###
 ##################################################################
 # String methods: cheaper than NEB, good TS guesses. GSM = Growing String,
-# FSM = Freezing String. NOTE: qcb gsm has NO --spin and NO --fix-preset (string
+# FSM = Freezing String. NOTE: qcb gsm has NO --multiplicity/--spin and NO --fix-preset (string
 # methods don't take ASE constraints). For single-ended (reactant + driving coords)
 # use ts-entry --path-method gsm-se instead (see the single-ended step).
 
@@ -864,7 +865,7 @@ out_dir = f"{{TS_SEARCH_DIR}}single_ended/"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, spin = {D['charge']}, {D['spin']}
+charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### SINGLE-ENDED PARAMETERS ###
 mode         = "reactant-only"  # 'reactant-only' (needs cv) | 'gsm-se' (needs driving_coords)
@@ -885,7 +886,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 cmd = qcb_cmd(model, "ts-entry", "--entry", "reactant-only", "--reaction-spec", spec_path,
-              "--reactant", reactant_pdb, "--model", model, "--charge", charge, "--spin", spin,
+              "--reactant", reactant_pdb, "--model", model, "--charge", charge, "--multiplicity", multiplicity,
               "--device", device, "--rigor", rigor, "--outdir", out_dir)
 if head: cmd += ["--head", head]
 if mode == "gsm-se":      cmd += ["--path-method", "gsm-se"]
@@ -929,7 +930,7 @@ out_dir = f"{{TS_SEARCH_DIR}}ts_entry/"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, spin = {D['charge']}, {D['spin']}
+charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### ORCHESTRATOR PARAMETERS ###
 rigor          = "standard"     # draft | standard | publication
@@ -951,7 +952,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 cmd = qcb_cmd(model, "ts-entry", "--entry", entry, "--reaction-spec", spec_path,
-              "--model", model, "--charge", charge, "--spin", spin, "--device", device,
+              "--model", model, "--charge", charge, "--multiplicity", multiplicity, "--device", device,
               "--rigor", rigor, "--outdir", out_dir)
 if head: cmd += ["--head", head]
 if entry in ("reactant-product", "reactant-only"): cmd += ["--reactant", reactant_pdb]
@@ -997,7 +998,7 @@ guess_out = f"{{GENERATIVE_DIR}}reactot_guess.xyz"
 out_dir   = f"{{GENERATIVE_DIR}}reactot/"
 
 ### MODEL ###
-charge, spin = {D['charge']}, {D['spin']}            # React-OT ignores charge (trained neutral)
+charge, multiplicity = {D['charge']}, {D['spin']}            # React-OT ignores charge (trained neutral)
 
 ### COMMAND / SUBMIT FILE NAMES ###
 commands_name      = f"{{PROJECT_NAME}}_reactot"
@@ -1013,7 +1014,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 commands = []
 cmd = sidecar_cmd(REACTOT_SIF, "ts-propose", "--method", "react-ot",
                   "--reactant", reactant_xyz, "--product", product_xyz,
-                  "--charge", charge, "--spin", spin, "--out", guess_out, "--outdir", out_dir)
+                  "--charge", charge, "--multiplicity", multiplicity, "--out", guess_out, "--outdir", out_dir)
 commands.append(" ".join(str(x) for x in cmd))
 with open(commands_file_path, "w") as f:
     f.write("\\n".join(commands) + "\\n")
@@ -1045,7 +1046,7 @@ refined_out = f"{{GENERATIVE_DIR}}aefm_refined.xyz"
 out_dir     = f"{{GENERATIVE_DIR}}aefm/"
 
 ### MODEL ###
-charge, spin = {D['charge']}, {D['spin']}
+charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### COMMAND / SUBMIT FILE NAMES ###
 commands_name      = f"{{PROJECT_NAME}}_aefm"
@@ -1059,7 +1060,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 cmd = sidecar_cmd(AEFM_SIF, "ts-refine", "--method", "aefm", "--ts-guess", guess_xyz,
-                  "--charge", charge, "--spin", spin, "--out", refined_out, "--outdir", out_dir)
+                  "--charge", charge, "--multiplicity", multiplicity, "--out", refined_out, "--outdir", out_dir)
 commands.append(" ".join(str(x) for x in cmd))
 with open(commands_file_path, "w") as f:
     f.write("\\n".join(commands) + "\\n")
@@ -1093,7 +1094,7 @@ out_dir = f"{{REFINE_TS_DIR}}refine/"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, spin = {D['charge']}, {D['spin']}
+charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### CONSTRAINTS ###
 fix_preset = "ca-only"          # kept during saddle + freq
@@ -1121,7 +1122,7 @@ commands = []
 cmd = qcb_cmd(model, "refine-ts")
 if from_neb: cmd += ["--from-neb", from_neb, "--template-pdb", template_pdb]
 else:        cmd += [ts_guess_pdb]
-cmd += ["--model", model, "--charge", charge, "--spin", spin, "--device", device,
+cmd += ["--model", model, "--charge", charge, "--multiplicity", multiplicity, "--device", device,
         "--fix-preset", fix_preset, "--reactive-atoms", *map(str, reactive_atoms),
         "--backend", backend, "--saddle-fmax", saddle_fmax, "--saddle-max-steps", saddle_max_steps,
         "--imag-cm-cutoff", imag_cm_cutoff, "--imag-mode-overlap", imag_overlap,
@@ -1158,7 +1159,7 @@ out_dir = f"{{TS_VALIDATION_DIR}}validate/"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, spin = {D['charge']}, {D['spin']}
+charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### VALIDATE PARAMETERS ###
 reactive_atoms   = [{D['react_serials']}]   # 1-based PDB serials
@@ -1180,7 +1181,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 cmd = qcb_cmd(model, "validate-ts", ts_pdb, "--outdir", out_dir, "--model", model,
-              "--charge", charge, "--spin", spin, "--device", device,
+              "--charge", charge, "--multiplicity", multiplicity, "--device", device,
               "--reactive-atoms", *map(str, reactive_atoms), "--tier", tier,
               "--imag-cm-cutoff", imag_cm_cutoff, "--imag-mode-min-overlap", imag_overlap,
               "--n-imag-expected", n_imag_expected)
@@ -1219,7 +1220,7 @@ out_dir = f"{{TS_VALIDATION_DIR}}irc_like/"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, spin = {D['charge']}, {D['spin']}
+charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### IRC-LIKE PARAMETERS ###
 displacement = 0.20             # A along the imag mode
@@ -1240,7 +1241,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 cmd = qcb_cmd(model, "verify-irc-like", ts_pdb, "--imag-mode", imag_mode, "--outdir", out_dir,
-              "--model", model, "--charge", charge, "--spin", spin, "--device", device,
+              "--model", model, "--charge", charge, "--multiplicity", multiplicity, "--device", device,
               "--displacement", displacement, "--fmax", fmax, "--max-steps", max_steps,
               "--optimizer", optimizer)
 if head: cmd += ["--head", head]
@@ -1277,7 +1278,7 @@ product_pdb  = f"{{RELAX_MINIMIZE_DIR}}relax/product.pdb"    # EDIT
 out_dir = f"{{DFT_DIR}}orca_nebts/"
 
 ### DFT PARAMETERS ###
-charge, spin  = {D['charge']}, {D['spin']}
+charge, multiplicity  = {D['charge']}, {D['spin']}
 engine_method = "wB97X-D3/def2-TZVP"   # set in the ORCA engine config; shown here for reference
 EXECUTE       = False           # False -> write ORCA input + wrapper, don't run
 
@@ -1294,7 +1295,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 commands = []
 cmd = [*APPTAINER(MAIN_SIF, gpu=False), "qcb", "ts-entry", "--entry", entry, "--reaction-spec", spec_path,
        "--engine", "orca", "--reactant", reactant_pdb, "--product", product_pdb,
-       "--charge", str(charge), "--spin", str(spin), "--outdir", out_dir,
+       "--charge", str(charge), "--multiplicity", str(multiplicity), "--outdir", out_dir,
        ("--execute" if EXECUTE else "--no-execute")]
 commands.append(" ".join(str(x) for x in cmd))
 with open(commands_file_path, "w") as f:
@@ -1367,9 +1368,11 @@ omol` and `orb-mol-conservative` are charge-aware alternatives; UMA/eSEN route t
 **Never** GFN2-xTB on the metals. **Don't** use React-OT/AEFM here — they are CHNO/gas-phase
 only and HARD-FAIL on Zn/P.
 
-**Charge & spin (pre-filled):** net charge of the protonated system = **0** (no PTM); no
-radicals → S=0 → **multiplicity = 1**, so `--spin 1` (the `--spin` flag IS the multiplicity
-2S+1). Charge/spin are **CLI-only** — the reaction-spec YAML ignores them.
+**Charge & multiplicity (pre-filled):** net charge of the protonated system = **0** (no PTM);
+no radicals → spin quantum number **S = 0** → spin **multiplicity M = 2S+1 = 1** (singlet), so
+pass **`--multiplicity 1`**. (The codebase uses *multiplicity* (2S+1) everywhere; the optional
+`--spin` flag instead takes **S** and converts it to 2S+1, so `--spin 0` ⇒ `--multiplicity 1`.)
+Charge & multiplicity are **CLI-only** — the reaction-spec YAML ignores them.
 
 **Watch for a pentacoordinate intermediate.** Organophosphate hydrolysis at P is often
 *stepwise* through a trigonal-bipyramidal phosphorane (both P–O bonds ~1.7 Å, CV s≈0). If
