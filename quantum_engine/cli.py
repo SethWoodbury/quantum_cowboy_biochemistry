@@ -1316,7 +1316,8 @@ def _cmd_ts_refine(args):
     P = load_structure(args.product)[0] if args.product else None
     outdir = Path(args.outdir) if args.outdir else Path("qcb-ts-refine-out")
     res = ts_refine.run(args.method, guess, charge=args.charge or 0,
-                        spin=args.spin or 1, reactant=R, product=P, outdir=outdir)
+                        spin=args.spin or 1, reactant=R, product=P, outdir=outdir,
+                        allow_out_of_domain=args.allow_out_of_domain)
     ts = res.get("ts_guess")
     if ts is not None and args.out:
         ase_write(args.out, ts, format="extxyz")
@@ -1959,6 +1960,9 @@ def main(argv=None):
     p_trf.add_argument("--charge", type=int, default=None)
     p_trf.add_argument("--spin", type=int, default=None, help="Multiplicity 2S+1")
     p_trf.add_argument("--out", default=None, help="Write the refined guess here (xyz).")
+    p_trf.add_argument("--allow-out-of-domain", action="store_true",
+                       help="Let a refiner run on out-of-training-domain elements (e.g. "
+                            "AEFM on a metal site): unvalidated; the QM gate still decides.")
     p_trf.add_argument("--outdir", default=None)
     p_trf.add_argument("--log-level", default="INFO")
 

@@ -72,17 +72,36 @@ def _resolve_model(model: str | None) -> str:
     return m
 
 
-def _check_domain(ts_guess: Atoms, charge: int, spin: int) -> None:
-    """Guard AEFM's HARD domain limits before launching the model."""
+def _check_domain(ts_guess: Atoms, charge: int, spin: int,
+                  allow_out_of_domain: bool = False) -> None:
+    """Guard AEFM's domain limits before launching the model.
+
+    AEFM's LEFTNet backbone uses an ``nn.Embedding(100, ...)`` so it mechanically
+    accepts any element (Zn included) WITHOUT crashing — unlike React-OT, whose
+    one-hot encoder is literally {H,C,N,O} and KeyErrors on anything else. BUT the
+    released checkpoints are trained only on Transition1x / GDB7-TS (CHNO, gas-phase
+    organics), so the embedding rows for metals/heteroatoms are UNTRAINED and the
+    refinement is out-of-distribution / unvalidated. By default we refuse; pass
+    ``allow_out_of_domain=True`` (CLI ``--allow-out-of-domain``) to try it anyway —
+    the QM saddle+Hessian+IRC gate remains the acceptance authority regardless.
+    """
     bad = sorted({int(z) for z in ts_guess.numbers if int(z) not in _SUPPORTED_Z})
     if bad:
         from ase.data import chemical_symbols  # noqa: PLC0415
         syms = ", ".join(chemical_symbols[z] for z in bad)
-        raise ValueError(
-            f"AEFM supports only H, C, N, O — got unsupported element(s): {syms}. "
-            "The released checkpoints are trained on Transition1x/GDB7-TS organics "
-            "and have no embedding for these; they cannot refine metal / heteroatom "
-            "systems such as the di-Zn theozyme.")
+        if not allow_out_of_domain:
+            raise ValueError(
+                f"AEFM is trained on H/C/N/O only — got out-of-domain element(s): "
+                f"{syms}. AEFM CAN mechanically run on these (LEFTNet embeds Z<100) "
+                "but the weights are UNTRAINED on them, so the refinement is "
+                "unvalidated. Pass allow_out_of_domain=True (--allow-out-of-domain) "
+                "to experiment anyway (e.g. on the di-Zn theozyme); the QM gate "
+                "still decides.")
+        log.warning(
+            "AEFM: out-of-domain element(s) %s — the weights are UNTRAINED on these "
+            "(trained on CHNO organics); refinement is unvalidated. Proceeding "
+            "because allow_out_of_domain=True. The QM saddle+Hessian+IRC gate is "
+            "the authority.", syms)
     if charge != 0 or spin != 1:
         log.warning(
             "AEFM has no charge/spin channel (trained neutral, singlet); "
@@ -98,7 +117,7 @@ def _check_domain(ts_guess: Atoms, charge: int, spin: int) -> None:
 def run(ts_guess: Atoms, *, charge: int = 0, spin: int = 1, reactant=None,
         product=None, outdir: str | Path = ".", model: str | None = None,
         device: str | None = None, overrides: list[str] | None = None,
-        timeout_s: int = 1800, **kwargs) -> dict:
+        allow_out_of_domain: bool = False, timeout_s: int = 1800, **kwargs) -> dict:
     """AEFM refiner. Returns the standard ts_refine result dict.
 
     Drives ``aefm_sample globals.model=<ckpt> globals.samples_path=<in.xyz>
@@ -113,7 +132,7 @@ def run(ts_guess: Atoms, *, charge: int = 0, spin: int = 1, reactant=None,
             "sidecar (deps/aefm_sidecar.def) — schnetpack+torch_geometric+python3.12 "
             "conflict with the main container.")
 
-    _check_domain(ts_guess, charge, spin)
+    _check_domain(ts_guess, charge, spin, allow_out_of_domain=allow_out_of_domain)
 
     from ase.io import read as ase_read, write as ase_write  # noqa: PLC0415
 

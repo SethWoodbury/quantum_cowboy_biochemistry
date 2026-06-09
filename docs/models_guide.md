@@ -41,7 +41,8 @@ MACE_MODELS = {
     # Multi-head (7 DFT levels in one model)
     "mace-mh": "/home/gbg222/projects/mace_models/mace-mh-0.model",
 
-    # Polarizable (requires gbg222 venv for graph_electrostatics)
+    # Polarizable — BAKED INTO the main container (deps/quantum_chem.def installs
+    # graph_longrange + the PolarMACE fork); loads in-process, no separate venv.
     "mace-polar-s": "/home/gbg222/projects/mace_models/MACE-POLAR-1-S.model",
     "mace-polar-m": "/home/gbg222/projects/mace_models/MACE-POLAR-1-M.model",
     "mace-polar-l": "/home/gbg222/projects/mace_models/MACE-POLAR-1-L.model",

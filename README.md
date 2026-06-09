@@ -91,8 +91,10 @@ apptainer exec --nv --bind /home --bind /net --env PYTHONPATH=$REPO $UMA \
 > Once the package is `pip install`-ed into a rebuilt container, `qcb <op>`
 > works directly and the `python -m quantum_engine.cli` form becomes optional
 > (it stays the no-rebuild path for testing an editable checkout). `mace-polar-*`
-> needs `graph_electrostatics`, which is not in the container — `make_calc`
-> raises a clear error pointing you to `mace-mh-1 --head omol` / `mace-omol`.
+> (charge-aware, polarizable) is **baked into the main container** — the
+> `graph_longrange` module + the `PolarMACE` fork are installed in `deps/quantum_chem.def`
+> (`%post`), so it loads in-process. `make_calc` only raises (pointing you to
+> `mace-mh-1 --head omol` / `mace-omol`) on an older image without the fork.
 
 > For a development checkout, bind-mount it over the installed package:
 > `--bind <repo>:/opt/quantum_engine_src` and prepend it to `PYTHONPATH`.

@@ -678,7 +678,6 @@ from quantum_engine.calc import make_calc as _make_calc
 MH_DEFAULT_HEADS = {
     "mace-mh": "omol",  # wB97M-V level, same training as OMOL
 }
-NEEDS_GBG_VENV = {"mace-polar-s", "mace-polar-m", "mace-polar-l", "mace-polar"}
 
 
 def get_calculator(model_key, device="cuda", dtype="float64", head=None):
