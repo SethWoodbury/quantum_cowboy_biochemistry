@@ -257,7 +257,7 @@ input_pdb = {D['unprot']}
 output_pdb = {D['prot']}
 
 ### CONSTANTS ###
-CONTAINER  = MAIN_SIF       # the qcb / protonator container (defined in INIT)
+CONTAINER  = MAIN_SIF       # the cowboy-qc / protonator container (defined in INIT)
 PROTONATOR = f"{{QUANTUM_COWBOY_DIR}}quantum_engine/prep/protonator.py"
 # (`cowboy-qc protonate <same args>` is equivalent to running this file directly.)
 
@@ -678,9 +678,9 @@ def cell_path_search(profile, step, optional=False):
 ##################################################################
 # ONE cell, plug-and-play method. Between a reactant and product (the MINIMIZED
 # endpoints), find a TS guess. Set `path_method`:
-#   'ci-neb' : climbing-image NEB (qcb neb) — robust, geodesic interp, honours --fix-preset
-#   'gsm'    : Growing String (qcb gsm --method gsm) — cheaper; NO ASE constraints
-#   'fsm'    : Freezing String (qcb gsm --method fsm) — cheapest; NO ASE constraints
+#   'ci-neb' : climbing-image NEB (cowboy-qc neb) — robust, geodesic interp, honours --fix-preset
+#   'gsm'    : Growing String (cowboy-qc gsm --method gsm) — cheaper; NO ASE constraints
+#   'fsm'    : Freezing String (cowboy-qc gsm --method fsm) — cheapest; NO ASE constraints
 # (AutoNEB / pyGSM / single-ended SE-GSM are also available via
 #  `cowboy-qc ts-entry --path-method {{autoneb|pygsm-de|gsm-se}}`.)
 # A 1-D scan can slice BESIDE the true saddle for an ASYNCHRONOUS step; a double-ended
@@ -725,7 +725,7 @@ if path_method == "ci-neb":
                   "--outdir", out_dir)
     _feed = f"refine-ts: set from_neb = '{{out_dir}}'"
 elif path_method in ("gsm", "fsm"):
-    # qcb gsm: no --multiplicity / no --fix-preset (string methods take no ASE constraints)
+    # cowboy-qc gsm: no --multiplicity / no --fix-preset (string methods take no ASE constraints)
     cmd = qcb_cmd(model, "gsm", reactant_min, product_min, "--method", path_method, "--model", model,
                   "--charge", charge, "--device", device, "--n-images", n_images, "--fmax", fmax,
                   "--outdir", out_dir)
