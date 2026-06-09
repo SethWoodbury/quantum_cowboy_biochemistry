@@ -2353,12 +2353,13 @@ def run_pipeline(args):
         log.info("=" * 60)
         try:
             from quantum_engine.mlff.metadynamics import run_metadynamics_rescue
+            from quantum_engine.mlff.cv_spring import bond_cv_terms_from_roles
             ase_atoms.calc = make_calc(for_neb=True)
             ase_atoms.info["charge"] = charge
             idx_p, idx_nuc, idx_lg, _, _ = _get_cv_atom_indices()
             mtd_result = run_metadynamics_rescue(
                 ase_atoms,
-                p_idx=idx_p, nuc_idx=idx_nuc, lg_idx=idx_lg,
+                bond_cv_terms_from_roles(idx_p, idx_lg, idx_nuc),  # center, breaking, forming
                 calculator=ase_atoms.calc,
                 outdir=relax_dir,
                 constraint=opt_c,
@@ -2389,7 +2390,7 @@ def run_pipeline(args):
                 a.calc = make_calc(for_neb=False)
                 a.info["charge"] = charge
                 cv_spring = BondDifferenceCVSpring(
-                    p_idx=idx_p, nuc_idx=idx_nuc, lg_idx=idx_lg,
+                    center_idx=idx_p, breaking_idx=idx_lg, forming_idx=idx_nuc,
                     k=args.spring_k, s_target=s_target, fmax=args.spring_fmax,
                 )
                 a.set_constraint([opt_c, cv_spring] if opt_c else [cv_spring])
@@ -2491,7 +2492,7 @@ def run_pipeline(args):
 
             xtb_check = validate_endpoint_pair(
                 start, end, charge, outdir=os.path.join(relax_dir, "xtb_refine"),
-                constraint=opt_c, p_idx=idx_p, nuc_idx=idx_nuc, lg_idx=idx_lg,
+                constraint=opt_c, center_idx=idx_p, forming_idx=idx_nuc, breaking_idx=idx_lg,
             )
             if xtb_check["inconsistent"]:
                 log.warning("  *** xTB disagrees with MACE endpoints — geometries may be artifacts ***")

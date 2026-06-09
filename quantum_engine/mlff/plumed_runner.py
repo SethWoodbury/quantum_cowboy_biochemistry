@@ -68,20 +68,52 @@ class DistanceCV:
 
 
 @dataclass
-class DistanceDifferenceCV:
-    """s = d(a,b) − d(c,d). Implemented via two DISTANCEs + COMBINE."""
+class WeightedBondCV:
+    """General weighted bond-distance CV: ``s = Σ coeff·d(i,j)``.
+
+    Emitted as one DISTANCE per term + a single COMBINE with the coefficients.
+    Convention: ``+1`` for a breaking bond, ``−1`` for a forming bond, so ``s``
+    grows reactant→product. Subsumes the single-center bond-difference (SN2),
+    multi-bond/concerted, no-shared-center, and forming-/breaking-only cases —
+    the same primitive as :func:`quantum_engine.mlff.cv_spring.bond_distance_cv`.
+    """
     name: str
-    atoms_minus: tuple[int, int]         # the bond that LENGTHENS (P-LG)
-    atoms_plus: tuple[int, int]          # the bond that SHORTENS (P-nuc) — sign flip per convention
+    terms: list[tuple[int, int, float]]   # (atom_i, atom_j, coeff), 0-indexed
+
+    @classmethod
+    def from_bonds(cls, name: str, breaking_bonds=(), forming_bonds=()) -> "WeightedBondCV":
+        terms = [(int(i), int(j), 1.0) for i, j in breaking_bonds]
+        terms += [(int(i), int(j), -1.0) for i, j in forming_bonds]
+        if not terms:
+            raise ValueError("WeightedBondCV.from_bonds: need >=1 breaking or forming bond")
+        return cls(name=name, terms=terms)
 
     def to_plumed(self) -> list[str]:
-        i, j = self.atoms_minus
-        k, l = self.atoms_plus
-        return [
-            f"{self.name}_d1: DISTANCE ATOMS={i+1},{j+1}",
-            f"{self.name}_d2: DISTANCE ATOMS={k+1},{l+1}",
-            f"{self.name}: COMBINE ARG={self.name}_d1,{self.name}_d2 COEFFICIENTS=1,-1 PERIODIC=NO",
-        ]
+        lines, args, coeffs = [], [], []
+        for n, (i, j, c) in enumerate(self.terms, start=1):
+            lab = f"{self.name}_d{n}"
+            lines.append(f"{lab}: DISTANCE ATOMS={i + 1},{j + 1}")
+            args.append(lab)
+            coeffs.append(f"{c:g}")
+        lines.append(f"{self.name}: COMBINE ARG={','.join(args)} "
+                     f"COEFFICIENTS={','.join(coeffs)} PERIODIC=NO")
+        return lines
+
+
+@dataclass
+class DistanceDifferenceCV:
+    """s = d(a,b) − d(c,d) — the 2-bond special case of :class:`WeightedBondCV`.
+
+    Kept as a convenience for single-center bond-difference CVs; ``atoms_minus``
+    is the breaking bond (coeff +1), ``atoms_plus`` the forming bond (coeff −1).
+    """
+    name: str
+    atoms_minus: tuple[int, int]         # breaking bond (lengthens), coeff +1
+    atoms_plus: tuple[int, int]          # forming bond (shortens), coeff −1
+
+    def to_plumed(self) -> list[str]:
+        return WeightedBondCV(self.name, [(*self.atoms_minus, 1.0),
+                                          (*self.atoms_plus, -1.0)]).to_plumed()
 
 
 @dataclass
@@ -123,7 +155,8 @@ class CoordinationCV:
         return f"{self.name}: COORDINATION GROUPA={a} GROUPB={b} SWITCH={switch}"
 
 
-CVType = DistanceCV | DistanceDifferenceCV | AngleCV | DihedralCV | CoordinationCV
+CVType = (DistanceCV | DistanceDifferenceCV | WeightedBondCV | AngleCV
+          | DihedralCV | CoordinationCV)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -411,8 +444,13 @@ def run_plumed_md(
 def run_bond_difference_mtd(
     atoms: Atoms,
     calculator,
-    p_idx: int, nuc_idx: int, lg_idx: int,
     outdir: str | Path,
+    *,
+    center_idx: int | None = None,
+    breaking_idx: int | None = None,
+    forming_idx: int | None = None,
+    breaking_bonds: list[tuple[int, int]] | None = None,
+    forming_bonds: list[tuple[int, int]] | None = None,
     method: str = "wt",                  # "wt" or "opes"
     sigma_A: float = 0.1,
     pace_steps: int = 500,
@@ -429,7 +467,13 @@ def run_bond_difference_mtd(
     n_walkers: int | None = None,
     walker_dir: str | Path | None = None,
 ) -> dict:
-    """One-shot: WT-MTD or OPES on s = d(P-LG) − d(P-nuc) via PLUMED.
+    """One-shot: WT-MTD or OPES on a weighted bond-distance CV via PLUMED.
+
+    Define the CV one of two ways:
+      - single-center (common case): ``center_idx`` + ``breaking_idx`` +
+        ``forming_idx`` → ``s = d(center,breaking) − d(center,forming)``;
+      - general: ``breaking_bonds`` and/or ``forming_bonds`` (lists of atom-index
+        pairs) for multi-bond / no-center / forming-only / breaking-only reactions.
 
     PLUMED uses nm internally; we write Å values that PLUMED reads if UNITS
     LENGTH=A is set. To keep it simple here, we use PLUMED's default nm —
@@ -437,11 +481,15 @@ def run_bond_difference_mtd(
     units module yields the same Å in both places. (ASE writes Å,
     PLUMED's default unit conversion handles this — verify with first run.)
     """
-    cv = DistanceDifferenceCV(
-        name="s",
-        atoms_minus=(p_idx, lg_idx),
-        atoms_plus=(p_idx, nuc_idx),
-    )
+    if center_idx is not None:
+        if breaking_idx is None or forming_idx is None:
+            raise ValueError("center_idx requires breaking_idx and forming_idx")
+        brk = [(center_idx, breaking_idx)] + list(breaking_bonds or [])
+        frm = [(center_idx, forming_idx)] + list(forming_bonds or [])
+    else:
+        brk = list(breaking_bonds or [])
+        frm = list(forming_bonds or [])
+    cv = WeightedBondCV.from_bonds(name="s", breaking_bonds=brk, forming_bonds=frm)
 
     # Method
     if method == "wt":

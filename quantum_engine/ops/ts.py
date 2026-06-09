@@ -160,9 +160,9 @@ def run(
     opt_final_fmax: float = 0.04,
     # CV atoms for cv-spring/mtd (optional; if None, strategy="cv-spring"/"mtd"
     # will error out unless auto-detected upstream)
-    p_idx: int | None = None,
-    nuc_idx: int | None = None,
-    lg_idx: int | None = None,
+    center_idx: int | None = None,
+    forming_idx: int | None = None,
+    breaking_idx: int | None = None,
     # MTD
     mtd_time_ps: float = 100.0,
     mtd_temperature_K: float = 300.0,
@@ -185,7 +185,7 @@ def run(
         constraint: ASE constraint (e.g., FixAtoms for CAs)
         n_images: NEB image count (ignored for irc)
         interpolation: NEB interpolation method
-        p_idx, nuc_idx, lg_idx: CV atoms (required for cv-spring and mtd)
+        center_idx, forming_idx, breaking_idx: CV atoms (required for cv-spring and mtd)
 
     Returns: dict with status, ts, reactant, product, barriers_kcal, outputs.
     """
@@ -218,10 +218,10 @@ def run(
 
         # Build bond-pattern hint (disambiguates forward/reverse assignment)
         hint_bonds = None
-        if p_idx is not None and nuc_idx is not None and lg_idx is not None:
+        if center_idx is not None and forming_idx is not None and breaking_idx is not None:
             hint_bonds = {
-                (p_idx, nuc_idx): "broken",
-                (p_idx, lg_idx): "bonded",
+                (center_idx, forming_idx): "broken",
+                (center_idx, breaking_idx): "bonded",
             }
 
         irc_res = irc_from_ts_guess(
@@ -260,14 +260,17 @@ def run(
     # ===================================================================
     if strategy == "mtd":
         from quantum_engine.mlff.metadynamics import run_metadynamics_rescue, run_opes_rescue
-        if p_idx is None or nuc_idx is None or lg_idx is None:
-            raise ValueError("MTD requires p_idx, nuc_idx, lg_idx (CV atom indices)")
+        from quantum_engine.mlff.cv_spring import bond_cv_terms_from_roles
+        if center_idx is None or forming_idx is None or breaking_idx is None:
+            raise ValueError("MTD requires center_idx, forming_idx, breaking_idx (CV atom indices)")
 
         entry = run_opes_rescue if mtd_variant == "opes" else run_metadynamics_rescue
-
+        # Single-center bond-difference CV; reactant/product fall out of the
+        # extreme-CV basins (reaction-agnostic), so no basin_windows needed.
+        cv_terms = bond_cv_terms_from_roles(center_idx, breaking_idx, forming_idx)
         mtd_res = entry(
             input_atoms,
-            p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx,
+            cv_terms,
             calculator=input_atoms.calc,
             outdir=relax_dir,
             constraint=constraint,
@@ -289,11 +292,11 @@ def run(
     if strategy in ("legacy", "cv-spring") or (strategy == "mtd" and reactant is not None):
         # Produce reactant/product endpoints
         if strategy == "cv-spring":
-            if p_idx is None or nuc_idx is None or lg_idx is None:
-                raise ValueError("cv-spring requires p_idx, nuc_idx, lg_idx")
+            if center_idx is None or forming_idx is None or breaking_idx is None:
+                raise ValueError("cv-spring requires center_idx, forming_idx, breaking_idx")
             reactant, product = _cv_spring_endpoints(
                 input_atoms, calculator_fn, charge, constraint,
-                p_idx, nuc_idx, lg_idx,
+                center_idx, forming_idx, breaking_idx,
                 cv_s_reactant, cv_s_product,
                 spring_k, spring_fmax,
                 spring_drive_fmax, opt_final_fmax,
@@ -403,7 +406,7 @@ def _simple_relax(atoms, calc_fn, charge, constraint, fmax, label, outdir):
 
 def _cv_spring_endpoints(
     input_atoms, calc_fn, charge, constraint,
-    p_idx, nuc_idx, lg_idx,
+    center_idx, forming_idx, breaking_idx,
     s_reactant, s_product,
     spring_k, spring_fmax,
     spring_drive_fmax, opt_final_fmax,
@@ -422,7 +425,7 @@ def _cv_spring_endpoints(
         _setup_calc_and_constraint(a, calc_fn, charge, constraint)
         base_cs = list(a.constraints) if a.constraints else []
         cv_spring = BondDifferenceCVSpring(
-            p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx,
+            center_idx=center_idx, forming_idx=forming_idx, breaking_idx=breaking_idx,
             k=spring_k, s_target=s_target, fmax=spring_fmax,
         )
         a.set_constraint(base_cs + [cv_spring])

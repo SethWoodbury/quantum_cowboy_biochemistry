@@ -152,7 +152,7 @@ def run(config_path: str | Path, override: dict | None = None) -> dict:
                 from quantum_engine.mlff.cv_spring import BondDifferenceCVSpring
                 idx = [_resolve_atom_indices(s, cfg.selectors, atoms, bt_struct)[0] for s in c.atoms]
                 ase_constraints.append(BondDifferenceCVSpring(
-                    p_idx=idx[0], nuc_idx=idx[1], lg_idx=idx[2],
+                    center_idx=idx[0], forming_idx=idx[1], breaking_idx=idx[2],
                     k=c.k, s_target=c.r0, fmax=c.fmax,
                 ))
 
@@ -235,16 +235,16 @@ def run(config_path: str | Path, override: dict | None = None) -> dict:
         from quantum_engine.ops import ts
         calc_fn = make_calc_fn(model=cs.model, head=cs.head, device=cs.device, charge=charge)
         # Resolve cv_atoms if provided (selector names → atom indices)
-        p_idx = nuc_idx = lg_idx = None
+        center_idx = forming_idx = breaking_idx = None
         if op.cv_atoms and len(op.cv_atoms) >= 3:
-            p_idx = _resolve_atom_indices(op.cv_atoms[0], cfg.selectors, atoms, bt_struct)[0]
-            nuc_idx = _resolve_atom_indices(op.cv_atoms[1], cfg.selectors, atoms, bt_struct)[0]
-            lg_idx = _resolve_atom_indices(op.cv_atoms[2], cfg.selectors, atoms, bt_struct)[0]
+            center_idx = _resolve_atom_indices(op.cv_atoms[0], cfg.selectors, atoms, bt_struct)[0]
+            forming_idx = _resolve_atom_indices(op.cv_atoms[1], cfg.selectors, atoms, bt_struct)[0]
+            breaking_idx = _resolve_atom_indices(op.cv_atoms[2], cfg.selectors, atoms, bt_struct)[0]
         return ts.run(atoms, calc_fn, outdir,
                       strategy=op.strategy, charge=charge, constraint=constraint,
                       n_images=op.n_images, interpolation=op.interpolation,
                       cv_s_reactant=op.cv_s_reactant, cv_s_product=op.cv_s_product,
-                      p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx,
+                      center_idx=center_idx, forming_idx=forming_idx, breaking_idx=breaking_idx,
                       template=bt_struct)
 
     elif op.kind == "mtd":
@@ -262,14 +262,12 @@ def run(config_path: str | Path, override: dict | None = None) -> dict:
                 op_backend = "pure_python"
             else:
                 idx = _resolve_geometry_atoms(op.cv, cfg.geometry, cfg.selectors, atoms, bt_struct)
-                # distance_diff atoms come back as flat list — interpret as
-                # [P, LG, P, nuc] from the geometry spec? Simpler: assume
-                # geometry.atoms is [P, nuc, LG] for distance_diff
-                # (which matches what the schema implies)
-                p_idx, nuc_idx, lg_idx = idx[0], idx[1], idx[2]
+                # distance_diff geometry.atoms are ordered [center, forming, breaking]
+                # (the CV is s = d(center,breaking) − d(center,forming)).
+                center_idx, forming_idx, breaking_idx = idx[0], idx[1], idx[2]
                 return run_bond_difference_mtd(
                     atoms, atoms.calc,
-                    p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx,
+                    center_idx=center_idx, forming_idx=forming_idx, breaking_idx=breaking_idx,
                     outdir=outdir, method=op.variant,
                     sigma_A=op.sigma_A, pace_steps=op.pace_steps,
                     bias_factor=op.bias_factor,
@@ -283,7 +281,7 @@ def run(config_path: str | Path, override: dict | None = None) -> dict:
         from quantum_engine.ops import mtd
         idx = _resolve_geometry_atoms(op.cv, cfg.geometry, cfg.selectors, atoms, bt_struct)
         return mtd.run(atoms, atoms.calc, outdir, constraint,
-                       p_idx=idx[0], nuc_idx=idx[1], lg_idx=idx[2],
+                       center_idx=idx[0], forming_idx=idx[1], breaking_idx=idx[2],
                        total_time_ps=op.total_time_ps, temperature_K=op.temperature_K,
                        variant=op.variant)
 

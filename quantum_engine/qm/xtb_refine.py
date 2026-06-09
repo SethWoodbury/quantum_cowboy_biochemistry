@@ -354,36 +354,50 @@ def validate_endpoint_pair(
     total_charge: int,
     outdir: str | Path,
     constraint=None,
-    p_idx: int | None = None,
-    nuc_idx: int | None = None,
-    lg_idx: int | None = None,
+    center_idx: int | None = None,
+    forming_idx: int | None = None,
+    breaking_idx: int | None = None,
+    breaking_bonds: list[tuple[int, int]] | None = None,
+    forming_bonds: list[tuple[int, int]] | None = None,
 ) -> dict:
     """Run xTB on both endpoints, flag inconsistencies.
 
     Particularly useful to detect the "product collapsed to reactant" failure mode.
+
+    The expected bond pattern is reaction-agnostic: every FORMING bond must be
+    absent in the reactant and present in the product, every BREAKING bond the
+    reverse. Specify the bonds either as a single-center convenience trio
+    (``center_idx`` + ``forming_idx`` + ``breaking_idx``) or, for multi-bond /
+    no-center reactions, as ``forming_bonds``/``breaking_bonds`` lists of
+    atom-index pairs.
 
     Args:
         reactant, product: Candidate endpoints
         total_charge: System charge
         outdir: Working directory
         constraint: FixAtoms constraint
-        p_idx, nuc_idx, lg_idx: (optional) atom indices for P, nucleophile, leaving group
-                                — enables bond-checking diagnostics
+        center_idx, forming_idx, breaking_idx: single-center CV convenience.
+        breaking_bonds, forming_bonds: general bond lists (atom-index pairs).
 
     Returns:
         dict with 'reactant' and 'product' refinement results, plus 'inconsistent' flag.
     """
     outdir = Path(outdir)
 
-    # Build expected bonds
-    r_bonds = {}
-    p_bonds = {}
-    if p_idx is not None and nuc_idx is not None:
-        r_bonds[(p_idx, nuc_idx)] = "broken"
-        p_bonds[(p_idx, nuc_idx)] = "bonded"
-    if p_idx is not None and lg_idx is not None:
-        r_bonds[(p_idx, lg_idx)] = "bonded"
-        p_bonds[(p_idx, lg_idx)] = "broken"
+    # Build the expected bond pattern (forming: absent→present; breaking: present→absent).
+    forming = list(forming_bonds or [])
+    breaking = list(breaking_bonds or [])
+    if center_idx is not None and forming_idx is not None:
+        forming.append((center_idx, forming_idx))
+    if center_idx is not None and breaking_idx is not None:
+        breaking.append((center_idx, breaking_idx))
+    r_bonds, p_bonds = {}, {}
+    for bond in forming:
+        r_bonds[tuple(bond)] = "broken"
+        p_bonds[tuple(bond)] = "bonded"
+    for bond in breaking:
+        r_bonds[tuple(bond)] = "bonded"
+        p_bonds[tuple(bond)] = "broken"
 
     r_result = refine_endpoint(
         reactant, total_charge, outdir / "r",

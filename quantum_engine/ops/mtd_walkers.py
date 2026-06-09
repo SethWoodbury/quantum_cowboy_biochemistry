@@ -61,8 +61,8 @@ class WalkerSweepConfig:
     """All parameters for a multi-walker MTD sweep.
 
     Only fields with no default need to be specified at the call site;
-    everything else has a sensible default for a typical Baker-lab QCB
-    metadynamics run on the YYE/Zn₂ class of system.
+    everything else has a sensible default for a typical enzymatic
+    metadynamics run.
     """
 
     # Required

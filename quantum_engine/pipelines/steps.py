@@ -265,9 +265,9 @@ class Freq:
 class MTD:
     """Well-tempered metadynamics. Advances ctx.atoms to last frame."""
     name: str = "mtd"
-    p_idx: int | None = None
-    nuc_idx: int | None = None
-    lg_idx: int | None = None
+    center_idx: int | None = None
+    forming_idx: int | None = None
+    breaking_idx: int | None = None
     total_time_ps: float = 100.0
     temperature_K: float = 300.0
     variant: str = "wt"
@@ -279,7 +279,7 @@ class MTD:
         outdir = _step_outdir(ctx, self.name)
         res = mtd.run(atoms, calculator=ctx.calc, outdir=outdir,
                       constraint=ctx.constraint,
-                      p_idx=self.p_idx, nuc_idx=self.nuc_idx, lg_idx=self.lg_idx,
+                      center_idx=self.center_idx, forming_idx=self.forming_idx, breaking_idx=self.breaking_idx,
                       total_time_ps=self.total_time_ps,
                       temperature_K=self.temperature_K, variant=self.variant)
         if res.get("atoms") is not None:

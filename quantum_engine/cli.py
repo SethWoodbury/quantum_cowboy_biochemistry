@@ -638,7 +638,7 @@ def _cmd_mtd(args):
     from quantum_engine.ops import mtd
     atoms, _, calc, constraint, _, outdir, _ = _setup_atoms_and_calc(args)
     return mtd.run(atoms, calc, outdir, constraint,
-                   p_idx=args.p_idx, nuc_idx=args.nuc_idx, lg_idx=args.lg_idx,
+                   center_idx=args.center_idx, forming_idx=args.forming_idx, breaking_idx=args.breaking_idx,
                    total_time_ps=args.time, temperature_K=args.temp,
                    variant=args.variant)
 
@@ -1177,16 +1177,16 @@ def _cmd_ts(args):
     # CONVENIENCE ONLY: auto-detect CV atoms from a KNOWN ligand's reference
     # bond-breaking defs (data/ligand_bonds.py). This is a shortcut for a handful
     # of curated ligands, not a general mechanism — for any other reaction pass
-    # --p-idx/--nuc-idx/--lg-idx explicitly (or a ReactionSpec). When a ligand IS
-    # named, a mismatch is an explicit error, never a silent None.
-    p_idx = nuc_idx = lg_idx = None
+    # --center-idx/--breaking-idx/--forming-idx explicitly (or a ReactionSpec). When
+    # a ligand IS named, a mismatch is an explicit error, never a silent None.
+    center_idx = forming_idx = breaking_idx = None
     if ligand_name and bt_struct is not None:
         _log = logging.getLogger("quantum_engine.cli")
         from quantum_engine.data import BOND_BREAKING_DEFS
         if ligand_name not in BOND_BREAKING_DEFS:
             _log.warning(
                 "ligand %r is not a known convenience ligand (data/ligand_bonds.py: "
-                "%s) — not auto-detecting CV atoms; pass --p-idx/--nuc-idx/--lg-idx "
+                "%s) — not auto-detecting CV atoms; pass --center-idx/--breaking-idx/--forming-idx "
                 "explicitly for this reaction.", ligand_name,
                 sorted(BOND_BREAKING_DEFS))
         else:
@@ -1203,20 +1203,20 @@ def _cmd_ts(args):
                         f"cowboy-qc ts: ligand {ligand_name!r} is known but atom "
                         f"{atom_name!r} was not found in the structure. The "
                         "convenience defs don't match this input — pass "
-                        "--p-idx/--nuc-idx/--lg-idx explicitly.")
+                        "--center-idx/--breaking-idx/--forming-idx explicitly.")
                 return int(hits[0])
 
-            p_idx, nuc_idx, lg_idx = _find(p_name), _find(nuc_name), _find(lg_name)
+            center_idx, forming_idx, breaking_idx = _find(p_name), _find(nuc_name), _find(lg_name)
             _log.info("auto-detected CV atoms for ligand %s: P=%d nuc=%d lg=%d",
-                      ligand_name, p_idx, nuc_idx, lg_idx)
+                      ligand_name, center_idx, forming_idx, breaking_idx)
 
     # CLI override of CV indices
-    if getattr(args, "p_idx", None) is not None:
-        p_idx = args.p_idx
-    if getattr(args, "nuc_idx", None) is not None:
-        nuc_idx = args.nuc_idx
-    if getattr(args, "lg_idx", None) is not None:
-        lg_idx = args.lg_idx
+    if getattr(args, "center_idx", None) is not None:
+        center_idx = args.center_idx
+    if getattr(args, "forming_idx", None) is not None:
+        forming_idx = args.forming_idx
+    if getattr(args, "breaking_idx", None) is not None:
+        breaking_idx = args.breaking_idx
 
     calc_fn = make_calc_fn(model=args.model, head=args.head, device=args.device, charge=charge)
     outdir = Path(args.outdir) if args.outdir else Path("qcb-ts-out")
@@ -1226,7 +1226,7 @@ def _cmd_ts(args):
         strategy=args.strategy, charge=charge, constraint=constraint,
         n_images=args.n_images, interpolation=args.interpolation,
         cv_s_reactant=args.cv_s_reactant, cv_s_product=args.cv_s_product,
-        p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx,
+        center_idx=center_idx, forming_idx=forming_idx, breaking_idx=breaking_idx,
         mtd_time_ps=args.mtd_time_ps,
         template=bt_struct,
     )
@@ -1810,9 +1810,15 @@ def main(argv=None):
     # mtd
     p_mtd = sub.add_parser("mtd", help="Metadynamics (well-tempered or OPES)")
     _common_parser_setup(p_mtd)
-    p_mtd.add_argument("--p-idx", type=int, required=True, help="Central atom index")
-    p_mtd.add_argument("--nuc-idx", type=int, required=True, help="Nucleophile atom index")
-    p_mtd.add_argument("--lg-idx", type=int, required=True, help="Leaving-group atom index")
+    p_mtd.add_argument("--center-idx", "--p-idx", dest="center_idx", type=int, required=True,
+                       help="Shared-center atom of the bond-difference CV "
+                            "s=d(center,breaking)-d(center,forming). (--p-idx: deprecated alias)")
+    p_mtd.add_argument("--breaking-idx", "--lg-idx", dest="breaking_idx", type=int, required=True,
+                       help="Breaking-bond partner (the bond that lengthens). "
+                            "(--lg-idx: deprecated alias)")
+    p_mtd.add_argument("--forming-idx", "--nuc-idx", dest="forming_idx", type=int, required=True,
+                       help="Forming-bond partner (the bond that shortens). "
+                            "(--nuc-idx: deprecated alias)")
     p_mtd.add_argument("--time", type=float, default=100.0, help="Total MTD time in ps")
     p_mtd.add_argument("--temp", type=float, default=300.0)
     p_mtd.add_argument("--variant", default="wt", choices=["wt", "opes"],
@@ -1884,10 +1890,13 @@ def main(argv=None):
     p_ts.add_argument("--cv-s-product", type=float, default=2.5,
                       help="Product-basin target for the bond-difference CV (Å). "
                            "Default +2.5 is an SN2-at-phosphorus heuristic; override for other reactions.")
-    p_ts.add_argument("--p-idx", type=int, default=None,
-                      help="Override: P atom index for CV (auto-detected from ligand)")
-    p_ts.add_argument("--nuc-idx", type=int, default=None)
-    p_ts.add_argument("--lg-idx", type=int, default=None)
+    p_ts.add_argument("--center-idx", "--p-idx", dest="center_idx", type=int, default=None,
+                      help="Override: shared-center atom of the CV (else auto-detected from "
+                           "a known ligand). (--p-idx: deprecated alias)")
+    p_ts.add_argument("--breaking-idx", "--lg-idx", dest="breaking_idx", type=int, default=None,
+                      help="Override: breaking-bond partner. (--lg-idx: deprecated alias)")
+    p_ts.add_argument("--forming-idx", "--nuc-idx", dest="forming_idx", type=int, default=None,
+                      help="Override: forming-bond partner. (--nuc-idx: deprecated alias)")
     p_ts.add_argument("--mtd-time-ps", type=float, default=100.0)
     p_ts.add_argument("--log-level", default="INFO")
 

@@ -2,9 +2,10 @@
 
 This module provides pure-Python well-tempered metadynamics (WT-MTD)
 and OPES-MetaD (On-the-fly Probability Enhanced Sampling, MetaD
-variant) implementations for rescuing failed NEB-TS searches on
-enzymatic phosphoryl-transfer reactions using MACE (or any ASE)
-calculators.
+variant) implementations for rescuing failed NEB-TS searches on any
+reaction, using MACE (or any ASE) calculator. Nothing here is specific
+to a particular chemistry — the collective variable is supplied by the
+caller as a set of weighted bond-distance terms (see below).
 
 Two entry points are provided:
 
@@ -18,33 +19,37 @@ Two entry points are provided:
 
 Method
 ------
-We bias a one-dimensional collective variable
+We bias a one-dimensional collective variable that is a weighted sum of
+bond distances (see :func:`quantum_engine.mlff.cv_spring.bond_distance_cv`)::
 
-    s = d(P, O_LG) - d(P, O_nuc)
+    s = Σ_{breaking bonds} d(i,j)  −  Σ_{forming bonds} d(k,l)
 
-the bond-difference coordinate that distinguishes the reactant
-(pentacoordinate not yet formed, s < 0 with strong P-O_LG bond),
-product (s > 0, nucleophile now bonded), and any pentacoordinate
-intermediate (|s| ~ 0). Biasing this CV drives the system across the
-TS region and samples any intermediate basins. Reweighting yields a
-1-D free-energy surface (FES) whose minima are representative basins
-for subsequent NEB/TS refinement.
+supplied by the caller as ``cv_terms`` = ``[(i, j, weight), …]`` (``+1`` for a
+breaking bond, ``−1`` for a forming bond). This subsumes SN2-style single-center
+bond-difference CVs, multi-bond/concerted reactions, association ("click", forming
+only), and dissociation (breaking only) — with NO reaction baked in. With the sign
+convention above, ``s`` grows reactant (s≪0) → product (s≫0). Biasing it drives the
+system across the TS region and samples intermediate basins; reweighting yields a
+1-D free-energy surface (FES) whose minima are representative basins for subsequent
+NEB/TS refinement.
 
-We run Langevin dynamics with the MACE calculator, and every
+We run Langevin dynamics with the (any-ASE) calculator, and every
 `bias_pace_steps` we deposit a Gaussian hill centred at the current
 CV value. Well-tempered scaling (Barducci 2008) reduces hill height
 by `exp(-V(s)/(kB*T*(gamma-1)))` so hills shrink as the bias fills
-basins -> convergence. The bias force on atoms P, O_LG, O_nuc is
-computed analytically via chain rule (see docstring of
-`_bias_force_on_atoms`).
+basins -> convergence. The bias force on the CV atoms is computed
+analytically via the chain rule on the weighted-distance gradient.
+
+FES minima are returned as a generic ``basins`` list (CV value + depth). To label
+them as reactant/product/intermediate, pass ``basin_windows`` = ``{label: (lo, hi)}``
+(CV-value windows); with none supplied no chemistry is assumed.
 
 When to use
 -----------
 - NEB-TS failed to locate a single transition state, or climbing-image
   NEB converged to a non-stationary point.
 - Suspected mechanism switch (concerted vs. stepwise), multiple TS.
-- Looking for pentacoordinate intermediate along a phosphoryl-transfer
-  coordinate.
+- Looking for a discrete intermediate along the reaction coordinate.
 
 Failure modes
 -------------
@@ -84,33 +89,9 @@ from ase.md.langevin import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.io import write as ase_write
 
-
-# ------------------------------------------------------------------ CV utils
-
-def _cv_and_grad(positions: np.ndarray, p_idx: int, nuc_idx: int, lg_idx: int):
-    """Return (s, dsdr) where dsdr is (natoms, 3) gradient of CV."""
-    r_P = positions[p_idx]
-    r_LG = positions[lg_idx]
-    r_nuc = positions[nuc_idx]
-
-    v_LG = r_P - r_LG
-    v_nuc = r_P - r_nuc
-    d_LG = np.linalg.norm(v_LG)
-    d_nuc = np.linalg.norm(v_nuc)
-
-    s = d_LG - d_nuc
-
-    u_LG = v_LG / d_LG
-    u_nuc = v_nuc / d_nuc
-
-    grad = np.zeros_like(positions)
-    # ds/dr_P = u_LG - u_nuc
-    grad[p_idx] = u_LG - u_nuc
-    # ds/dr_LG = -u_LG
-    grad[lg_idx] = -u_LG
-    # ds/dr_nuc = u_nuc
-    grad[nuc_idx] = u_nuc
-    return s, grad
+# The CV math lives in one place — the weighted bond-distance primitive shared
+# with the endpoint spring. metadynamics only *biases* whatever CV it's handed.
+from quantum_engine.mlff.cv_spring import BondTerm, bond_distance_cv  # noqa: E402
 
 
 # ------------------------------------------------------------------ bias pot
@@ -331,15 +312,14 @@ class _BiasedCalculator(Calculator):
     implemented_properties = ["energy", "forces"]
 
     def __init__(self, base_calc: Calculator, history,
-                 p_idx: int, nuc_idx: int, lg_idx: int):
+                 cv_terms: "list[BondTerm]"):
         # `history` may be a _BiasHistory (WT-MTD) or _OPESBiasHistory
         # (OPES-MetaD); both expose .V(s) and .dVds(s).
+        # `cv_terms` = [(i, j, weight), …]; the bias acts on s = Σ w·d(i,j).
         Calculator.__init__(self)
         self.base = base_calc
         self.history = history
-        self.p_idx = p_idx
-        self.nuc_idx = nuc_idx
-        self.lg_idx = lg_idx
+        self.cv_terms = list(cv_terms)
         self.last_cv = None
 
     def calculate(self, atoms=None, properties=("energy", "forces"),
@@ -350,8 +330,7 @@ class _BiasedCalculator(Calculator):
         e_base = self.base.results["energy"]
         f_base = self.base.results["forces"].copy()
 
-        s, dsdr = _cv_and_grad(atoms.get_positions(),
-                               self.p_idx, self.nuc_idx, self.lg_idx)
+        s, dsdr = bond_distance_cv(atoms.get_positions(), self.cv_terms)
         V = self.history.V(s)
         dVds = self.history.dVds(s)
 
@@ -380,28 +359,33 @@ def _find_basins(grid: np.ndarray, fes: np.ndarray,
     return kept
 
 
+# Opt-in convenience: CV-value windows for the SN2-at-phosphorus test case (Å),
+# for the weighted bond-difference CV s = d(P,O_LG) − d(P,O_nuc). NOT a default —
+# pass it explicitly as ``basin_windows`` to label FES minima for that system. The
+# engine assumes NO chemistry without windows; other reactions supply their own.
+SN2_AT_P_BASIN_WINDOWS: dict[str, tuple[Optional[float], Optional[float]]] = {
+    "reactant": (None, -1.0),     # s ≤ −1.0  (leaving group still bonded)
+    "product": (2.0, None),       # s ≥ +2.0  (nucleophile bonded)
+    "intermediate": (-0.5, 1.5),  # |s| ~ 0   (both partially bonded)
+}
+
+
 def _classify_basin(
     cv_val: float,
-    *,
-    reactant_max: float = -1.0,
-    product_min: float = 2.0,
-    intermediate_range: tuple[float, float] = (-0.5, 1.5),
+    windows: Optional[dict[str, tuple[Optional[float], Optional[float]]]] = None,
 ) -> Optional[str]:
-    """Label a free-energy-surface minimum by its bond-difference CV value.
+    """Label an FES minimum by CV value using caller-supplied basin ``windows``.
 
-    The default thresholds are **SN2-at-phosphorus heuristics** for the
-    bond-difference coordinate s = d(P,O_LG) − d(P,O_nuc) in Å (reactant: LG
-    still bonded, s ≪ 0; product: nucleophile bonded, s ≫ 0; pentacoordinate
-    intermediate near s ≈ 0). They are NOT reaction-agnostic — pass explicit
-    ``reactant_max``/``product_min``/``intermediate_range`` for other CVs.
+    ``windows`` maps ``label -> (lo, hi)`` (inclusive bounds; ``None`` = unbounded
+    on that side); the first window containing ``cv_val`` wins. With ``windows=None``
+    this returns ``None`` — NO reaction is assumed, and the caller reports minima by
+    raw CV value instead. For SN2-at-P, pass :data:`SN2_AT_P_BASIN_WINDOWS`.
     """
-    lo, hi = intermediate_range
-    if cv_val < reactant_max:
-        return "reactant"
-    if cv_val > product_min:
-        return "product"
-    if lo < cv_val < hi:
-        return "intermediate"
+    if not windows:
+        return None
+    for label, (lo, hi) in windows.items():
+        if (lo is None or cv_val >= lo) and (hi is None or cv_val <= hi):
+            return label
     return None
 
 
@@ -409,9 +393,7 @@ def _classify_basin(
 
 def run_metadynamics_rescue(
     atoms: Atoms,
-    p_idx: int,
-    nuc_idx: int,
-    lg_idx: int,
+    cv_terms: "list[BondTerm]",
     calculator,
     outdir: str,
     constraint=None,
@@ -423,13 +405,23 @@ def run_metadynamics_rescue(
     bias_pace_steps: int = 500,
     bias_factor: float = 10.0,
     friction_per_ps: float = 1.0,
+    basin_windows: Optional[dict] = None,
 ) -> Dict[str, Any]:
-    """Run well-tempered metadynamics along bond-difference CV.
+    """Run well-tempered metadynamics along a weighted bond-distance CV.
 
-    CV = d(P-O_LG) - d(P-O_nuc)
+    Args:
+        cv_terms: ``[(i, j, weight), …]`` defining ``s = Σ w·d(i,j)`` (``+1``
+            breaking, ``−1`` forming). Build from
+            :func:`quantum_engine.mlff.cv_spring.bond_cv_terms_from_roles` (single
+            center) or ``bond_cv_terms_from_bonds`` (general).
+        basin_windows: optional ``{label: (lo, hi)}`` CV windows to label FES
+            minima (e.g. :data:`SN2_AT_P_BASIN_WINDOWS`). With ``None`` no
+            chemistry is assumed; minima are reported generically in ``basins``.
 
     Returns dict with keys:
-        reactant, product, intermediate: ASE Atoms or None
+        basins: list of ``(cv_value, fes_kcal)`` for every FES minimum found
+        reactant, product, intermediate: ASE Atoms or None (only populated if
+            ``basin_windows`` labels them)
         fes: (N,2) array of (CV, free_energy_kcal) pairs
         cv_trajectory: (M,2) array of (time_ps, CV) pairs
         basin_depths_kcal: dict with per-basin depths
@@ -456,8 +448,7 @@ def run_metadynamics_rescue(
         atoms.set_constraint(constraint)
 
     history = _BiasHistory()
-    biased_calc = _BiasedCalculator(calculator, history,
-                                    p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx)
+    biased_calc = _BiasedCalculator(calculator, history, cv_terms)
     atoms.calc = biased_calc
 
     # --- init velocities ----------------------------------------------
@@ -515,15 +506,27 @@ def run_metadynamics_rescue(
 
     fes = np.column_stack([grid, F_kcal])
 
-    # --- find basins ---------------------------------------------------
-    basin_list = _find_basins(grid, F_kcal)
+    # --- find basins (reaction-agnostic) -------------------------------
+    basin_list = _find_basins(grid, F_kcal)   # [(cv, fes_kcal), ...]
+    # With the convention s = Σ(breaking) − Σ(forming), s grows reactant→product,
+    # so the EXTREME-CV basins are the endpoints — no per-reaction thresholds needed.
+    # Any caller-supplied basin_windows just add named labels (e.g. an intermediate).
     basins_by_class: Dict[str, Optional[Tuple[float, float]]] = {
         "reactant": None, "product": None, "intermediate": None,
     }
-    for cv_val, fes_val in basin_list:
-        cls = _classify_basin(cv_val)
-        if cls is not None and basins_by_class[cls] is None:
-            basins_by_class[cls] = (cv_val, fes_val)
+    if basin_list:
+        _ordered = sorted(basin_list, key=lambda b: b[0])
+        basins_by_class["reactant"] = _ordered[0]
+        # Only call the highest-CV basin the "product" if it is a DISTINCT basin —
+        # a single-basin FES means the bias never crossed the barrier (under-sampled),
+        # so leave product=None rather than aliasing both endpoints to one frame.
+        if len(_ordered) >= 2:
+            basins_by_class["product"] = _ordered[-1]
+        if basin_windows:
+            for cv_val, fes_val in basin_list:
+                _lbl = _classify_basin(cv_val, basin_windows)
+                if _lbl in basins_by_class and basins_by_class[_lbl] is None:
+                    basins_by_class[_lbl] = (cv_val, fes_val)
 
     # --- representative frames (closest CV to each basin) -------------
     def _closest_frame(target_cv: float) -> Optional[Atoms]:
@@ -569,8 +572,8 @@ def run_metadynamics_rescue(
                 np.asarray([fr[0] for fr in sampled_frames]))
 
     meta = {
-        "cv_definition": "s = d(P-O_LG) - d(P-O_nuc)",
-        "p_idx": p_idx, "nuc_idx": nuc_idx, "lg_idx": lg_idx,
+        "cv_definition": "s = sum(w*d(i,j))  (weighted bond-distance CV)",
+        "cv_terms": [list(t) for t in cv_terms],
         "temperature_K": temperature_K,
         "timestep_fs": timestep_fs,
         "total_time_ps": total_time_ps,
@@ -591,6 +594,7 @@ def run_metadynamics_rescue(
         json.dump(meta, f, indent=2)
 
     return {
+        "basins": basin_list,
         "reactant": result_atoms["reactant"],
         "product": result_atoms["product"],
         "intermediate": result_atoms["intermediate"],
@@ -605,9 +609,7 @@ def run_metadynamics_rescue(
 
 def run_opes_rescue(
     atoms: Atoms,
-    p_idx: int,
-    nuc_idx: int,
-    lg_idx: int,
+    cv_terms: "list[BondTerm]",
     calculator,
     outdir: str,
     constraint=None,
@@ -620,6 +622,7 @@ def run_opes_rescue(
     bias_factor: float = 10.0,
     friction_per_ps: float = 1.0,
     epsilon_weight: float = 1e-6,
+    basin_windows: Optional[dict] = None,
 ) -> Dict[str, Any]:
     """Run OPES-MetaD (Invernizzi & Parrinello 2020) along bond-difference CV.
 
@@ -648,9 +651,10 @@ def run_opes_rescue(
 
     Parameters
     ----------
-    atoms, p_idx, nuc_idx, lg_idx, calculator, outdir, constraint,
-    temperature_K, timestep_fs, total_time_ps, friction_per_ps :
-        Same meaning as ``run_metadynamics_rescue``.
+    atoms, cv_terms, calculator, outdir, constraint, temperature_K,
+    timestep_fs, total_time_ps, friction_per_ps, basin_windows :
+        Same meaning as ``run_metadynamics_rescue`` (``cv_terms`` defines the
+        weighted bond-distance CV; ``basin_windows`` optionally labels minima).
     barrier_kJ_mol :
         Estimated barrier in kJ/mol; caps the maximum bias height
         per deposition so OPES does not over-push early on. This is
@@ -706,8 +710,7 @@ def run_opes_rescue(
 
     history = _OPESBiasHistory(beta_inv_eV=kT, bias_factor=gamma,
                                epsilon_weight=epsilon_weight)
-    biased_calc = _BiasedCalculator(calculator, history,
-                                    p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx)
+    biased_calc = _BiasedCalculator(calculator, history, cv_terms)
     atoms.calc = biased_calc
 
     # --- init velocities ----------------------------------------------
@@ -783,15 +786,27 @@ def run_opes_rescue(
 
     fes = np.column_stack([grid, F_kcal])
 
-    # --- find basins ---------------------------------------------------
-    basin_list = _find_basins(grid, F_kcal)
+    # --- find basins (reaction-agnostic) -------------------------------
+    basin_list = _find_basins(grid, F_kcal)   # [(cv, fes_kcal), ...]
+    # With the convention s = Σ(breaking) − Σ(forming), s grows reactant→product,
+    # so the EXTREME-CV basins are the endpoints — no per-reaction thresholds needed.
+    # Any caller-supplied basin_windows just add named labels (e.g. an intermediate).
     basins_by_class: Dict[str, Optional[Tuple[float, float]]] = {
         "reactant": None, "product": None, "intermediate": None,
     }
-    for cv_val, fes_val in basin_list:
-        cls = _classify_basin(cv_val)
-        if cls is not None and basins_by_class[cls] is None:
-            basins_by_class[cls] = (cv_val, fes_val)
+    if basin_list:
+        _ordered = sorted(basin_list, key=lambda b: b[0])
+        basins_by_class["reactant"] = _ordered[0]
+        # Only call the highest-CV basin the "product" if it is a DISTINCT basin —
+        # a single-basin FES means the bias never crossed the barrier (under-sampled),
+        # so leave product=None rather than aliasing both endpoints to one frame.
+        if len(_ordered) >= 2:
+            basins_by_class["product"] = _ordered[-1]
+        if basin_windows:
+            for cv_val, fes_val in basin_list:
+                _lbl = _classify_basin(cv_val, basin_windows)
+                if _lbl in basins_by_class and basins_by_class[_lbl] is None:
+                    basins_by_class[_lbl] = (cv_val, fes_val)
 
     def _closest_frame(target_cv: float) -> Optional[Atoms]:
         if not sampled_frames:
@@ -830,8 +845,8 @@ def run_opes_rescue(
 
     meta = {
         "method": "opes-metad",
-        "cv_definition": "s = d(P-O_LG) - d(P-O_nuc)",
-        "p_idx": p_idx, "nuc_idx": nuc_idx, "lg_idx": lg_idx,
+        "cv_definition": "s = sum(w*d(i,j))  (weighted bond-distance CV)",
+        "cv_terms": [list(t) for t in cv_terms],
         "temperature_K": temperature_K,
         "timestep_fs": timestep_fs,
         "total_time_ps": total_time_ps,
@@ -852,6 +867,7 @@ def run_opes_rescue(
         json.dump(meta, f, indent=2)
 
     return {
+        "basins": basin_list,
         "reactant": result_atoms["reactant"],
         "product": result_atoms["product"],
         "intermediate": result_atoms["intermediate"],

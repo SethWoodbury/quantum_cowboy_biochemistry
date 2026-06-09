@@ -295,9 +295,10 @@ def build_active_site_ts_pipeline(
         :class:`Pipeline` of 9 :class:`Step` instances.
     """
     if cv_indices is None:
-        p_idx = nuc_idx = lg_idx = None
+        center_idx = forming_idx = breaking_idx = None
     else:
-        p_idx, nuc_idx, lg_idx = cv_indices
+        # cv_indices = (center, forming, breaking)  (legacy order: P, nuc, LG)
+        center_idx, forming_idx, breaking_idx = cv_indices
     return Pipeline([
         ProtonateActiveSite(),
         VacuumNEBGuess(n_images=n_images),
@@ -305,8 +306,8 @@ def build_active_site_ts_pipeline(
         RigidDockTSConformers(pocket_residues=tuple(pocket_residues or ())),
         SidechainTorsionOpt(),
         PickBestPose(),
-        MTD(name="mtd_pocket", p_idx=p_idx, nuc_idx=nuc_idx, lg_idx=lg_idx,
-            total_time_ps=mtd_time_ps),
+        MTD(name="mtd_pocket", center_idx=center_idx, forming_idx=forming_idx,
+            breaking_idx=breaking_idx, total_time_ps=mtd_time_ps),
         IRC(name="irc", input_step="mtd_pocket"),
         BarrierReport(),
     ])

@@ -201,11 +201,13 @@ def run(
             raise ValueError(
                 "bond-difference needs the two bonds to share exactly one atom "
                 f"(the central atom); got {b0} and {b1}")
-        p = shared.pop()
-        lg = b0[1] if b0[0] == p else b0[0]   # s = d(P,LG) - d(P,nuc)
-        nuc = b1[1] if b1[0] == p else b1[0]
+        center = shared.pop()
+        # s = d(center,breaking) - d(center,forming): breaking is the first bond's
+        # non-shared atom, forming the second's. (diff_bonds order sets which is which.)
+        breaking = b0[1] if b0[0] == center else b0[0]
+        forming = b1[1] if b1[0] == center else b1[0]
         return _bond_difference_scan(
-            atoms, outdir, base, p, nuc, lg,
+            atoms, outdir, base, center, breaking, forming,
             np.linspace(s_start, s_end, n_steps), spring_k,
             relax_other, fmax, max_opt_steps, backend)
 
@@ -233,9 +235,9 @@ def _two_sided_scan(atoms, outdir, base, paired, bond_a, bond_b, relax_other,
                      label="scan-twosided", meta=meta)
 
 
-def _bond_difference_scan(atoms, outdir, base, p, nuc, lg, s_vals, spring_k,
-                          relax_other, fmax, max_opt_steps, backend):
-    """Drive s = d(P,LG) - d(P,nuc) with the cv_spring restraint, stepped.
+def _bond_difference_scan(atoms, outdir, base, center, breaking, forming, s_vals,
+                          spring_k, relax_other, fmax, max_opt_steps, backend):
+    """Drive s = d(center,breaking) - d(center,forming) with the cv_spring restraint, stepped.
 
     The energy recorded is the BARE PES energy (the soft restraint is removed
     before each measurement), and the x-axis is the ACHIEVED s at the relaxed
@@ -246,24 +248,25 @@ def _bond_difference_scan(atoms, outdir, base, p, nuc, lg, s_vals, spring_k,
     outdir = Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
     frames, energies, relax_steps, achieved = [], [], [], []
     for i, s_t in enumerate(s_vals):
-        spring = BondDifferenceCVSpring(p_idx=p, nuc_idx=nuc, lg_idx=lg,
-                                        k=spring_k, s_target=float(s_t),
-                                        fmax=None, mode="both")
+        spring = BondDifferenceCVSpring(center_idx=center, breaking_idx=breaking,
+                                        forming_idx=forming, k=spring_k,
+                                        s_target=float(s_t), fmax=None, mode="both")
         atoms.set_constraint(base + [spring])
         n_opt = _relax(atoms, fmax=fmax, max_opt_steps=max_opt_steps, backend=backend,
                        logfile=outdir / f"scan-bonddiff-opt{i:03d}.log") if relax_other else 0
         # bare PES energy (exclude the restraint contribution) + achieved s
         atoms.set_constraint(base)
         e = float(atoms.get_potential_energy())
-        s_now = float(atoms.get_distance(p, lg) - atoms.get_distance(p, nuc))
+        s_now = float(atoms.get_distance(center, breaking) - atoms.get_distance(center, forming))
         fr = atoms.copy(); fr.info["scan_value"] = s_now; fr.info["energy_eV"] = e
         fr.info["s_target"] = float(s_t)
         frames.append(fr); energies.append(e); relax_steps.append(n_opt); achieved.append(s_now)
         log.info("  step %d/%d: s_target=%.3f s_achieved=%.3f  E=%.6f eV  relax_steps=%d",
                  i + 1, len(s_vals), float(s_t), s_now, e, n_opt)
     atoms.set_constraint(base)
-    meta = {"mode": "bond-difference", "central_atom": p, "nuc": nuc, "lg": lg,
-            "spring_k": spring_k, "xlabel": "s = d(P,LG) − d(P,nuc) (Å)",
+    meta = {"mode": "bond-difference", "center": center, "breaking": breaking,
+            "forming": forming, "spring_k": spring_k,
+            "xlabel": "s = d(center,breaking) − d(center,forming) (Å)",
             "title": "bond-difference scan"}
     return _assemble(achieved, energies, relax_steps, frames, outdir,
                      label="scan-bonddiff", meta=meta)
