@@ -31,7 +31,7 @@ def _resolved(cv=True):
 
 
 def _ctx():
-    return RunContext(charge=-1, spin=1, model="mace-omol", device="cpu")
+    return RunContext(charge=-1, multiplicity=1, model="mace-omol", device="cpu")
 
 
 @pytest.fixture
@@ -174,7 +174,7 @@ def test_validate_override_forces_validation(patched, tmp_path):
 def test_engine_routes_to_qm_native(tmp_path):
     """ctx.engine != None routes the whole step to the QM-native engine
     (ORCA here); execute=False just prepares the input (no ORCA needed)."""
-    ctx = RunContext(engine="orca", model="b3lyp/def2-SVP", charge=0, spin=1)
+    ctx = RunContext(engine="orca", model="b3lyp/def2-SVP", charge=0, multiplicity=1)
     res = ts_entry.run(_resolved(), ctx, entry="ts-guess", ts_guess=_atoms(),
                        outdir=tmp_path, execute=False)
     assert res["engine"] == "orca" and res["status"] == "prepared"

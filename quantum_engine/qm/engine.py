@@ -103,7 +103,7 @@ def run_orca_engine(
         p_xyz = _write_xyz(product, outdir / "product.xyz")
         inp = orca.write_orca_nebts_input(
             r_xyz, p_xyz, outdir / "nebts.inp", charge=ctx.charge,
-            multiplicity=ctx.spin, method=meth, basis=bas, n_images=n_images,
+            multiplicity=ctx.multiplicity, method=meth, basis=bas, n_images=n_images,
             freq=True, nproc=nproc, maxcore=maxcore, solvent=solvent)
         job = "neb-ts"
     elif entry == "ts-guess":
@@ -112,7 +112,7 @@ def run_orca_engine(
         g_xyz = _write_xyz(ts_guess, outdir / "ts_guess.xyz")
         inp = orca.write_orca_input(
             g_xyz, outdir / "optts.inp", charge=ctx.charge,
-            multiplicity=ctx.spin, method=meth, basis=bas, job_type="ts+freq",
+            multiplicity=ctx.multiplicity, method=meth, basis=bas, job_type="ts+freq",
             nproc=nproc, maxcore=maxcore, solvent=solvent)
         job = "ts+freq"
     else:

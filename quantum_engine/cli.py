@@ -128,6 +128,7 @@ def _setup_atoms_and_calc(args):
                      charge=charge, spin=spin)
     atoms.info["charge"] = charge
     atoms.info["spin"] = spin
+    atoms.info["multiplicity"] = spin
     if ledger is not None:
         inject_into_atoms(atoms, ledger)
     atoms.calc = calc
@@ -503,7 +504,9 @@ def _cmd_neb(args):
     r_atoms.info["charge"] = charge
     p_atoms.info["charge"] = charge
     r_atoms.info["spin"] = spin
+    r_atoms.info["multiplicity"] = spin
     p_atoms.info["spin"] = spin
+    p_atoms.info["multiplicity"] = spin
     if ledger is not None:
         inject_into_atoms(r_atoms, ledger)
         inject_into_atoms(p_atoms, ledger)
@@ -983,6 +986,7 @@ def _cmd_validate_ts(args):
 
     atoms.info["charge"] = charge
     atoms.info["spin"] = spin
+    atoms.info["multiplicity"] = spin
     atoms.calc = make_calc(model=args.model, head=args.head,
                            device=args.device, charge=charge, spin=spin)
 
@@ -1042,6 +1046,7 @@ def _cmd_verify_irc_like(args):
         charge, spin = ledger.total, ledger.spin
     atoms.info["charge"] = charge
     atoms.info["spin"] = spin
+    atoms.info["multiplicity"] = spin
     atoms.calc = make_calc(model=args.model, head=args.head,
                            device=args.device, charge=charge, spin=spin)
 
@@ -1254,7 +1259,7 @@ def _cmd_ts_entry(args):
 
     spec = ReactionSpec.from_yaml(args.reaction_spec)
     spec.validate()
-    ctx = RunContext(charge=args.charge or 0, spin=args.spin or 1,
+    ctx = RunContext(charge=args.charge or 0, multiplicity=args.spin or 1,
                      model=args.model, head=args.head, engine=args.engine,
                      device=args.device)
 

@@ -93,7 +93,7 @@ def _resolved_ctx():
     resolved = ResolvedReaction(forming=[(0, 1)], breaking=[(1, 2)],
                                 reactive=[0, 1, 2], cv_bond_difference=None,
                                 spec=ReactionSpec())
-    ctx = RunContext(charge=0, spin=1, model="mace-omol", device="cpu")
+    ctx = RunContext(charge=0, multiplicity=1, model="mace-omol", device="cpu")
     return resolved, ctx
 
 

@@ -114,7 +114,8 @@ class ChargeLedger:
     def to_dict(self) -> dict[str, Any]:
         return {
             "total": self.total,
-            "spin": self.spin,
+            "multiplicity": self.spin,   # canonical key (M=2S+1)
+            "spin": self.spin,           # legacy alias (back-compat readers)
             "components": dict(self.components),
             "notes": dict(self.notes),
             "source": self.source,
@@ -184,12 +185,13 @@ def load_ledger(path: str | Path) -> ChargeLedger:
 
     if "total" not in data:
         raise ValueError(f"ledger {p}: missing required key 'total'")
-    if "spin" not in data:
-        raise ValueError(f"ledger {p}: missing required key 'spin'")
+    # `multiplicity` (M=2S+1) is the canonical key; accept the legacy `spin` key too.
+    if "multiplicity" not in data and "spin" not in data:
+        raise ValueError(f"ledger {p}: missing required key 'multiplicity'")
 
     return ChargeLedger(
         total=int(data["total"]),
-        spin=int(data["spin"]),
+        spin=int(data.get("multiplicity", data.get("spin"))),
         components=dict(data.get("components") or {}),
         notes=dict(data.get("notes") or {}),
         source=str(p),
@@ -304,6 +306,7 @@ def inject_into_atoms(atoms, ledger: ChargeLedger) -> None:
     """
     atoms.info["charge"] = ledger.total
     atoms.info["spin"] = ledger.spin
+    atoms.info["multiplicity"] = ledger.spin
     atoms.info["charge_ledger"] = ledger.to_dict()
 
 

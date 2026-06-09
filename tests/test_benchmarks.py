@@ -47,7 +47,7 @@ def test_benchmark_hcn_isomerization():
         "forming_bonds": [["0:1", "0:2"]],     # H–N forms
         "breaking_bonds": [["0:1", "0:0"]],    # H–C breaks
         "reactive_atoms": ["0:0", "0:1", "0:2"]})
-    ctx = RunContext(charge=0, spin=1, model="gfn2-xtb", device="cpu")
+    ctx = RunContext(charge=0, multiplicity=1, model="gfn2-xtb", device="cpu")
     with tempfile.TemporaryDirectory() as td:
         res = ts_entry.run(spec, ctx, entry="ts-guess", ts_guess=_hcn_ts_guess(),
                            outdir=td, rigor="standard", validate=False)
@@ -69,7 +69,7 @@ def test_benchmark_sn2_charge_handling():
         "forming_bonds": [["0:0", "0:5"]],     # C–Cl(5) forms
         "breaking_bonds": [["0:0", "0:4"]],    # C–Cl(4) breaks
         "reactive_atoms": ["0:0", "0:4", "0:5"]})
-    ctx = RunContext(charge=-1, spin=1, model="gfn2-xtb", device="cpu")
+    ctx = RunContext(charge=-1, multiplicity=1, model="gfn2-xtb", device="cpu")
     with tempfile.TemporaryDirectory() as td:
         res = ts_entry.run(spec, ctx, entry="ts-guess", ts_guess=ts, outdir=td,
                            rigor="standard", validate=False)

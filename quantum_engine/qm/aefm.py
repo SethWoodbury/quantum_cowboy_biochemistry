@@ -186,6 +186,7 @@ def run(ts_guess: Atoms, *, charge: int = 0, spin: int = 1, reactant=None,
                 "guess — element/order mismatch.")
         refined.info["charge"] = charge
         refined.info["spin"] = spin
+        refined.info["multiplicity"] = spin
         n_steps = refined.info.get("n_steps")
         out = outdir / "aefm_ts.xyz"
         ase_write(str(out), refined, format="extxyz")

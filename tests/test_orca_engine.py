@@ -128,7 +128,7 @@ def test_register_engine_extensibility():
 
 # ---- engine runner (no live ORCA) ----
 def test_orca_engine_prepare_only_reactant_product(tmp_path):
-    ctx = RunContext(engine="orca", model="b3lyp/def2-SVP", charge=-1, spin=1)
+    ctx = RunContext(engine="orca", model="b3lyp/def2-SVP", charge=-1, multiplicity=1)
     res = run_orca_engine(_resolved(), ctx, entry="reactant-product",
                           reactant=_co2(), product=_co2(), outdir=tmp_path,
                           execute=False)
@@ -154,7 +154,7 @@ def test_orca_engine_executes_and_gates(tmp_path, monkeypatch):
                 "geometry": (["O", "C", "O"],
                              [[-1.1, 0, 0], [0, 0, 0], [1.1, 0, 0]])}
     monkeypatch.setattr(orca, "run_orca", fake_run)
-    ctx = RunContext(engine="orca", model="b3lyp/def2-SVP", charge=0, spin=1)
+    ctx = RunContext(engine="orca", model="b3lyp/def2-SVP", charge=0, multiplicity=1)
     res = run_orca_engine(_resolved(), ctx, entry="ts-guess", ts_guess=_co2(),
                           outdir=tmp_path, execute=True)
     assert res["status"] == "converged" and res["n_imag"] == 1

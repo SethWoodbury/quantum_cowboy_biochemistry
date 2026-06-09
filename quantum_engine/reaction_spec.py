@@ -175,7 +175,7 @@ class ResolvedReaction:
 class RunContext:
     """Per-run state threaded through every step."""
     charge: int = 0
-    spin: int = 1                    # multiplicity (2S+1)
+    multiplicity: int = 1            # spin multiplicity M = 2S+1 (1=singlet, 2=doublet, ...)
     model: str = "mace-omol"         # energy function alias
     head: Optional[str] = None
     engine: Optional[str] = None     # None = ASE-calc path; else 'orca'/'turbomole'/...
@@ -189,8 +189,21 @@ class RunContext:
     energy_unit: str = "eV"
     extra: dict = field(default_factory=dict)
 
+    @property
+    def spin(self) -> int:
+        """DEPRECATED alias for ``multiplicity`` (back-compat). Holds M = 2S+1,
+        NOT the spin quantum number S. Prefer ``ctx.multiplicity``."""
+        return self.multiplicity
+
+    @spin.setter
+    def spin(self, value: int) -> None:
+        self.multiplicity = value
+
     @classmethod
     def from_dict(cls, d: dict) -> "RunContext":
+        d = dict(d)
+        if "spin" in d and "multiplicity" not in d:     # accept the legacy key
+            d["multiplicity"] = d.pop("spin")
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         kw = {k: v for k, v in d.items() if k in known}
         extra = {k: v for k, v in d.items() if k not in known}

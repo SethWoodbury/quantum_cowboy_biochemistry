@@ -106,7 +106,7 @@ def test_ts_entry_uses_proposer_not_path(monkeypatch, tmp_path):
 
     resolved = ResolvedReaction(forming=[(0, 1)], breaking=[(1, 2)], reactive=[0, 1, 2],
                                 cv_bond_difference=None, spec=ReactionSpec())
-    ctx = RunContext(charge=0, spin=1, model="mace-omol", device="cpu")
+    ctx = RunContext(charge=0, multiplicity=1, model="mace-omol", device="cpu")
     res = ts_entry.run(resolved, ctx, entry="reactant-product",
                        reactant=_mol(), product=_mol(), outdir=tmp_path,
                        proposer="some-generative-model", validate=False)
@@ -136,7 +136,7 @@ def test_ts_entry_none_proposal_fails_cleanly(monkeypatch, tmp_path):
 
     resolved = ResolvedReaction(forming=[(0, 1)], breaking=[(1, 2)], reactive=[0, 1, 2],
                                 cv_bond_difference=None, spec=ReactionSpec())
-    ctx = RunContext(charge=0, spin=1, model="mace-omol", device="cpu")
+    ctx = RunContext(charge=0, multiplicity=1, model="mace-omol", device="cpu")
     res = ts_entry.run(resolved, ctx, entry="reactant-product",
                        reactant=_mol(), product=_mol(), outdir=tmp_path,
                        proposer="broken-model", validate=False)

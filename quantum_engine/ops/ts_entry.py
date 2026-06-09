@@ -66,12 +66,13 @@ def _calc_fn(ctx: RunContext):
             "Use engine=None (an ASE calculator: MLFF or xTB) for now.")
     from quantum_engine.calc import make_calc_fn  # noqa: PLC0415
     return make_calc_fn(model=ctx.model, head=ctx.head, device=ctx.device,
-                        charge=ctx.charge, spin=ctx.spin)
+                        charge=ctx.charge, spin=ctx.multiplicity)
 
 
 def _stamp(atoms: Atoms, ctx: RunContext) -> Atoms:
     atoms.info["charge"] = ctx.charge
-    atoms.info["spin"] = ctx.spin
+    atoms.info["spin"] = ctx.multiplicity
+    atoms.info["multiplicity"] = ctx.multiplicity
     return atoms
 
 
@@ -233,7 +234,7 @@ def run(
         reaction.validate()
         resolved = reaction.resolve(anchor, template)
     log.info("ts_entry: entry=%s rigor=%s path=%s saddle=%s model=%s charge=%d spin=%d",
-             entry, rigor, path_method, saddle_backend, ctx.model, ctx.charge, ctx.spin)
+             entry, rigor, path_method, saddle_backend, ctx.model, ctx.charge, ctx.multiplicity)
 
     R = R_e = P = P_e = None
     ts_atoms = None
@@ -242,7 +243,7 @@ def run(
     with Step("ts_entry", outdir, params={
             "entry": entry, "rigor": rigor, "path_method": path_method,
             "saddle_backend": saddle_backend, "n_images": n_images,
-            "model": ctx.model, "charge": ctx.charge, "spin": ctx.spin}) as top:
+            "model": ctx.model, "charge": ctx.charge, "spin": ctx.multiplicity}) as top:
 
         # ---- reactant-only: drive R to a product basin via the CV ----
         if entry == "reactant-only":
@@ -274,7 +275,7 @@ def run(
                 with Step("ts_propose", outdir, params={"proposer": proposer}) as s:
                     prop = ts_propose.run(proposer, _stamp(R.copy(), ctx),
                                           _stamp(P.copy(), ctx), charge=ctx.charge,
-                                          spin=ctx.spin, atom_map=amap,
+                                          spin=ctx.multiplicity, atom_map=amap,
                                           outdir=outdir / "propose", **kwargs)
                     s.record(status=prop.get("status"),
                              confidence=prop.get("confidence"))
@@ -317,7 +318,7 @@ def run(
             with Step("ts_refine", outdir, params={"refiner": refiner}) as s:
                 try:
                     ref = ts_refine.run(refiner, _stamp(ts_guess.copy(), ctx),
-                                        charge=ctx.charge, spin=ctx.spin,
+                                        charge=ctx.charge, spin=ctx.multiplicity,
                                         reactant=R, product=P,
                                         outdir=outdir / "refine_guess", **kwargs)
                 except Exception as exc:  # noqa: BLE001 — refiner is non-critical

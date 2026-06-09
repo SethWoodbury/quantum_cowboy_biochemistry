@@ -75,6 +75,7 @@ def _identity(ts_guess: Atoms, *, charge: int, spin: int, reactant=None,
     ts = ts_guess.copy()
     ts.info["charge"] = charge
     ts.info["spin"] = spin
+    ts.info["multiplicity"] = spin
     log.info("identity refiner: returning the guess unchanged (no-op baseline)")
     return {"ts_guess": ts, "confidence": None, "status": "converged",
             "outputs": {}}
