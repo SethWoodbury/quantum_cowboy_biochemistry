@@ -258,7 +258,7 @@ class TorchSimLbfgsOptimizer(Optimizer):
             "torch-sim LBFGS is not available in the current container. "
             "torch-sim 0.3.0 (the last Python 3.11-compatible release) only "
             "ships gradient_descent + FIRE. To get LBFGS, rebuild the "
-            "qcb container on Python 3.12 and `pip install "
+            "cowboy-qc container on Python 3.12 and `pip install "
             "torch-sim-atomistic>=0.4.0`. For now, use backend "
             "'torch-sim-fire' (also fast on GPU) or 'ase-lbfgs'."
         )

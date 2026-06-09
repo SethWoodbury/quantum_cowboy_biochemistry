@@ -126,7 +126,7 @@ cat $ROOT/benchmark_06h/BENCHMARK_REPORT.md
    close the 5–7 kcal/mol systematic.
 2. **Reaction-mode-projected IRC** — current IRC follows the lowest
    full-Hessian eigenvector, which can be a sidechain rocking mode rather
-   than the reactive coordinate. Add `qcb irc --mode-hint <atom_indices>`.
+   than the reactive coordinate. Add `cowboy-qc irc --mode-hint <atom_indices>`.
 3. **Scale to other 7 PTE PDBs** (KCX_set0/3, GLU_set0/1/3, minimal_deNovo,
    substrate_uncat) — same scan-along-s strategy, ~1h on l40 each.
 4. **CIF Zn fix** — investigate the atomworks element-table failure on Zn

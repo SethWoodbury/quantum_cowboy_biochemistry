@@ -29,7 +29,7 @@ Status: thin scaffold. The high-level workflow API is sketched; the
 MACE-via-openmmml attachment + the xtb-as-custom-force bridge are
 TODOs that need a labmate's real workflow to test against. The goal
 here is the package layout + import-resolves story so the rest of
-qcb can already point at it.
+cowboy-qc can already point at it.
 """
 from __future__ import annotations
 

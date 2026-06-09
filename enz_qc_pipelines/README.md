@@ -2,11 +2,11 @@
 
 End-to-end workflows that combine **protein-design tools** (RFdiffusion outputs,
 AlphaFold3 predictions, TMalign-based structural alignment, sidechain dihedral
-optimisation) with **quantum-chemistry tools** from the `qcb` library
+optimisation) with **quantum-chemistry tools** from the `cowboy-qc` library
 (xTB, MACE-MLFF, NEB-TS, …).
 
 Each subdirectory is a self-contained application: its own README, its own
-CLI entry point, its own example inputs. The `qcb` package itself stays free
+CLI entry point, its own example inputs. The `cowboy-qc` package itself stays free
 of design-specific assumptions — these directories are where opinionated,
 project-specific compositions live.
 

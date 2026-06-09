@@ -14,7 +14,7 @@ WARNS on a non-neutral / non-singlet request. Use it for organic substrate
 reactions + the organic benchmarks.
 
 Packaging: React-OT (torch 2.2.1 + torch_geometric + LEFTNet) conflicts with the
-main qcb container, so it lives in its OWN sidecar (see ``deps/reactot_sidecar.def``); the
+main cowboy-qc container, so it lives in its OWN sidecar (see ``deps/reactot_sidecar.def``); the
 checkpoint is on Zenodo (open, not gated — record 13131875). This adapter imports
 React-OT lazily and raises a clean ImportError when it's absent, so registering it
 never affects anything else.

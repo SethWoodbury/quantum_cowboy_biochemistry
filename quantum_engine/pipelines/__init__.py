@@ -6,7 +6,7 @@ The contract for chaining quantum_engine ops in Python. Each existing
 :class:`Context` that flows ``atoms`` / ``calc`` / sub-results between
 them.
 
-This is the imperative twin of ``qcb run config.yaml`` — same DAG, just
+This is the imperative twin of ``cowboy-qc run config.yaml`` — same DAG, just
 expressed in Python so library users can build their own orchestrators
 without YAML.
 

@@ -116,10 +116,10 @@ load refined.pdb
 load refined_cluster/refined.pdb, cluster_relaxed
 ```
 
-## What lives in `qcb` vs. here
+## What lives in `cowboy-qc` vs. here
 
-The `qcb` library provides the building blocks (PDB I/O conventions, xTB
+The `cowboy-qc` library provides the building blocks (PDB I/O conventions, xTB
 runners, protonation utilities). This application provides the
 *opinionated workflow* on top — design contact map, KCX-aware protonation
 strip, restraint scheduling. If a piece of logic stops being design-specific
-and becomes reusable, promote it back into `qcb`.
+and becomes reusable, promote it back into `cowboy-qc`.

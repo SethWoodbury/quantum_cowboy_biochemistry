@@ -3,7 +3,7 @@ Structure preparation: active site extraction, protonation, charge calculation, 
 """
 
 # Canonical protonation is the deterministic, staged engine in
-# ``quantum_engine.prep.protonator`` (CLI: ``qcb protonate``). The older
+# ``quantum_engine.prep.protonator`` (CLI: ``cowboy-qc protonate``). The older
 # multi-method consensus arbiter (protonate_consensus / protonate_chimera)
 # was retired in the 2026-06 cleanup; see archive/pre-cleanup to recover it.
 # ``protonate`` (PROPKA pKa prediction) is kept — protonator stage5 and

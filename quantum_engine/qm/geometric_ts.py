@@ -5,7 +5,7 @@ internal coordinates (TRIC), which is excellent for large / floppy / weakly-boun
 systems where Cartesian eigenvector-following (Sella) struggles. Wired as a
 SADDLE backend ``geometric`` (``ops/saddle.py``).
 
-geomeTRIC is NOT bundled in the qcb container; this adapter imports it lazily, so
+geomeTRIC is NOT bundled in the cowboy-qc container; this adapter imports it lazily, so
 selecting ``geometric`` without it installed raises a clean ImportError (the
 saddle layer surfaces it like any other missing-dep backend). Install with
 ``pip install geometric``; the integration is unit-correct (verified against a

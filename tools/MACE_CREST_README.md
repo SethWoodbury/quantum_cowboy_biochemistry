@@ -88,7 +88,7 @@ $ tools/crest_with_mace.sh struc.xyz --device cuda
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--model` | `mace-mp` | Any alias the qcb factory knows (`mace-mp`, `mace-omol`, `mace-polar-m`, ...) or an absolute `.model` path. |
+| `--model` | `mace-mp` | Any alias the cowboy-qc factory knows (`mace-mp`, `mace-omol`, `mace-polar-m`, ...) or an absolute `.model` path. |
 | `--device` | `cuda` | `cuda` or `cpu`. Match daemon to the host's available GPU. |
 | `--dtype` | `float64` | `float32` is faster and uses less memory but matches less well to xtb-validated forces. |
 | `--head` | _(none)_ | For multi-head MACE models (e.g. `mace-mh --head omol`). |
@@ -161,10 +161,10 @@ allows.
 - You need a level of theory above xtb but cheaper than DFT (mace-omol /
   polar / off / mp foundation models are useful here).
 - You're sampling a MACE-fit energy surface (e.g. evaluating a TS that was
-  refined by `qcb refine-ts --model mace-omol`) and want consistent forces.
+  refined by `cowboy-qc refine-ts --model mace-omol`) and want consistent forces.
 - The system contains atoms / charge states xtb doesn't handle reliably.
 
-**Stick with xtb-CREST (the default `qcb crest` path) when:**
+**Stick with xtb-CREST (the default `cowboy-qc crest` path) when:**
 - You're doing a fast pre-screen for diversity (xtb-CREST is hard to beat
   on speed for typical organic chemistry).
 - You don't have a GPU available and CPU MACE is too slow for the per-call
@@ -254,10 +254,10 @@ $ /home/woodbuse/codebase_projects/quantum_cowboy_biochemistry/deps/crest/instal
 
 ## qcb CLI integration
 
-The capability is also exposed as a regular qcb subcommand:
+The capability is also exposed as a regular cowboy-qc subcommand:
 
 ```bash
-$ qcb crest-mace input.xyz --model mace-mp --device cuda \
+$ cowboy-qc crest-mace input.xyz --model mace-mp --device cuda \
                  --crest-args -gfn2 --quick
 ```
 

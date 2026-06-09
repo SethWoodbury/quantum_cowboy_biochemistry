@@ -6,7 +6,7 @@ This repo has **three** places the code can live. They must not drift:
 |----------|------|
 | `~/codebase_projects/quantum_cowboy_biochemistry` (this checkout) | **Development.** Edit + test here. |
 | `/net/software/lab/quantum_cowboy_biochemistry` | **Shared install.** What other people / cron / notebooks import when not bind-mounting a dev tree. |
-| `quantum_chem-*.sif` (+ `uma-*.sif`) | **Runtime.** The container where `qcb` actually executes. |
+| `quantum_chem-*.sif` (+ `uma-*.sif`) | **Runtime.** The container where `cowboy-qc` actually executes. |
 
 ## The rule
 
@@ -31,10 +31,10 @@ or a bind-mounted dev tree without a rebuild.
 
 ## How notebooks should invoke the code
 
-Notebooks call the `qcb` CLI inside the container — never a raw `.py` path:
+Notebooks call the `cowboy-qc` CLI inside the container — never a raw `.py` path:
 
 > **Current gap:** `quantum_chem-20260506.sif` does NOT have `quantum_engine`
-> pip-installed (`pip show quantum-engine` → not found), so the `qcb` console
+> pip-installed (`pip show quantum-engine` → not found), so the `cowboy-qc` console
 > script isn't on PATH there. Until the package is installed in a rebuilt
 > container, invoke the CLI as a module with the checkout on `PYTHONPATH`:
 
@@ -45,15 +45,15 @@ apptainer exec --nv --bind /home --bind /net --env PYTHONPATH=$REPO \
   $SIF python -m quantum_engine.cli <op> ...
 ```
 
-To make `qcb <op>` work directly, the container build must install the package
+To make `cowboy-qc <op>` work directly, the container build must install the package
 — add to `deps/quantum_chem.def` (after the source is on `/net/software/lab` or
 bind-mounted at build):
 
 ```
-pip install -e /net/software/lab/quantum_cowboy_biochemistry   # puts `qcb` on PATH
+pip install -e /net/software/lab/quantum_cowboy_biochemistry   # puts `cowboy-qc` on PATH
 ```
 
-Then `apptainer exec … $SIF qcb <op> …` works, and the `python -m` form remains
+Then `apptainer exec … $SIF cowboy-qc <op> …` works, and the `python -m` form remains
 the no-rebuild path for testing an editable checkout.
 
 ## Building / rebuilding containers

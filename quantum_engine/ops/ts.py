@@ -207,7 +207,7 @@ def run(
     _source_atoms = input_atoms.copy()
 
     log.info("=" * 60)
-    log.info(f"qcb ts: strategy={strategy}, charge={charge:+d}, n_atoms={len(input_atoms)}")
+    log.info(f"cowboy-qc ts: strategy={strategy}, charge={charge:+d}, n_atoms={len(input_atoms)}")
     log.info("=" * 60)
 
     # ===================================================================
@@ -352,7 +352,7 @@ def run(
         _setup_calc_and_constraint(ts, calculator_fn, charge, constraint)
 
         # Optional: Sella refinement of TS (if requested via future flag)
-        # For now, skip; Sella can be called separately via `qcb saddle`
+        # For now, skip; Sella can be called separately via `cowboy-qc saddle`
 
         # Get energies (all under consistent calc setup)
         e_r = reactant.get_potential_energy()

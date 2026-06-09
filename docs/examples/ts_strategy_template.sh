@@ -72,7 +72,7 @@ apptainer exec --nv \
     --bind /home:/home --bind /mnt:/mnt --bind /net:/net \
     --env "PYTHONPATH=/home/woodbuse/codebase_projects/quantum_cowboy_biochemistry/deps/.local_pkgs" \
     /net/software/containers/universal.sif \
-    python tools/qcb freq "$TS_PDB" \
+    python tools/cowboy-qc freq "$TS_PDB" \
         --outdir "$OUT/freq" \
         --model "$MODEL" --device cuda --charge 1 \
         --indices 177 178 179 180 181 182 183 184 185 186 187 188 189 \
@@ -86,7 +86,7 @@ apptainer exec --nv \
     --bind /home:/home --bind /mnt:/mnt --bind /net:/net \
     --env "PYTHONPATH=/home/woodbuse/codebase_projects/quantum_cowboy_biochemistry/deps/.local_pkgs" \
     /net/software/containers/universal.sif \
-    python tools/qcb irc "$TS_PDB" \
+    python tools/cowboy-qc irc "$TS_PDB" \
         --outdir "$OUT/irc" \
         --model "$MODEL" --device cuda --charge 1 \
         --no-refine-ts --step 0.1 --fmax 0.05 || echo "IRC failed (non-fatal)"

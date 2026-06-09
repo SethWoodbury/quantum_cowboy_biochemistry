@@ -261,7 +261,7 @@ def run(
     charge: int | None = None,
     **kwargs,
 ) -> dict:
-    """``ops`` adapter signature for ``qcb verify-irc-like``."""
+    """``ops`` adapter signature for ``cowboy-qc verify-irc-like``."""
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     if atoms.calc is None:

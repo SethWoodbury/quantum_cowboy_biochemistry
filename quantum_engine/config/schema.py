@@ -17,7 +17,7 @@ deprecation warnings), so the schema is portable across both.
 
 Schema overview
 ---------------
-A qcb config has these top-level fields:
+A cowboy-qc config has these top-level fields:
 
 * ``qcb_version``  — schema version (currently 1)
 * ``name`` / ``description`` — optional metadata
@@ -377,7 +377,7 @@ _OperationUnion = Union[
 
 
 class QcbConfig(_StrictModel):
-    """Top-level qcb config. Validates internal cross-references."""
+    """Top-level cowboy-qc config. Validates internal cross-references."""
 
     qcb_version: int = 1
     name: Optional[str] = None
@@ -543,7 +543,7 @@ def load_config(path, defaults=None) -> QcbConfig:
         return QcbConfig.parse_obj(merged)
     except Exception as e:
         raise ValueError(
-            f"Failed to validate qcb config from '{main_path}': {e}"
+            f"Failed to validate cowboy-qc config from '{main_path}': {e}"
         ) from e
 
 

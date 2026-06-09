@@ -2,7 +2,7 @@
 
 All notable changes to this project. The project adopts [Semantic
 Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`. The importable package is
-`quantum_engine`; the CLI is `qcb`.
+`quantum_engine`; the CLI is `cowboy-qc`.
 
 ## [1.0.0] — 2026-06-04
 
@@ -57,7 +57,7 @@ case only — nothing is hardcoded to it.
   newest image. Two containers total.
 
 ### CLI, notebook, docs
-- New subcommands: `qcb ts-entry`, `qcb monitor`, `qcb reaction-spec`.
+- New subcommands: `cowboy-qc ts-entry`, `cowboy-qc monitor`, `cowboy-qc reaction-spec`.
 - Vendored notebook helpers (`notebooks/lib/`) + the OPAA command/`sbatch`-generator
   notebook.
 - Docs: `ts_workflow.md`, `optimizers_and_engines.md`, `extending.md`,
@@ -70,7 +70,7 @@ case only — nothing is hardcoded to it.
 
 ## [0.x] — pre-1.0
 
-Iterative development: the `quantum_engine` package + `qcb` CLI, the ops/calc/opt
+Iterative development: the `quantum_engine` package + `cowboy-qc` CLI, the ops/calc/opt
 factories, the MLFF calculators (MACE / ORB / AIMNet2 / UMA), the v2 extended TS
 pipeline, the protonator, and the SLURM / notebook tooling. Summarized here; see the
 git history for detail.

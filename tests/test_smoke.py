@@ -476,7 +476,7 @@ def test_cli_help_runs():
     )
     # argparse exits 0 on --help
     assert result.returncode == 0, result.stderr
-    assert "qcb" in result.stdout
+    assert "cowboy-qc" in result.stdout
     # Spot-check a few subcommands appear
     for sub in ("sp", "opt", "md", "neb", "mtd", "ts", "protonate"):
         assert sub in result.stdout, f"missing subcommand {sub!r}"

@@ -221,7 +221,7 @@ qcb-enz-ts run \
     --outdir runs/esterase_001
 ```
 
-Same DAG as `qcb run config.yaml`, just with reaction-aware stages
+Same DAG as `cowboy-qc run config.yaml`, just with reaction-aware stages
 (see `quantum_engine.pipelines.Pipeline` contract).
 
 ## Open items

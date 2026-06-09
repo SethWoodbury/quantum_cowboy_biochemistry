@@ -1,7 +1,7 @@
 # Architecture
 
 **Package:** `quantum_engine`  ·  **CLI:** `python -m quantum_engine.cli <op>`
-(the `qcb` shorthand; run from the container — not pip-installed there)
+(the `cowboy-qc` shorthand; run from the container — not pip-installed there)
 
 ## Plug-and-play (v1.0)
 
@@ -21,7 +21,7 @@ engine**. The reaction is a user-owned `ReactionSpec`; run state is a
 
 ```
 quantum_engine/
-  cli.py               # `qcb <op> ...` entry point (dispatches to ops/)
+  cli.py               # `cowboy-qc <op> ...` entry point (dispatches to ops/)
   site.py              # cluster paths + MLFF model registry (env-overridable)
   units.py             # unit-conversion constants (EV_TO_KCAL, FREQ_CONV, ...)
   select.py            # constraint grammar + fix-presets (residue/atoms/chain/...)
@@ -38,7 +38,7 @@ quantum_engine/
     structure.py       # load_structure(), write_pdb() — PDB/XYZ/CIF via biotite
     cif.py             # CIF writer with bond orders + charges (atomworks)
     smiles_pdb.py      # SMILES -> 3D PDB / XYZ -> PDB (RDKit)
-    legacy_enzts.py    # translate old enz-ts YAML -> qcb config schema
+    legacy_enzts.py    # translate old enz-ts YAML -> cowboy-qc config schema
   ops/                 # Gaussian-style operations (each returns a result dict)
     sp / opt / md / freq / scan / saddle / irc / neb / mtd     # primitives
     gates.py           # Gate / GateReport (PASS/WARN/FAIL → gates.json)
@@ -63,7 +63,7 @@ quantum_engine/
   mm/
     openmm.py          # OpenMM MD scaffold (experimental)
   prep/                # structure preparation
-    protonator.py      # CANONICAL protonation engine (CLI: `qcb protonate`)
+    protonator.py      # CANONICAL protonation engine (CLI: `cowboy-qc protonate`)
     protonate.py       # PROPKA pKa prediction helper (get_pka_dict)
     charge / cap / extract / convert / validate_pdb
   qm/                  # external QM-engine + path-search backends
@@ -78,11 +78,11 @@ quantum_engine/
   pipelines/           # contract.py (Step/Pipeline) + steps.py
   slurm/               # job_runner.py + submit_walkers.py
   config/
-    schema.py          # Pydantic YAML config schema for `qcb run config.yaml`
+    schema.py          # Pydantic YAML config schema for `cowboy-qc run config.yaml`
 ```
 
-There is **no** `scripts/` directory — every operation is a `qcb` subcommand
-(`qcb sp/opt/md/freq/scan/saddle/irc/neb/mtd/ts/protonate/...`). Loose helper
+There is **no** `scripts/` directory — every operation is a `cowboy-qc` subcommand
+(`cowboy-qc sp/opt/md/freq/scan/saddle/irc/neb/mtd/ts/protonate/...`). Loose helper
 scripts live in `tools/`; opinionated end-to-end applications live in
 `enz_qc_pipelines/`.
 
@@ -131,10 +131,10 @@ r_freq = freq.run(r_opt["atoms"], outdir="out/freq", constraint=c)
 
 ```bash
 # CLI
-qcb protonate enzyme.pdb -o enzyme_h.pdb --pH 7.0
-qcb opt  enzyme_h.pdb --fmax 0.01 --fix-preset ca-only
-qcb scan enzyme_h.pdb --coord bond --indices 133 120 --start 1.8 --end 3.2 --n-steps 20
-qcb ts   enzyme_h.pdb --strategy irc
+cowboy-qc protonate enzyme.pdb -o enzyme_h.pdb --pH 7.0
+cowboy-qc opt  enzyme_h.pdb --fmax 0.01 --fix-preset ca-only
+cowboy-qc scan enzyme_h.pdb --coord bond --indices 133 120 --start 1.8 --end 3.2 --n-steps 20
+cowboy-qc ts   enzyme_h.pdb --strategy irc
 ```
 
 ## Constraint grammar
@@ -160,15 +160,15 @@ Presets (expand to specs + exclusions):
 - `none` → no constraints
 
 ```bash
-qcb md input.pdb --fix "chain B" "atoms CA" --free "residue YYE"
+cowboy-qc md input.pdb --fix "chain B" "atoms CA" --free "residue YYE"
 # Fix all chain-B atoms AND any CA anywhere, but unfix YYE ligand atoms.
 ```
 
 ## TS-search entry points
 
-- `qcb ts --strategy {irc|cv-spring|mtd}` — native, in-process composition; best
+- `cowboy-qc ts --strategy {irc|cv-spring|mtd}` — native, in-process composition; best
   when you have a TS guess (`irc`) or want to explore endpoints (`cv-spring`).
-- `qcb ts-pipeline-v2 config.yaml` — YAML-driven, resumable, multi-stage
+- `cowboy-qc ts-pipeline-v2 config.yaml` — YAML-driven, resumable, multi-stage
   orchestrator for production runs (microstates, 2D scans, tiered validation).
-- `qcb refine-ts --from-neb <dir>` — post-NEB saddle refinement + partial-Hessian
+- `cowboy-qc refine-ts --from-neb <dir>` — post-NEB saddle refinement + partial-Hessian
   validation (the standard polish step).

@@ -25,9 +25,9 @@ When to use
 
 When NOT to use
 ---------------
-- Input is a single TS guess — use IRC-from-TS instead (`qcb irc`).
+- Input is a single TS guess — use IRC-from-TS instead (`cowboy-qc irc`).
 - Input is one endpoint and you don't know the other — use CV spring
-  driving (`qcb ts --strategy cv-spring`) or metadynamics (`qcb mtd`).
+  driving (`cowboy-qc ts --strategy cv-spring`) or metadynamics (`cowboy-qc mtd`).
 """
 from __future__ import annotations
 

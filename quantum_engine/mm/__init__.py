@@ -1,6 +1,6 @@
 """Molecular mechanics — OpenMM-driven MD with swappable force fields.
 
-Where the rest of qcb leans on ASE's per-step Python loop for MD
+Where the rest of cowboy-qc leans on ASE's per-step Python loop for MD
 (``quantum_engine.ops.md``, ``quantum_engine.ops.mtd``), this
 subpackage uses OpenMM's CUDA-accelerated kernels. Force-field choice
 is decoupled from the integrator:

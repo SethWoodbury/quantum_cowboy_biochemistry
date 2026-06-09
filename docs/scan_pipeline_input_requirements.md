@@ -130,7 +130,7 @@ For other GPUs:
   distance drift, no-decoupling.
 - `benchmark_synth.py` flags suspiciously-low barriers (< 5 kcal/mol),
   out-of-range distances, unconverged energies.
-- `qcb freq` partial Hessian on reactive core confirms n_imaginary == 1.
+- `cowboy-qc freq` partial Hessian on reactive core confirms n_imaginary == 1.
 
 ## v2 changes (already shipped)
 
@@ -155,7 +155,7 @@ For other GPUs:
 - **Multi-bond CV** beyond 1D `s` — scan_along_s.py is structurally limited
   to single-bond-forming/single-bond-breaking topologies. For Diels-Alder,
   Cope, sigmatropic, electrocyclic, or any K+L > 2 reaction, see
-  `docs/multi_bond_design.md` for the proposed `qcb scan-multi` + `qcb
+  `docs/multi_bond_design.md` for the proposed `cowboy-qc scan-multi` + `qcb
   auto-ts` policy layer that orchestrates scan / NEB-CI / Sella based on
   bond count.
 - **R-P connectivity diff** to auto-detect forming/breaking bonds when both

@@ -16,7 +16,7 @@ theozyme): this adapter HARD-FAILS on any non-CHNO element, WARNS on a
 non-neutral / non-singlet request, and WARNS on large systems.
 
 Packaging: AEFM's stack (schnetpack>2 + torch_geometric + torchdiffeq + e3nn,
-python 3.12) conflicts with the main qcb container, so it lives in its OWN sidecar
+python 3.12) conflicts with the main cowboy-qc container, so it lives in its OWN sidecar
 (see ``deps/aefm_sidecar.def``); the weights are on Zenodo (open, not gated —
 record 16414436). This adapter drives AEFM's own supported ``aefm_sample`` CLI via
 subprocess (the documented interface), so it stays free of the AEFM/torch stack

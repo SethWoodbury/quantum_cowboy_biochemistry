@@ -30,13 +30,13 @@ These stay. The cleanup removes cruft *around* and *duplicated within* this stru
 
 1. **Sequencing:** cleanup-first, then the notebook track.
 2. **Deletion policy:** archive to a git tag/branch first, then delete from `main` (reversible).
-3. **Protonation:** `protonator.py` is canonical → wire as `qcb protonate`, add missing `--ligand-charge`.
+3. **Protonation:** `protonator.py` is canonical → wire as `cowboy-qc protonate`, add missing `--ligand-charge`.
    Archive+delete `protonate_consensus.py` + `protonate_chimera.py`. Keep `protonate.py` (thin PROPKA
    helper used by `charge.py` and `protonator` stage5). `ops/protonation*.py` stay (separate
    microstate-sampler concern).
 4. **Centralization model:** tagged releases → synced to `/net/software/lab/quantum_cowboy_biochemistry`
    + container rebuilt together, so dev tree / shared install / container never drift. Notebooks call
-   the released `qcb`.
+   the released `cowboy-qc`.
 5. **Run artifacts (`logs/ runs/ outputs/`):** verified untracked + no code read-dependencies → delete
    on disk. Exception: **preserve `logs/container_builds/`** (container build provenance) by moving it
    to `deps/container_build_logs/`.
@@ -94,14 +94,14 @@ Re-confirm zero importers (grep) for each, then delete:
 - NOT deleted: `mlff/endpoint_generation.py` (has a real importer + real logic; see deferrals).
 
 ### Phase 3 — Duplication collapse
-- Protonation: wire `protonator.py` as `qcb protonate` (CLI subcommand in `quantum_engine/cli.py`);
+- Protonation: wire `protonator.py` as `cowboy-qc protonate` (CLI subcommand in `quantum_engine/cli.py`);
   add `--ligand-charge`. Archive+delete `protonate_consensus.py` + `protonate_chimera.py`. Required edits
   to importers (verified list):
   - `prep/__init__.py` — remove imports (lines 6–15) + `__all__` entries (lines 36–42) for
     `add_hydrogens_chimera`, `add_hydrogens_with_charges`, `parse_pqr_charges`, `consensus_protonate`,
     `ConsensusResult`, `MethodResult`; add `run_protonation` export.
   - `enz_qc_pipelines/active_site_ts/orchestrator.py:59` — switch to `protonator.run_protonation`.
-  - `tools/pte_159_theozyme.py:495` — switch to `protonator.run_protonation` (or `qcb protonate`).
+  - `tools/pte_159_theozyme.py:495` — switch to `protonator.run_protonation` (or `cowboy-qc protonate`).
   (`tools/legacy/protonate_active_site.py` is deleted in Phase 2, so its import needs no fix.)
 - xTB: single `get_xtb_binary()` + one `_run_xtb_opt` helper; refactor `mlff/ligand_xtb`,
   `mlff/auto_spring_k`, `qm/xtb_refine` to use it.
@@ -125,7 +125,7 @@ Re-confirm zero importers (grep) for each, then delete:
 ## Explicitly deferred (NOT this pass — belongs to notebook track or later)
 
 - Notebook-enabling package fixes: UMA dispatch in `calc/factory.py`; per-bond constraint flags on
-  `qcb opt`/`qcb scan`; resolving which charge-aware model (`mace-polar-m` vs `mace-mh-1 --head omol`)
+  `cowboy-qc opt`/`cowboy-qc scan`; resolving which charge-aware model (`mace-polar-m` vs `mace-mh-1 --head omol`)
   loads in the container.
 - Collapsing the 3 orchestration stories (`pipelines.Pipeline` / `run_config` YAML / `ts_pipeline_v2`).
 - Full `site.py` → cluster-config-file extraction.
@@ -139,14 +139,14 @@ Re-confirm zero importers (grep) for each, then delete:
 - After **each phase**: dispatch a read-only review agent that diffs the working tree vs the phase's
   intended file list, runs `python -c "import quantum_engine"` (+ key submodule imports), and confirms
   the pytest baseline didn't regress. It reports PASS/ISSUES; issues are fixed before the next phase.
-- Final: confirm every `qcb <verb>` invoked by the OPAA notebook still resolves (argparse-level).
+- Final: confirm every `cowboy-qc <verb>` invoked by the OPAA notebook still resolves (argparse-level).
 
 ## Success criteria
 
 - Repo root holds only code/docs/config (no run artifacts, no stray logs).
 - `git grep -l "NotImplementedError" quantum_engine/qm` → only intentionally-unsupported paths remain.
-- One protonation entry point; `qcb protonate --help` works.
-- README/docs use `quantum_engine`/`qcb` consistently.
+- One protonation entry point; `cowboy-qc protonate --help` works.
+- README/docs use `quantum_engine`/`cowboy-qc` consistently.
 - Pytest baseline (inside container) has no new failures.
 - Archive tag exists; every deletion recoverable.
 

@@ -268,7 +268,7 @@ def _make_uma(model: str, model_path: str | None, device: str,
     """FairChem UMA — universal foundation models.
 
     Lives in a dedicated apptainer sidecar (``uma-YYYYMMDD.sif``) because
-    fairchem-core's numpy/e3nn pins conflict with the main qcb container.
+    fairchem-core's numpy/e3nn pins conflict with the main cowboy-qc container.
     When called from a Python that already has ``fairchem.core`` importable
     (i.e. the caller has apptainer-exec'd into the sidecar), this builds
     the calculator in-process. Otherwise it raises a clear ImportError

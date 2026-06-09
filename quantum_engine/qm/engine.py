@@ -12,7 +12,7 @@ one contract:
         -> result dict (ts / energy_eV_ts / imag_freq_cm / n_imag / gates / outputs)
 
 ORCA ships today (native NEB-TS for R+P, OptTS+Freq for a guess). Turbomole /
-Gaussian slot in later via the same one-liner. ORCA is NOT in the qcb container,
+Gaussian slot in later via the same one-liner. ORCA is NOT in the cowboy-qc container,
 so the runner shells out where ORCA is installed (a host/node); the input-gen +
 output parser (``qm/orca.py``) are unit-tested without it.
 """

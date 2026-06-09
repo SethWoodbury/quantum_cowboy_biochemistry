@@ -1,4 +1,4 @@
-"""Per-bond ASE constraints for ``qcb opt`` (and reusable elsewhere).
+"""Per-bond ASE constraints for ``cowboy-qc opt`` (and reusable elsewhere).
 
 Two ways to hold a forming/breaking bond during a relax:
 
@@ -9,7 +9,7 @@ Two ways to hold a forming/breaking bond during a relax:
   ``E = ½·k·(d−r0)²``. (ASE's ``Hookean`` is one-sided — it only acts when the
   bond exceeds ``rt`` — so it can't pull a bond toward a target from both sides.)
 
-Indices are **0-based ASE** indices, matching ``qcb scan --indices``.
+Indices are **0-based ASE** indices, matching ``cowboy-qc scan --indices``.
 """
 from __future__ import annotations
 

@@ -37,13 +37,13 @@ All ops support common flags:
     --log-level    logging level (INFO default)
 
 Examples:
-    qcb opt input.pdb --model mace-omol --fmax 0.01
-    qcb md input.pdb --time 10 --temp 300 --friction 1.0
-    qcb scan input.pdb --coord "bond" --indices "5 12" --range "1.5 3.5 20"
-    qcb saddle ts_guess.pdb
-    qcb irc ts.pdb --step 0.1
-    qcb neb reactant.pdb product.pdb --n-images 15
-    qcb ts input.pdb --strategy irc
+    cowboy-qc opt input.pdb --model mace-omol --fmax 0.01
+    cowboy-qc md input.pdb --time 10 --temp 300 --friction 1.0
+    cowboy-qc scan input.pdb --coord "bond" --indices "5 12" --range "1.5 3.5 20"
+    cowboy-qc saddle ts_guess.pdb
+    cowboy-qc irc ts.pdb --step 0.1
+    cowboy-qc neb reactant.pdb product.pdb --n-images 15
+    cowboy-qc ts input.pdb --strategy irc
 """
 from __future__ import annotations
 
@@ -249,7 +249,7 @@ def _cmd_saddle(args):
 
 
 def _cmd_refine_ts(args):
-    """`qcb refine-ts` — post-NEB / TS-guess validation pipeline."""
+    """`cowboy-qc refine-ts` — post-NEB / TS-guess validation pipeline."""
     from quantum_engine.calc import make_calc
     from quantum_engine.io import load_structure, parse_constraints, build_fix_atoms
     from quantum_engine.ops import refine_ts as refine_ts_op
@@ -386,7 +386,7 @@ def _cmd_refine_ts(args):
 
 
 def _cmd_pipeline(args):
-    """`qcb pipeline --config pipe.yaml` — chain ops in subprocess sequence.
+    """`cowboy-qc pipeline --config pipe.yaml` — chain ops in subprocess sequence.
 
     Each step is dispatched as its own ``qcb`` invocation; the config is a
     list of ``{op: <name>, input: <path>, args: {...}}`` blocks. Generic —
@@ -420,7 +420,7 @@ def _cmd_pipeline(args):
         step_outdir = base_outdir / step.get("name", f"{i:02d}_{op_name}")
         step_outdir.mkdir(parents=True, exist_ok=True)
 
-        cmd = ["qcb", op_name]
+        cmd = ["cowboy-qc", op_name]
         if "input" in step:
             cmd.append(str(step["input"]))
         for k, v in step.get("args", {}).items():
@@ -449,7 +449,7 @@ def _cmd_pipeline(args):
 
 
 _PIPELINE_EXAMPLE_YAML = """
-# Generic chain: any qcb subcommand can be a step. Configurable per-step.
+# Generic chain: any cowboy-qc subcommand can be a step. Configurable per-step.
 # Pipeline is intentionally reaction-agnostic: pass your own --reactive-atoms.
 outdir: my-pipeline-out
 steps:
@@ -531,7 +531,7 @@ def _cmd_neb(args):
     # serial with trailing 's' (e.g. "23s"), or a NAME:RESNAME selector
     # (e.g. "P:SUB:NUC:HIS"). For simplicity we only support index/serial
     # syntax here — name-based resolution is delegated to the user with
-    # `qcb info` for now.
+    # `cowboy-qc info` for now.
     key_bonds = _resolve_key_bonds(getattr(args, "key_bond", None) or [],
                                    r_atoms, r_bt)
 
@@ -670,7 +670,7 @@ def _cmd_run(args):
 
 
 def _cmd_list_models(args):
-    """`qcb list-models` — every MLFF alias the factory knows + which calculator
+    """`cowboy-qc list-models` — every MLFF alias the factory knows + which calculator
     backend will be used + whether that backend can load on this machine.
 
     Single source of truth: :data:`quantum_engine.site.MACE_MODELS` +
@@ -712,7 +712,7 @@ def _cmd_list_models(args):
 
 
 def _cmd_info(args):
-    """`qcb info <file>` — quick summary of a structure file."""
+    """`cowboy-qc info <file>` — quick summary of a structure file."""
     from collections import Counter
     from quantum_engine.io import load_structure
     atoms, bt_struct, charge_hint = load_structure(args.input)
@@ -735,10 +735,10 @@ def _cmd_info(args):
 
 
 def _cmd_protonate(args):
-    """qcb protonate — deterministic, staged protonation of a theozyme PDB/CIF.
+    """cowboy-qc protonate — deterministic, staged protonation of a theozyme PDB/CIF.
 
     The protonator carries its own complete CLI; every argument after
-    ``protonate`` is passed straight through to it (run ``qcb protonate -h``)."""
+    ``protonate`` is passed straight through to it (run ``cowboy-qc protonate -h``)."""
     from quantum_engine.prep.protonator import main as _protonator_main
     rc = _protonator_main(args.protonate_args)
     return {"status": "completed" if rc == 0 else "failed",
@@ -746,7 +746,7 @@ def _cmd_protonate(args):
 
 
 def _cmd_chemoton_explore(args):
-    """`qcb chemoton-explore` — Steering-Wheel-driven Chemoton exploration.
+    """`cowboy-qc chemoton-explore` — Steering-Wheel-driven Chemoton exploration.
 
     Loads the input PDB, optionally pulls extra defaults from a YAML config,
     then dispatches to ``quantum_engine.ops.chemoton_explore.run`` which
@@ -801,7 +801,7 @@ def _cmd_chemoton_explore(args):
 
 
 def _cmd_endpoint_release(args):
-    """`qcb endpoint-release` — clean reactant/product endpoints before NEB."""
+    """`cowboy-qc endpoint-release` — clean reactant/product endpoints before NEB."""
     import sys as _sys
     from pathlib import Path as _Path
     repo = _Path(__file__).resolve().parents[1]
@@ -840,7 +840,7 @@ def _cmd_endpoint_release(args):
 
 
 def _cmd_scan2d(args):
-    """`qcb scan2d` — diagnostic 2-D relaxed scan around a TS guess."""
+    """`cowboy-qc scan2d` — diagnostic 2-D relaxed scan around a TS guess."""
     import sys as _sys
     from pathlib import Path as _Path
     repo = _Path(__file__).resolve().parents[1]
@@ -880,7 +880,7 @@ def _cmd_scan2d(args):
 
 
 def _cmd_microstates(args):
-    """`qcb microstates` — generate labelled protonation/water-orientation ensemble."""
+    """`cowboy-qc microstates` — generate labelled protonation/water-orientation ensemble."""
     import sys as _sys
     from pathlib import Path as _Path
     repo = _Path(__file__).resolve().parents[1]
@@ -930,7 +930,7 @@ def _cmd_microstates(args):
     else:
         if not args.generators:
             raise SystemExit(
-                "qcb microstates: pass --generators (legacy ledger-only), "
+                "cowboy-qc microstates: pass --generators (legacy ledger-only), "
                 "--auto-protonation, or --protonation-rules path.yaml."
             )
         generators = [g.strip() for g in args.generators.split(",") if g.strip()]
@@ -960,7 +960,7 @@ def _cmd_microstates(args):
 
 
 def _cmd_validate_ts(args):
-    """`qcb validate-ts` — tiered Hessian validation of a TS."""
+    """`cowboy-qc validate-ts` — tiered Hessian validation of a TS."""
     from quantum_engine.calc import make_calc
     from quantum_engine.io import load_structure
     from quantum_engine.ops import expanded_hessian as eh
@@ -1023,7 +1023,7 @@ def _cmd_validate_ts(args):
 
 
 def _cmd_verify_irc_like(args):
-    """`qcb verify-irc-like` — ±imag-mode displacement + relax test."""
+    """`cowboy-qc verify-irc-like` — ±imag-mode displacement + relax test."""
     from quantum_engine.calc import make_calc
     from quantum_engine.io import load_structure
     from quantum_engine.ops import imag_mode_displace as imd
@@ -1061,10 +1061,10 @@ def _cmd_verify_irc_like(args):
 
 
 def _cmd_crest_mace(args):
-    """`qcb crest-mace` — run CREST 3 with MACE forces via the daemon wrapper.
+    """`cowboy-qc crest-mace` — run CREST 3 with MACE forces via the daemon wrapper.
 
     This is a thin shell-out to ``tools/crest_with_mace.sh``. It exists so
-    that users discover the capability through ``qcb --help`` and so that
+    that users discover the capability through ``cowboy-qc --help`` and so that
     pipelines can drive it via the standard subcommand dispatch. The actual
     daemon/socket/TOML logic lives in the bash wrapper; we don't reimplement
     it in Python.
@@ -1108,7 +1108,7 @@ def _cmd_crest_mace(args):
 
 
 def _cmd_ts_pipeline_v2(args):
-    """`qcb ts-pipeline-v2` — chained orchestrator for the v2 TS workflow."""
+    """`cowboy-qc ts-pipeline-v2` — chained orchestrator for the v2 TS workflow."""
     if args.print_example:
         from quantum_engine.ops.ts_pipeline_v2 import _PIPELINE_EXAMPLE_YAML
         print(_PIPELINE_EXAMPLE_YAML)
@@ -1131,7 +1131,7 @@ def _cmd_ts_pipeline_v2(args):
 
 
 def _cmd_ts(args):
-    """Native qcb ts pipeline: loads structure + calc + constraint and calls ts.run()."""
+    """Native cowboy-qc ts pipeline: loads structure + calc + constraint and calls ts.run()."""
     from quantum_engine.ops import ts as ts_op
     from quantum_engine.calc import make_calc_fn
     from quantum_engine.io import load_structure, parse_constraints, build_fix_atoms
@@ -1214,7 +1214,7 @@ def _cmd_ts(args):
                                 (bt_struct.atom_name == atom_name))[0]
                 if len(hits) == 0:
                     raise SystemExit(
-                        f"qcb ts: ligand {ligand_name!r} is known but atom "
+                        f"cowboy-qc ts: ligand {ligand_name!r} is known but atom "
                         f"{atom_name!r} was not found in the structure. The "
                         "convenience defs don't match this input — pass "
                         "--p-idx/--nuc-idx/--lg-idx explicitly.")
@@ -1364,16 +1364,27 @@ def _cmd_reaction_spec(args):
 
 
 def main(argv=None):
+    # Deprecated-alias notice: the CLI was renamed `qcb` -> `cowboy-qc`. Both entry
+    # points call this; warn (once) if invoked via the old `qcb` name.
+    try:
+        _prog = Path(sys.argv[0]).name
+    except Exception:  # noqa: BLE001
+        _prog = ""
+    if _prog == "qcb":
+        print("# note: `qcb` is the deprecated alias for `cowboy-qc` — please switch.",
+              file=sys.stderr)
+
     # `protonate` carries a complete standalone CLI of its own. Intercept it
-    # before the qcb argparse so all its flags (and its own -h) work cleanly.
+    # before the cowboy-qc argparse so all its flags (and its own -h) work cleanly.
     _av = list(sys.argv[1:] if argv is None else argv)
     if _av and _av[0] == "protonate":
         from quantum_engine.prep.protonator import main as _protonator_main
         return _protonator_main(_av[1:])
 
     parser = argparse.ArgumentParser(
-        prog="qcb",
-        description="quantum_engine — enzyme quantum-chemistry toolkit (qcb is the CLI alias)",
+        prog="cowboy-qc",
+        description="quantum_engine — Cowboy Quantum Chemistry toolkit "
+                    "(`cowboy-qc` is the CLI; `qcb` is a deprecated alias).",
     )
     sub = parser.add_subparsers(dest="op", required=True)
 
@@ -1537,7 +1548,7 @@ def main(argv=None):
     p_refts.add_argument(
         "--from-neb", default=None,
         help=("Path to a directory containing path-neb-climb.xyz (or "
-              "path-neb-noclimb.xyz) from a previous `qcb neb` run. The TS "
+              "path-neb-noclimb.xyz) from a previous `cowboy-qc neb` run. The TS "
               "guess is the highest-energy inner image; the central-"
               "difference NEB tangent at that image seeds dimer backends.")
     )
@@ -1565,7 +1576,7 @@ def main(argv=None):
     )
     p_refts.add_argument(
         "--initial-mode-vector", default=None,
-        help="Same as --neb-tangent (alias kept for parity with `qcb saddle`)."
+        help="Same as --neb-tangent (alias kept for parity with `cowboy-qc saddle`)."
     )
     p_refts.add_argument(
         "--no-neb-tangent", action="store_true",
@@ -1576,7 +1587,7 @@ def main(argv=None):
         "--backend", default="dimer",
         choices=["sella", "sella-internal", "dimer",
                  "pysisyphus-rsprfo", "pysisyphus-dimer", "auto"],
-        help=("Saddle backend (see `qcb saddle --help` for details). "
+        help=("Saddle backend (see `cowboy-qc saddle --help` for details). "
               "Default: dimer (uses NEB tangent for free).")
     )
     p_refts.add_argument(
@@ -1752,7 +1763,7 @@ def main(argv=None):
     p_neb.add_argument("--ts-tol-fmax", type=float, default=None,
         help="Optional tighter NEB-CI fmax for a third stage (eV/Å). "
              "Try 0.02 to push toward true-saddle convergence (still NOT "
-             "a substitute for `qcb saddle` + `qcb freq`).")
+             "a substitute for `cowboy-qc saddle` + `cowboy-qc freq`).")
     p_neb.add_argument("--ts-tol-steps", type=int, default=200,
         help="Cap on tight-TS refinement iterations. Default 200.")
 
@@ -1850,7 +1861,7 @@ def main(argv=None):
         help="Deterministic staged protonation of a theozyme PDB/CIF")
     p_pro.add_argument("protonate_args", nargs=argparse.REMAINDER,
                        help="arguments forwarded to the protonator "
-                            "(run `qcb protonate -h` for the full list)")
+                            "(run `cowboy-qc protonate -h` for the full list)")
 
     # list-models — discoverability
     p_lm = sub.add_parser("list-models",
@@ -2249,7 +2260,7 @@ def main(argv=None):
             "movable subspace. --tier accepts a, b, c, all, or a comma "
             "list (e.g. 'a,b'). Reaction-agnostic — reactive atoms come "
             "from --reactive-atoms, active region from --active-region "
-            "(the same select grammar as 'qcb saddle')."
+            "(the same select grammar as 'cowboy-qc saddle')."
         ),
     )
     p_vts.add_argument("input", help="TS structure PDB.")
@@ -2376,11 +2387,11 @@ def main(argv=None):
         "crest-mace",
         help="Run CREST 3 with MACE forces via the generic_sc calculator + daemon "
              "(see tools/MACE_CREST_README.md). Additive to xtb-CREST; does not "
-             "replace existing qcb crest paths.",
+             "replace existing cowboy-qc crest paths.",
     )
     p_cm.add_argument("input", help="Input xyz file")
     p_cm.add_argument("--model", default="mace-mp",
-                      help="MACE alias from the qcb factory or absolute .model path")
+                      help="MACE alias from the cowboy-qc factory or absolute .model path")
     p_cm.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
     p_cm.add_argument("--dtype", default="float64", choices=["float32", "float64"])
     p_cm.add_argument("--head", default=None,

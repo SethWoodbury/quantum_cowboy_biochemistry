@@ -354,7 +354,7 @@ def run_orca(inp_file: str | Path, *, orca_bin: str | None = None,
 
     Returns ``{returncode, out_path, energy_eV, frequencies_cm, n_imag,
     imag_freq_cm, geometry}``. ``orca_bin`` defaults to ``site.ORCA_BIN``. ORCA
-    is NOT in the qcb container — run this where ORCA is installed (a host/node).
+    is NOT in the cowboy-qc container — run this where ORCA is installed (a host/node).
     """
     import subprocess  # noqa: PLC0415
     inp_file = Path(inp_file).resolve()

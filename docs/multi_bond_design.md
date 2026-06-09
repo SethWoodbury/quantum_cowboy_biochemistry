@@ -163,12 +163,12 @@ scan, re-cast as two sequential SN2 saddles).
 ## v3 design proposal
 
 Don't write `scan_generic.py` as a monolith. Split into composable scripts
-matching the existing `qcb` CLI:
+matching the existing `cowboy-qc` CLI:
 
-### `qcb scan-multi` (new)
+### `cowboy-qc scan-multi` (new)
 
 ```
-qcb scan-multi --input R.pdb \
+cowboy-qc scan-multi --input R.pdb \
     --product P.pdb \                         # optional; enables auto bond detection
     --forming-bond C1,C6 --forming-bond C2,C5 \
     --breaking-bond C2,C3 \                   # repeatable
@@ -184,7 +184,7 @@ connectivity (RDKit + covalent radii). Same backbone-pinning constraint
 pattern as scan_along_s. Same FixBondLengths machinery, just with N pins
 instead of 2.
 
-### `qcb neb-multi` (extend existing `qcb neb`)
+### `cowboy-qc neb-multi` (extend existing `cowboy-qc neb`)
 
 - `--seed-from oa-reactdiff` — interpolate via diffusion model when both
   endpoints provided. Sanity check: any pairwise distance < 0.7 Å → fall
@@ -192,19 +192,19 @@ instead of 2.
 - `--batched-images` — evaluate all images in single MACE forward pass
   (~5× speedup vs serial).
 
-### `qcb auto-ts` (the policy layer — what users actually call)
+### `cowboy-qc auto-ts` (the policy layer — what users actually call)
 
 ```
-qcb auto-ts --input R.pdb --product P.pdb [--max-bonds-changed 4] --out ts_dir/
+cowboy-qc auto-ts --input R.pdb --product P.pdb [--max-bonds-changed 4] --out ts_dir/
 ```
 
 Decision tree:
 
-1. Diff connectivity. If K + L = 2 → call `qcb scan-multi` with avg CV.
-2. If 3 ≤ K + L ≤ 6 → call `qcb neb-multi` with 12 images.
+1. Diff connectivity. If K + L = 2 → call `cowboy-qc scan-multi` with avg CV.
+2. If 3 ≤ K + L ≤ 6 → call `cowboy-qc neb-multi` with 12 images.
 3. If scan profile monotonic → re-dispatch as NEB-CI.
-4. Always finish with `qcb saddle` (Sella) on best guess.
-5. Always validate with `qcb freq` (single imaginary mode along reaction
+4. Always finish with `cowboy-qc saddle` (Sella) on best guess.
+5. Always validate with `cowboy-qc freq` (single imaginary mode along reaction
    coordinate).
 
 This matches how the field actually works: **scan/NEB/AFIR are guess
@@ -213,7 +213,7 @@ generators; Sella + freq is the validator.** Don't conflate them.
 ### What NOT to build
 
 - Don't reimplement NEB, Sella, Dimer, AFIR — ASE, sella, pyGSM cover those.
-- Don't build a metadynamics flow yet — `qcb mtd` exists.
+- Don't build a metadynamics flow yet — `cowboy-qc mtd` exists.
 - Don't rewrite OA-ReactDiff — it's a 1500-line PyTorch repo; just shell
   out and parse outputs.
 
@@ -225,7 +225,7 @@ generators; Sella + freq is the validator.** Don't conflate them.
 ΔG‡ ≈ 16-18 kcal/mol, two new C-C bonds form synchronously, no σ bonds break.
 
 Working CLI today (uses the generalized `scan_along_s.py` shipped 2026-05-06,
-not the future `qcb auto-ts` policy layer):
+not the future `cowboy-qc auto-ts` policy layer):
 
 ```
 python tools/scan_along_s.py \
@@ -247,13 +247,13 @@ python tools/scan_along_s.py \
 The CV value `mean(d_C1, d_C2)` decreases from ~3.7 Å (vdW contact) through
 ~2.25 Å (synchronous TS) to ~1.55 Å (cyclohexene product). Pass the s-grid
 explicitly so it concentrates points near the saddle. After the scan, polish
-the energy-max frame with `qcb saddle --backend dimer` (or sella) and run
+the energy-max frame with `cowboy-qc saddle --backend dimer` (or sella) and run
 freq to confirm exactly one imaginary mode.
 
-Future CLI invocation (when the `qcb auto-ts` policy layer ships):
+Future CLI invocation (when the `cowboy-qc auto-ts` policy layer ships):
 
 ```
-qcb auto-ts --input cp_ma_complex.pdb --product cp_ma_endo.pdb \
+cowboy-qc auto-ts --input cp_ma_complex.pdb --product cp_ma_endo.pdb \
     --forming-bond Cp_C1,MA_C1 --forming-bond Cp_C4,MA_C2 \
     --cv-mode avg --n-points 11 \
     --lambda-min 0 --lambda-max 1 \
@@ -286,7 +286,7 @@ qcb auto-ts --input cp_ma_complex.pdb --product cp_ma_endo.pdb \
 
 ## Recommendation summary
 
-**Build:** `qcb auto-ts` (policy decision tree) + `qcb scan-multi`
+**Build:** `cowboy-qc auto-ts` (policy decision tree) + `cowboy-qc scan-multi`
 (generalized scan with `--forming-bond/--breaking-bond` and CV modes).
 
 **Reuse:** ASE NEB, sella, pyGSM, RDKit covalent-radii diff, OA-ReactDiff

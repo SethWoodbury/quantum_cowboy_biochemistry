@@ -34,7 +34,7 @@ every MLFF weight the codebase references (`site._HF_HUB_BASE`); all
 Present + wired (alias → family): the MACE family (`mace-mp`, `mace-off-*`,
 `mace-omol` / **`mace-omol25`** [OMol25, charge-aware], `mace-mh`/`mace-mh-1`,
 `mace-polar-*`), UMA (`uma-sm`, `uma-s-1p1`, `uma-s-1p2`, `uma-m-1p1` /
-**`uma-m`**), `orb-mol-conservative`, `aimnet2-rxn`. `qcb list-models` shows them.
+**`uma-m`**), `orb-mol-conservative`, `aimnet2-rxn`. `cowboy-qc list-models` shows them.
 
 - UMA checkpoints: download via
   `/net/databases/huggingface/mlFF_models/download_uma_models.sh` (needs an
@@ -53,8 +53,8 @@ Present + wired (alias → family): the MACE family (`mace-mp`, `mace-off-*`,
 | PLUMED 2 kernel | `PLUMED_KERNEL` | `$QCB_PLUMED_KERNEL` → `/net/software/lab/plumed2-2.10/lib/libplumedKernel.so` |
 | CREST | — | `/net/software/lab/crest/bin/crest` |
 
-**ORCA / Gaussian are not in the qcb container** — QM-native engine runs happen
-host-side (a node where ORCA is installed). `qcb ts-entry --engine orca
+**ORCA / Gaussian are not in the cowboy-qc container** — QM-native engine runs happen
+host-side (a node where ORCA is installed). `cowboy-qc ts-entry --engine orca
 --no-execute` prepares the input to `sbatch`.
 
 ## Vendored submodules (`deps/`, built into the main container)

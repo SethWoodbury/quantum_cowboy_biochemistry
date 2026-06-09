@@ -8,8 +8,8 @@ The 2026-05-06 ChatGPT critique laid out a 9-stage TS workflow:
     2.  scan_1d (existing tools/scan_along_s)
     3.  scan_2d (NEW; tools/scan2d) — diagnostic
     4.  endpoint_release (NEW; tools/endpoint_release)
-    5.  neb_ci (existing qcb neb)
-    6.  dimer_polish (existing qcb saddle --backend dimer; uses NEB tangent)
+    5.  neb_ci (existing cowboy-qc neb)
+    6.  dimer_polish (existing cowboy-qc saddle --backend dimer; uses NEB tangent)
     7.  validate_ts (NEW; quantum_engine.ops.expanded_hessian)
     8.  imag_mode_displace (NEW)
     9.  refine-ts wrap-up (existing)
@@ -625,7 +625,7 @@ def _run_neb_ci(stage_args: dict, ctx: dict, stage_outdir: Path) -> StageOutcome
                             skipped=True,
                             error="need both r_pdb and p_pdb (released endpoints)")
     cmd: list[str] = [
-        "qcb", "neb", str(r_pdb), str(p_pdb),
+        "cowboy-qc", "neb", str(r_pdb), str(p_pdb),
         "--outdir", str(stage_outdir),
     ]
     for k in ("n_images", "optimizer", "interpolation", "k_spring",
@@ -649,7 +649,7 @@ def _run_neb_ci(stage_args: dict, ctx: dict, stage_outdir: Path) -> StageOutcome
 
 
 def _run_dimer_polish(stage_args: dict, ctx: dict, stage_outdir: Path) -> StageOutcome:
-    """Run qcb refine-ts --from-neb in dimer mode (uses NEB tangent automatically)."""
+    """Run cowboy-qc refine-ts --from-neb in dimer mode (uses NEB tangent automatically)."""
     neb_dir = stage_args.get("from_neb") or ctx.get("neb_outdir")
     if not neb_dir:
         return StageOutcome(name="dimer_polish", status="skipped", outdir=stage_outdir,
@@ -660,7 +660,7 @@ def _run_dimer_polish(stage_args: dict, ctx: dict, stage_outdir: Path) -> StageO
         return StageOutcome(name="dimer_polish", status="failed", outdir=stage_outdir,
                             error="need reactive_atoms in ctx or stage args")
     cmd: list[str] = [
-        "qcb", "refine-ts",
+        "cowboy-qc", "refine-ts",
         "--outdir", str(stage_outdir),
         "--from-neb", str(neb_dir),
         "--backend", str(stage_args.get("backend", "dimer")),
@@ -694,7 +694,7 @@ def _run_validate_ts(stage_args: dict, ctx: dict, stage_outdir: Path) -> StageOu
         return StageOutcome(name="validate_ts", status="failed", outdir=stage_outdir,
                             error="need reactive_atoms")
     cmd: list[str] = [
-        "qcb", "validate-ts", str(ts_pdb),
+        "cowboy-qc", "validate-ts", str(ts_pdb),
         "--outdir", str(stage_outdir),
         "--reactive-atoms", *(str(a) for a in reactive_atoms),
         "--tier", str(stage_args.get("tier", "b")),
@@ -726,7 +726,7 @@ def _run_imag_mode_displace(stage_args: dict, ctx: dict, stage_outdir: Path) -> 
                             outdir=stage_outdir, skipped=True,
                             error="need ts_pdb + imag_mode (npy or xyz)")
     cmd: list[str] = [
-        "qcb", "verify-irc-like", str(ts_pdb),
+        "cowboy-qc", "verify-irc-like", str(ts_pdb),
         "--outdir", str(stage_outdir),
         "--imag-mode", str(mode_path),
         "--displacement", str(stage_args.get("displacement_A", 0.20)),
@@ -919,7 +919,7 @@ def run_pipeline(
     return summary
 
 
-# Convenience entry exposed via ``qcb ts-pipeline-v2``.
+# Convenience entry exposed via ``cowboy-qc ts-pipeline-v2``.
 def run(config: str | Path, *, outdir: str | Path | None = None,
         resume_from: str | None = None, dry_run: bool = False,
         only_stages: Iterable[str] | None = None, **kwargs) -> dict:
@@ -949,7 +949,7 @@ charge_ledger: ledger.yaml
 # ALL reactive atoms (anything whose motion is part of the reaction
 # coordinate). 1-based PDB serials, 0:idx, or NAME.RESNAME tokens.
 reactive_atoms: ["NUC.SUB", "ELE.SUB", "LG.SUB"]
-# Active-region grammar (qcb saddle): 'site R RES1 RES2 ...' or
+# Active-region grammar (cowboy-qc saddle): 'site R RES1 RES2 ...' or
 # 'residue X Y' or 'chain A; residue Z'.
 active_region: "site 5.0 SUB"
 boundary_fix_preset: ca-only

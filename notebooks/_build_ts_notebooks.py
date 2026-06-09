@@ -156,11 +156,11 @@ def APPTAINER(sif, gpu=True):
     return ['apptainer', 'exec'] + (['--nv'] if gpu else []) + ['--bind', '/home', '--bind', '/net', sif]
 
 def qcb_cmd(model, *args, gpu=True):
-    """Full `qcb <args>` command (list) in the sif that can load `model`."""
-    return [*APPTAINER(container_for(model), gpu=gpu), 'qcb', *map(str, args)]
+    """Full `cowboy-qc <args>` command (list) in the sif that can load `model`."""
+    return [*APPTAINER(container_for(model), gpu=gpu), 'cowboy-qc', *map(str, args)]
 
 def sidecar_cmd(sif, *args, gpu=True):
-    """A generative-sidecar command: qcb isn't installed there, so run the CLI module
+    """A generative-sidecar command: cowboy-qc isn't installed there, so run the CLI module
     with the bind-mounted repo on PYTHONPATH."""
     return [*APPTAINER(sif, gpu=gpu), 'env', f'PYTHONPATH={{QUANTUM_COWBOY_DIR}}',
             'python', '-m', 'quantum_engine.cli', *map(str, args)]
@@ -195,7 +195,7 @@ def defaults(profile):
             model="'mace-polar-m'", head="None", charge="0", spin="1",
             # SN2-at-P: O_nuc(hydroxide)..P forming, P..O_lg breaking. EDIT serials per structure.
             f_nuc="'serial:1872'", f_elec="'serial:1850'", b_p="'serial:1850'", b_lg="'serial:1860'",
-            scan_nuc="1871", scan_p="1849",   # 0-based = serial-1 (for qcb scan / fix-bond)
+            scan_nuc="1871", scan_p="1849",   # 0-based = serial-1 (for cowboy-qc scan / fix-bond)
             react_serials="1872, 1850, 1860",   # 1-based serials (for refine-ts/validate-ts)
             ptm='{}',              # OPAA construct: NO post-translational modification (no KCX)
             ligand_charges='{}',   # net charge of the protonated system = 0 (set on --charge)
@@ -234,7 +234,7 @@ def cell_protonate(profile, step):
     md = f"# **STEP {step}: Protonate / Generate Protomers**"
     code = f'''\
 ##################################################################
-###          PROTONATE STRUCTURE   (qcb protonator v2)         ###
+###          PROTONATE STRUCTURE   (cowboy-qc protonator v2)         ###
 ##################################################################
 # Deterministic, staged protonation of the protein in a PDB/CIF.
 #   Stage 1  cap open backbone N/C termini (geometry-detected)
@@ -259,7 +259,7 @@ output_pdb = {D['prot']}
 ### CONSTANTS ###
 CONTAINER  = MAIN_SIF       # the qcb / protonator container (defined in INIT)
 PROTONATOR = f"{{QUANTUM_COWBOY_DIR}}quantum_engine/prep/protonator.py"
-# (`qcb protonate <same args>` is equivalent to running this file directly.)
+# (`cowboy-qc protonate <same args>` is equivalent to running this file directly.)
 
 ### PROTONATOR PARAMETERS ###
 # --- core ----------------------------------------------------------
@@ -344,7 +344,7 @@ def cell_monitor(profile, step):
     md = f"# **STEP {step}: Monitor Active Site (bond / metal coordination)**"
     code = f'''\
 ##################################################################
-###          MONITOR ACTIVE SITE   (qcb monitor)              ###
+###          MONITOR ACTIVE SITE   (cowboy-qc monitor)              ###
 ##################################################################
 # Non-constraining sanity report: measured key bonds + auto-detected metal
 # coordination shells. Confirm the protonated geometry before spending GPU time.
@@ -367,7 +367,7 @@ report_metals      = True      # auto-detect metals + their coordination shells
 CONTAINER = MAIN_SIF
 
 ### BUILD THE COMMAND ###
-cmd = [*APPTAINER(CONTAINER, gpu=False), "qcb", "monitor", input_pdb, "--outdir", out_dir]
+cmd = [*APPTAINER(CONTAINER, gpu=False), "cowboy-qc", "monitor", input_pdb, "--outdir", out_dir]
 for i, j in monitor_bond_pairs: cmd += ["--bond", f"{{i}},{{j}}"]
 if report_metals: cmd += ["--metals"]
 
@@ -395,7 +395,7 @@ def cell_reaction_spec(profile, step):
 # ATOM TOKENS: "serial:N" (1-based PDB serial, RECOMMENDED), "CHAIN:RESID:NAME"
 #              (e.g. "A:169:NZ"), or a bare 0-based ASE index. Use one style consistently.
 # IMPORTANT: charge & multiplicity are NOT read from this YAML — always pass --charge/--multiplicity on
-#            every qcb command (the YAML keys would be silently ignored).
+#            every cowboy-qc command (the YAML keys would be silently ignored).
 
 print_commands = True
 
@@ -436,7 +436,7 @@ Path(spec_path).write_text(spec_yaml)
 print(f"# wrote {{spec_path}}\\n"); print(spec_yaml)
 
 ### BUILD + PRINT VALIDATION COMMAND ###
-cmd = [*APPTAINER(CONTAINER, gpu=False), "qcb", "reaction-spec", spec_path, "--structure", struct_pdb]
+cmd = [*APPTAINER(CONTAINER, gpu=False), "cowboy-qc", "reaction-spec", spec_path, "--structure", struct_pdb]
 if print_commands:
     print("### VALIDATE (copy-paste into terminal) ###")
     print(" ".join(str(x) for x in cmd))
@@ -446,10 +446,10 @@ if print_commands:
 
 def cell_relax(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: Minimize / Relax a Geometry (`qcb opt`)**"
+    md = f"# **STEP {step}: Minimize / Relax a Geometry (`cowboy-qc opt`)**"
     code = f'''\
 ##################################################################
-###     MINIMIZE / RELAX   (qcb opt; constrained or not)       ###
+###     MINIMIZE / RELAX   (cowboy-qc opt; constrained or not)       ###
 ##################################################################
 # Relax ANY input geometry: a reactant, a product, a TS-region pose, or the whole
 # protonated cluster. The constraint regime is the key knob:
@@ -519,17 +519,17 @@ print(f"\\n# Output: {{relaxed_pdb}}")
 
 def cell_scan(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: 1-D Relaxed Scan → TS Guess + Endpoints (`qcb scan`)**"
+    md = f"# **STEP {step}: 1-D Relaxed Scan → TS Guess + Endpoints (`cowboy-qc scan`)**"
     code = f'''\
 ##################################################################
-###     1-D RELAXED SCAN   (qcb scan; bond / angle / dihedral) ###
+###     1-D RELAXED SCAN   (cowboy-qc scan; bond / angle / dihedral) ###
 ##################################################################
 # Slide one internal coordinate (a forming/breaking BOND for SN2-like steps) and
 # relax everything else at each step. The scan gives you, in one shot:
 #   * an approximate reactant basin (one end of the scan)
 #   * an approximate product basin  (other end)
 #   * an approximate TS guess        (highest-energy frame)  -> feeds Step refine-ts
-# qcb scan INDICES are 0-based ASE indices (= PDB serial - 1).
+# cowboy-qc scan INDICES are 0-based ASE indices (= PDB serial - 1).
 
 ### INPUTS ###
 relaxed_pdb = f"{{RELAX_MINIMIZE_DIR}}relax/relaxed.pdb"   # usually the CA-frozen relaxed cluster
@@ -606,7 +606,7 @@ print(f"#          TS guess: {{ts_guess_pdb}} ; endpoints: {{reactant_scan_pdb}}
 
 def cell_min_endpoints(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: Minimize the Reactant & Product Endpoints (`qcb opt`)**"
+    md = f"# **STEP {step}: Minimize the Reactant & Product Endpoints (`cowboy-qc opt`)**"
     code = f'''\
 ##################################################################
 ###  MINIMIZE ENDPOINTS  (scan ends -> TRUE reactant / product) ###
@@ -666,7 +666,7 @@ print(f"\\n# Outputs: {{R_min}} , {{P_min}}  (barrier = E(TS) - E(reactant_min))
 
 def cell_neb_opaa(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: *(optional, more rigorous)* CI-NEB between the minimized endpoints (`qcb neb`)**"
+    md = f"# **STEP {step}: *(optional, more rigorous)* CI-NEB between the minimized endpoints (`cowboy-qc neb`)**"
     code = f'''\
 ##################################################################
 ###  OPTIONAL: DOUBLE-ENDED CI-NEB  (more rigorous than 1-D scan) ###
@@ -723,10 +723,10 @@ print(f"\\n# Output dir: {{out_dir}}  → in refine-ts set  from_neb = '{{out_di
 
 def cell_neb(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: Double-Ended Path Search — CI-NEB / AutoNEB (`qcb neb`)**"
+    md = f"# **STEP {step}: Double-Ended Path Search — CI-NEB / AutoNEB (`cowboy-qc neb`)**"
     code = f'''\
 ##################################################################
-###     DOUBLE-ENDED PATH SEARCH   (qcb neb; needs R AND P)    ###
+###     DOUBLE-ENDED PATH SEARCH   (cowboy-qc neb; needs R AND P)    ###
 ##################################################################
 # Climbing-image NEB between a reactant and product (same atom ordering, or supply an
 # atom_map in the spec). Geodesic interpolation is the default and STRONGLY recommended
@@ -787,13 +787,13 @@ print(f"\\n# Output dir: {{out_dir}}  → feed refine-ts with  --from-neb {{out_
 
 def cell_gsm(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: Double-Ended String — GSM / FSM (`qcb gsm`)**"
+    md = f"# **STEP {step}: Double-Ended String — GSM / FSM (`cowboy-qc gsm`)**"
     code = f'''\
 ##################################################################
-###     GROWING / FREEZING STRING   (qcb gsm; needs R AND P)   ###
+###     GROWING / FREEZING STRING   (cowboy-qc gsm; needs R AND P)   ###
 ##################################################################
 # String methods: cheaper than NEB, good TS guesses. GSM = Growing String,
-# FSM = Freezing String. NOTE: qcb gsm has NO --multiplicity/--spin and NO --fix-preset (string
+# FSM = Freezing String. NOTE: cowboy-qc gsm has NO --multiplicity/--spin and NO --fix-preset (string
 # methods don't take ASE constraints). For single-ended (reactant + driving coords)
 # use ts-entry --path-method gsm-se instead (see the single-ended step).
 
@@ -842,7 +842,7 @@ print(f"\\n# Output dir: {{out_dir}}")
 
 def cell_single_ended(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: Single-Ended Search — reactant-only / SE-GSM (`qcb ts-entry`)**"
+    md = f"# **STEP {step}: Single-Ended Search — reactant-only / SE-GSM (`cowboy-qc ts-entry`)**"
     code = f'''\
 ##################################################################
 ###  SINGLE-ENDED / ONE-DIRECTIONAL SEARCH (no product needed) ###
@@ -904,7 +904,7 @@ print(f"\\n# Outputs: {{out_dir}}ts_entry.json (status/barrier/n_imag), gates.js
 
 def cell_ts_entry(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: One-Call Orchestrator (`qcb ts-entry`)**"
+    md = f"# **STEP {step}: One-Call Orchestrator (`cowboy-qc ts-entry`)**"
     code = f'''\
 ##################################################################
 ###  TS-ENTRY ORCHESTRATOR  (guess -> refine -> Hessian -> IRC) ###
@@ -1074,7 +1074,7 @@ print(f"\\n# Output: {{refined_out}}  → ts-entry --entry ts-guess  (or refine-
 
 def cell_refine_ts(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: Refine to a Saddle (`qcb refine-ts`)**"
+    md = f"# **STEP {step}: Refine to a Saddle (`cowboy-qc refine-ts`)**"
     code = f'''\
 ##################################################################
 ###  REFINE-TS  (saddle search + partial-Hessian acceptance)   ###
@@ -1141,7 +1141,7 @@ print(f"\\n# Outputs: {{out_dir}}ts_refined.pdb (validated TS), imag_mode.npy, s
 
 def cell_validate(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: Validate the TS — tiered Hessian (`qcb validate-ts`)**"
+    md = f"# **STEP {step}: Validate the TS — tiered Hessian (`cowboy-qc validate-ts`)**"
     code = f'''\
 ##################################################################
 ###  VALIDATE-TS  (independent tiered Hessian validation)      ###
@@ -1200,7 +1200,7 @@ print(f"\\n# Output dir: {{out_dir}}  (per-tier PASS/FAIL + frequencies)")
 
 def cell_irc(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: Verify IRC-like (`qcb verify-irc-like`)**"
+    md = f"# **STEP {step}: Verify IRC-like (`cowboy-qc verify-irc-like`)**"
     code = f'''\
 ##################################################################
 ###  VERIFY-IRC-LIKE  (TS connects reactant & product basins)  ###
@@ -1261,7 +1261,7 @@ def cell_dft(profile, step):
     md = f"# **STEP {step}: (optional) DFT Reference — ORCA native NEB-TS**"
     code = f'''\
 ##################################################################
-###  DFT REFERENCE  (qcb ts-entry --engine orca; native NEB-TS) ###
+###  DFT REFERENCE  (cowboy-qc ts-entry --engine orca; native NEB-TS) ###
 ##################################################################
 # For a publication-grade barrier, route the whole TS step to ORCA's native NEB-TS / OptTS
 # via the QM-engine gateway. --no-execute writes the ORCA input + an sbatch wrapper WITHOUT
@@ -1293,7 +1293,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 
 ### GENERATE COMMANDS ###
 commands = []
-cmd = [*APPTAINER(MAIN_SIF, gpu=False), "qcb", "ts-entry", "--entry", entry, "--reaction-spec", spec_path,
+cmd = [*APPTAINER(MAIN_SIF, gpu=False), "cowboy-qc", "ts-entry", "--entry", entry, "--reaction-spec", spec_path,
        "--engine", "orca", "--reactant", reactant_pdb, "--product", product_pdb,
        "--charge", str(charge), "--multiplicity", str(multiplicity), "--outdir", out_dir,
        ("--execute" if EXECUTE else "--no-execute")]

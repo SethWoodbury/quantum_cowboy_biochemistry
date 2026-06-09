@@ -620,7 +620,7 @@ def run(
     tier_c_max_iters: int = 50,
     **kwargs,
 ) -> dict:
-    """``ops`` adapter signature for ``qcb validate-ts``."""
+    """``ops`` adapter signature for ``cowboy-qc validate-ts``."""
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     if atoms.calc is None:

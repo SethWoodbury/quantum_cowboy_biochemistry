@@ -143,7 +143,7 @@ interpolation + xTB validation combo we recommend.
 
 **Example command.**
 ```bash
-qcb mlff-ts \
+cowboy-qc mlff-ts \
     --input system.pdb \
     --strategy legacy \
     --neb-images 13 --neb-fmax 0.05 \
@@ -223,7 +223,7 @@ is flagged as unreliable.
 
 **Example command.**
 ```bash
-qcb mlff-ts \
+cowboy-qc mlff-ts \
     --input ts_guess.xyz \
     --strategy irc \
     --saddle-fmax 0.02 --irc-step 0.1 \
@@ -305,7 +305,7 @@ around `s ~ 0`.
 
 **Example command.**
 ```bash
-qcb mlff-ts \
+cowboy-qc mlff-ts \
     --input reactant.pdb \
     --strategy cv-spring \
     --p-idx 42 --nuc-idx 107 --lg-idx 55 \
@@ -383,7 +383,7 @@ classification uses `cv < -1.0 -> reactant`, `cv > 2.0 -> product`,
 
 **Example command.**
 ```bash
-qcb mlff-ts \
+cowboy-qc mlff-ts \
     --input reactant.pdb \
     --strategy mtd \
     --p-idx 42 --nuc-idx 107 --lg-idx 55 \
@@ -597,12 +597,12 @@ generally, this is the expected mechanism (Santos-Martins et al.
 
 ```bash
 # Step 1: legacy run produces intermediate as "product"
-qcb mlff-ts --strategy legacy --input reactant.pdb --interpolation geodesic \
+cowboy-qc mlff-ts --strategy legacy --input reactant.pdb --interpolation geodesic \
     --refine-xtb --out outputs/R2/step1/
 # inspect outputs/R2/step1/product.xyz -> confirms pentacoordinate
 
 # Step 2: NEB from intermediate -> dissociated product
-qcb mlff-ts --strategy legacy \
+cowboy-qc mlff-ts --strategy legacy \
     --input-r outputs/R2/step1/product.xyz \
     --input-p dissociated_product.xyz \
     --interpolation geodesic --refine-xtb \

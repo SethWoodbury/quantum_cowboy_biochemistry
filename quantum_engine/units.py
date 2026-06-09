@@ -6,7 +6,7 @@ redeclare the literal. This stops the "EV_TO_KCAL = 23.0609 in 15
 files" footgun.
 
 Where ASE provides a constant we re-export it under the name we use
-in qcb code (and pin the literal so this module is self-contained
+in cowboy-qc code (and pin the literal so this module is self-contained
 even if ASE is absent during static analysis).
 """
 

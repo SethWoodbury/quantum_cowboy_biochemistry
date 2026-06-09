@@ -2,7 +2,7 @@
 
 This is the keystone of the new config-driven workflow:
 
-    qcb run myconfig.yaml
+    cowboy-qc run myconfig.yaml
 
 …loads, validates, and runs whatever operation is defined inside.
 """

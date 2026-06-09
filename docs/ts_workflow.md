@@ -63,22 +63,22 @@ reaction:
   atom_map: {0: 0, 1: 1, ...}                # optional R→P map for double-ended
 ```
 
-Validate/resolve it first: `qcb reaction-spec spec.yaml --structure site.pdb`.
+Validate/resolve it first: `cowboy-qc reaction-spec spec.yaml --structure site.pdb`.
 
 ## CLI
 
 ```bash
 # reactant + product, charge-aware MLFF, standard rigor
-qcb ts-entry --entry reactant-product \
+cowboy-qc ts-entry --entry reactant-product \
     --reaction-spec spec.yaml --reactant R.pdb --product P.pdb \
     --model mace-polar-m --charge 2 --spin 1 --rigor standard --outdir ts_out
 
 # a TS guess, refine + validate only
-qcb ts-entry --entry ts-guess --reaction-spec spec.yaml --ts-guess guess.pdb \
+cowboy-qc ts-entry --entry ts-guess --reaction-spec spec.yaml --ts-guess guess.pdb \
     --model mace-mh-1 --head omol --charge 2
 
 # DFT via ORCA native NEB-TS — prepare an input to sbatch (host-side ORCA)
-qcb ts-entry --entry reactant-product --reaction-spec spec.yaml \
+cowboy-qc ts-entry --entry reactant-product --reaction-spec spec.yaml \
     --reactant R.xyz --product P.xyz --engine orca --model "wB97X-D3/def2-TZVP" \
     --no-execute --outdir orca_job
 ```

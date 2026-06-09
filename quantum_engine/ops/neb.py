@@ -254,7 +254,7 @@ def run(
         # climbing image. Useful when the user wants ~0.02 eV/Å convergence
         # (cf. memory feedback_neb_needs_ts_refinement.md). Note that this is
         # NOT a true saddle finder — for full-Hessian validation, follow up
-        # with `qcb saddle --backend dimer` and `qcb freq`.
+        # with `cowboy-qc saddle --backend dimer` and `cowboy-qc freq`.
         if cfg.ts_tol_fmax is not None and cfg.ts_tol_fmax < cfg.fmax_climb:
             log.info(
                 f"  NEB tight-TS pass: fmax={cfg.ts_tol_fmax}, max "

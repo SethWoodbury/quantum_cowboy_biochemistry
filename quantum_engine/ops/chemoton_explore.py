@@ -1,4 +1,4 @@
-"""``qcb chemoton-explore`` — steered Chemoton reaction-network exploration.
+"""``cowboy-qc chemoton-explore`` — steered Chemoton reaction-network exploration.
 
 This op orchestrates the full Chemoton-explore pipeline against a PDB input:
 
@@ -111,7 +111,7 @@ def run(
     dry_run: bool = False,
     reactive_atoms: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Run the full ``qcb chemoton-explore`` pipeline.
+    """Run the full ``cowboy-qc chemoton-explore`` pipeline.
 
     Parameters
     ----------
@@ -173,7 +173,7 @@ def run(
     if not scine_available():
         raise SystemExit(
             "SCINE not available in this environment. "
-            "Run inside the qcb apptainer container "
+            "Run inside the cowboy-qc apptainer container "
             "(/net/software/containers/users/woodbuse/quantum_chem/)."
         )
 
@@ -183,7 +183,7 @@ def run(
     out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     log.info("=" * 70)
-    log.info("qcb chemoton-explore")
+    log.info("cowboy-qc chemoton-explore")
     log.info("  input_pdb = %s", input_pdb)
     log.info("  out_dir = %s", out_dir)
     log.info("  backend = %s", backend)
@@ -281,7 +281,7 @@ def run(
     # ----- 7. Optional MACE handoff hint ------------------------------------
     if validate_with:
         log.info(
-            "validate_with=%s: rerun `qcb saddle` or `tools/polish_ts_v3.py` "
+            "validate_with=%s: rerun `cowboy-qc saddle` or `tools/polish_ts_v3.py` "
             "against each exported PDB next.",
             validate_with,
         )

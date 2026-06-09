@@ -1,6 +1,6 @@
 # Notebook track — plan for the 5 fixes
 
-**Date:** 2026-06-02  ·  **Goal:** get the OPAA theozyme TS notebook running end-to-end on `qcb`.
+**Date:** 2026-06-02  ·  **Goal:** get the OPAA theozyme TS notebook running end-to-end on `cowboy-qc`.
 **Status:** draft for codex + subagent review, then user approval.
 
 ## What the investigation changed
@@ -11,14 +11,14 @@ Three of the five items are smaller or differently-shaped than first thought:
   `_make_uma`, which raises a clear "run inside the sidecar" error (commit f30aa47). The
   `uma-20260527.sif` sidecar contains `ase` + `quantum_engine` + `fairchem.core` — verified — so
   `apptainer exec uma.sif qcb … --model uma-s-1p1` works today. No silent MACE-fallback bug exists.
-- **#2 does NOT depend on #5.** Bond-pinning can be CLI flags on `qcb opt` (ops/opt.py already
-  accepts a constraint *list*; `qcb neb` already has the `--key-bond` pattern). No YAML/pydantic.
+- **#2 does NOT depend on #5.** Bond-pinning can be CLI flags on `cowboy-qc opt` (ops/opt.py already
+  accepts a constraint *list*; `cowboy-qc neb` already has the `--key-bond` pattern). No YAML/pydantic.
 - **#3 is decided by container reality:** `graph_electrostatics` is absent → `mace-polar-m` can't
   load; `mace-mh-1 --head omol` **loads + evals + is charge-aware** (verified, H2O = −2079.85 eV).
 
 So the notebook's critical path is **#2 + #3 + #4**; **#1** is verify+document; **#5** is decoupled.
 
-## Item A — Bond constraints on `qcb opt`  (#2)  [DO]   (review-corrected)
+## Item A — Bond constraints on `cowboy-qc opt`  (#2)  [DO]   (review-corrected)
 - Add to the `opt` subparser (cli.py ~1240):
   - `--fix-bond I J [R0]` (repeatable) → hard pin via ASE `FixBondLength`. **Semantics fix (review):**
     `FixBondLength` pins at the distance *at constraint-creation time*. So if optional `R0` is given,
@@ -29,7 +29,7 @@ So the notebook's critical path is **#2 + #3 + #4**; **#1** is verify+document; 
     symmetrically. Add a tiny two-sided `HarmonicDistance` ASE constraint (precedent:
     `enz_qc_pipelines/active_site_refine/refine.py:993`) in a small `quantum_engine/mlff` or
     `ops` helper, and use it here.
-- Indices are **0-based ASE** to match `qcb scan --indices` (confirmed in ops/scan.py:96 + the
+- Indices are **0-based ASE** to match `cowboy-qc scan --indices` (confirmed in ops/scan.py:96 + the
   notebook). Document this in `--help`; note separately that `scan`(0-based) vs
   `refine-ts --reactive-atoms`(1-based PDB) is an inconsistency to reconcile later.
 - Parse in `_cmd_opt`; **append bond constraints AFTER** the FixAtoms scaffold (match scan's
@@ -67,16 +67,16 @@ So the notebook's critical path is **#2 + #3 + #4**; **#1** is verify+document; 
   cluster charge.
 
 ## Item D — UMA: verify + document  (#1)  [VERIFY + DOC]
-- Verify end-to-end: `apptainer exec --nv … uma-20260527.sif qcb sp <xyz> --model uma-s-1p1` returns
+- Verify end-to-end: `apptainer exec --nv … uma-20260527.sif cowboy-qc sp <xyz> --model uma-s-1p1` returns
   an energy (the sidecar has everything; confirm the FAIRChemCalculator path actually evaluates).
 - Document the sidecar-wrap pattern in README + the notebook (a `UMA=apptainer exec … uma-*.sif qcb`
   prefix), mirroring the existing `$QCB` prefix.
-- FORK: optionally add a small `--container <name>` convenience to `cli.py` that auto-wraps a `qcb`
+- FORK: optionally add a small `--container <name>` convenience to `cli.py` that auto-wraps a `cowboy-qc`
   call in the named sidecar (~40 LOC). Defer the full in-process subprocess/socket bridge (~600 LOC,
   not needed while the notebook uses MACE).
 
-## Item E — pydantic / `qcb run`  (#5)  [DECOUPLED]
-- Not on the notebook's path (notebook uses `qcb opt/scan/refine-ts`, not `qcb run`).
+## Item E — pydantic / `cowboy-qc run`  (#5)  [DECOUPLED]
+- Not on the notebook's path (notebook uses `cowboy-qc opt/scan/refine-ts`, not `cowboy-qc run`).
 - **Rationale fix (review):** `deps/quantum_chem.def` pins `pydantic<2` as part of *global dependency
   hard-pinning / fairchem-conflict control* (the explicit SCINE comment is about numpy). Whether SCINE
   strictly needs pydantic v1 is unconfirmed — so pinning v2 + rebuild is *plausibly* safe but unverified
@@ -86,7 +86,7 @@ So the notebook's critical path is **#2 + #3 + #4**; **#1** is verify+document; 
 - NOW (10 min): in `quantum_engine/config/__init__.py`, wrap the `schema import *` in a **narrow**
   `try/except ImportError` (review: NOT broad `except Exception`, which would hide real schema bugs);
   on failure set an explicit `CONFIG_UNAVAILABLE` marker. This clears the confusing
-  `test_subpackage_imports` baseline failure but does NOT make `qcb run` work (it imports schema
+  `test_subpackage_imports` baseline failure but does NOT make `cowboy-qc run` work (it imports schema
   directly in run_config.py) — the v1 rewrite is scheduled separately.
 
 ## Sequencing & verification
@@ -101,5 +101,5 @@ So the notebook's critical path is **#2 + #3 + #4**; **#1** is verify+document; 
 1. **UMA convenience** — add `--container` auto-wrap now, or document-only + defer?
 2. **pydantic** — defensive-import now + defer the v1 rewrite, or schedule the full v1 rewrite as
    part of this track?
-3. **Notebook edits** — want me to edit the OPAA `.ipynb` directly (mace-mh-1 default, qcb protonate,
+3. **Notebook edits** — want me to edit the OPAA `.ipynb` directly (mace-mh-1 default, cowboy-qc protonate,
    bond flags), or propose diffs for you to paste?

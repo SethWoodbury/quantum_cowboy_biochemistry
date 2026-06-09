@@ -1,13 +1,13 @@
 # Migrating from enz-ts → qcb
 
 The plan is to deprecate `enz-ts` (the Lars/gbg222 codebase at
-`/projects/ml/enzyme_filtering/enz-ts/`) entirely once `qcb` covers all
+`/projects/ml/enzyme_filtering/enz-ts/`) entirely once `cowboy-qc` covers all
 the same workflows. enz-ts remains read-only as a reference; we don't
 modify it.
 
 ## Status table
 
-| enz-ts capability | qcb status | Plan |
+| enz-ts capability | cowboy-qc status | Plan |
 |-------------------|-----------|------|
 | MACE-OMOL/MH/OFF model registry | ✓ in `qcb/calc/factory.py` | done |
 | **MACE-POLAR-1 S/M/L** (charge-aware) | ✓ added to factory | **done — use `--model mace-polar`** |
@@ -17,7 +17,7 @@ modify it.
 | Pure-Python OPES | ✓ same file | works |
 | FES from PLUMED HILLS | ✓ `qcb/analysis/fes.py` | new — clean rewrite, not a port |
 | FES via Tiwary-Parrinello reweighting | ✓ same file | new |
-| Umbrella sampling (single window) | (use `qcb md` + harmonic CV restraint) | works manually |
+| Umbrella sampling (single window) | (use `cowboy-qc md` + harmonic CV restraint) | works manually |
 | Umbrella sampling (multi-window WHAM/MBAR) | ✓ `fes.py:fes_from_umbrella_pymbar` | works (requires `pymbar`) |
 | Multi-walker MTD via shared filesystem | ✗ | TODO — add via PLUMED runner |
 | Hill merging across walkers | (handled by PLUMED itself) | handled by PLUMED |
@@ -27,7 +27,7 @@ modify it.
 | ChimeraX-based protonation | ✗ (we use pdbfixer/reduce/propka) | TODO — port enz-ts `chimera_utils.py` |
 | Per-system YAML configs (PTE variants) | ✗ | TODO — port `seth_pte/*.yaml` from `/net/scratch/woodbuse/metad/config/` |
 | `Enzyme` class abstraction | ✗ | TODO — port `enzyme_class.py` |
-| Production NEB (different from ours) | ✓ `qcb/ops/neb.py` | qcb has native + tested |
+| Production NEB (different from ours) | ✓ `qcb/ops/neb.py` | cowboy-qc has native + tested |
 | IRC-from-TS | ✓ `qcb/ops/irc.py` | qcb-only feature (enz-ts doesn't have) |
 | FSM/GSM (pysisyphus) | ✓ `qcb/ops/gsm.py` | qcb-only |
 | Auto spring constant (Pauling/xTB) | ✓ `qcb/mlff/auto_spring_k.py` | qcb-only |
@@ -37,10 +37,10 @@ modify it.
 
 ```bash
 # Use MACE-POLAR-1-M for charged systems (ions, phosphates, etc.)
-qcb opt input.pdb --model mace-polar --fmax 0.01
+cowboy-qc opt input.pdb --model mace-polar --fmax 0.01
 
 # Pure-Python WT-MTD on bond-difference CV
-qcb mtd input.pdb --model mace-polar \
+cowboy-qc mtd input.pdb --model mace-polar \
     --p-idx 162 --nuc-idx 164 --lg-idx 166 \
     --time 50 --temp 300
 
@@ -48,7 +48,7 @@ qcb mtd input.pdb --model mace-polar \
 python -c "from qcb.analysis.fes import analyze_hills_file; analyze_hills_file('runs/walker_0/HILLS')"
 
 # Native TS pipeline (no charge bug)
-qcb ts input.pdb --model mace-polar --strategy cv-spring --fix-preset ca-only
+cowboy-qc ts input.pdb --model mace-polar --strategy cv-spring --fix-preset ca-only
 ```
 
 ## What needs PLUMED2 built (or use prebuilt at `/net/scratch/woodbuse/metad/plumed/`)
@@ -112,5 +112,5 @@ enz-ts works. But:
 - It's a separate codebase requiring its own venv (`uv sync`)
 - It depends on a private repo (`enz-proj`) for configs
 - Two codebases for one job (TS searches) → context-switching cost
-- qcb already has features enz-ts lacks (IRC-from-TS, FSM/GSM, auto-k, native ts, modular CLI)
+- cowboy-qc already has features enz-ts lacks (IRC-from-TS, FSM/GSM, auto-k, native ts, modular CLI)
 - One repo means one set of tests, one set of docs, one place to fix bugs

@@ -19,7 +19,7 @@ The file is organised into clearly delimited sections and is built increment by
 increment; each stage is a pure function over one shared ``ProtonationState``.
 
 This module is runnable standalone (``python quantum_engine/prep/protonator.py
--i in.pdb``) and is also wired as the ``qcb protonate`` subcommand.
+-i in.pdb``) and is also wired as the ``cowboy-qc protonate`` subcommand.
 """
 from __future__ import annotations
 

@@ -13,8 +13,8 @@ Capabilities
 - Plot 1D and 2D FES
 
 Designed to consume output from:
-- `qcb mtd` (our pure-Python MTD; writes hills.npy, fes.npy)
-- `qcb md` with PLUMED bias (writes HILLS/COLVAR)
+- `cowboy-qc mtd` (our pure-Python MTD; writes hills.npy, fes.npy)
+- `cowboy-qc md` with PLUMED bias (writes HILLS/COLVAR)
 - enz-ts MTD runs (writes HILLS files)
 - Any other PLUMED-driven simulation
 

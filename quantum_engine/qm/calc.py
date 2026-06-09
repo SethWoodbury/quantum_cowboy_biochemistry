@@ -6,7 +6,7 @@ small systems, for constraints the native optimizer doesn't expose, or for metho
 experiments. ``make_qm_calc`` returns an ``ase.calculators.orca.ORCA`` calculator
 so any of our factories can drive ORCA exactly like an MLFF.
 
-ORCA is NOT in the qcb container; the calculator object constructs fine anywhere,
+ORCA is NOT in the cowboy-qc container; the calculator object constructs fine anywhere,
 but *evaluating* it needs ORCA on PATH (a host/node). For routine DFT TS work
 prefer the native engine (``engine='orca'``) — it's far more efficient than
 per-step ASE driving.

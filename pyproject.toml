@@ -55,8 +55,10 @@ all = ["ase>=3.23", "mace-torch>=0.3.10", "sella>=2.3", "biotite>=0.40",
        "pysisyphus>=0.7"]
 
 [project.scripts]
-# CLI binary stays `qcb` for backwards compatibility / habit; package is
-# `quantum_engine`. `pip install -e .` puts qcb on PATH.
+# Canonical CLI binary is `cowboy-qc` (Cowboy Quantum Chemistry); the importable
+# package stays `quantum_engine`. `qcb` is kept as a DEPRECATED alias (warns) for
+# backwards compatibility / habit. `pip install -e .` puts both on PATH.
+cowboy-qc = "quantum_engine.cli:main"
 qcb = "quantum_engine.cli:main"
 
 [build-system]

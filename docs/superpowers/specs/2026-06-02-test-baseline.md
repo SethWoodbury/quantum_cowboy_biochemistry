@@ -13,7 +13,7 @@ Captured before any cleanup changes, so regressions can be distinguished from pr
 1. `test_smoke.py::test_subpackage_imports`
    - Cause: `quantum_engine/config/schema.py:115` `from pydantic import field_validator` (pydantic **v2** API),
      but the container ships pydantic **v1** (`cannot import name 'field_validator'`).
-   - Impact: `import quantum_engine.config` fails inside the container; the `qcb run <yaml>` declarative
+   - Impact: `import quantum_engine.config` fails inside the container; the `cowboy-qc run <yaml>` declarative
      path is therefore broken in the container. **Deferred** to the notebook/env track (needs pydantic v2
      in the container, or a v1-compatible schema). Out of cleanup scope.
 

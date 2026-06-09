@@ -1,7 +1,7 @@
 """OPTIONAL reference bond-breaking definitions, keyed by ligand 3-letter code.
 
 This is a CONVENIENCE lookup, NOT a required part of the pipeline. It lets the
-``qcb ts`` CLI auto-fill the CV atoms for a handful of curated ligands so you
+``cowboy-qc ts`` CLI auto-fill the CV atoms for a handful of curated ligands so you
 don't have to type ``--p-idx/--nuc-idx/--lg-idx``. For ANY other reaction, the
 pipeline does not consult this file — you specify the reactive atoms directly
 (CLI flags or a ``ReactionSpec``), and ``ts_entry`` / ``scan_modes`` /

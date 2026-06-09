@@ -7,7 +7,7 @@ functions + optimizers/engines via registries). The package name stays
 
 Standalone tools that compose into pipelines. Each subpackage is
 independently importable; the same primitives drive the qcb CLI, the
-declarative ``qcb run config.yaml`` runner, and the orchestrator
+declarative ``cowboy-qc run config.yaml`` runner, and the orchestrator
 pipelines under :mod:`enz_qc_pipelines`.
 
 Subpackages

@@ -22,7 +22,7 @@ tight frequency. The quantitative layer is the charge-aware-MLFF / DFT runs belo
 
 Run these with `mace-polar-m` / `mace-mh-1 --head omol` / `uma-*` (GPU) or via
 the ORCA engine (DFT, host-side). They need a verified TS guess or R/P endpoints
-(build from literature geometries). Use `qcb ts-entry` (see `docs/ts_workflow.md`):
+(build from literature geometries). Use `cowboy-qc ts-entry` (see `docs/ts_workflow.md`):
 
 | Reaction | Atoms | Charge/spin | Literature outcome | Energy function |
 |----------|-------|-------------|--------------------|-----------------|
@@ -42,7 +42,7 @@ apptainer exec --nv --bind /home --bind /net <quantum_chem.sif> \
   python -m pytest tests/test_benchmarks.py -m slow
 
 # Tier 2 (GPU sbatch): build a ReactionSpec + endpoints, then
-qcb ts-entry --entry reactant-product --reaction-spec rxn.yaml \
+cowboy-qc ts-entry --entry reactant-product --reaction-spec rxn.yaml \
     --reactant R.xyz --product P.xyz --model mace-polar-m --charge <q> --rigor publication
 ```
 
