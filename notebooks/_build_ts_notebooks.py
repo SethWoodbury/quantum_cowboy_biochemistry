@@ -623,8 +623,10 @@ product_scan_pdb  = f"{{SCAN_DIR}}scan/product_scan.pdb"    # last  scan frame
 
 ### OUTPUTS ###
 out_dir = f"{{RELAX_MINIMIZE_DIR}}endpoints/"
-R_min   = f"{{out_dir}}reactant_min.pdb"
-P_min   = f"{{out_dir}}product_min.pdb"
+# Each endpoint gets its OWN subdir so their opt-summary.json energies don't collide
+# (the barrier-analysis cell reads both: barrier = E(TS) - E(reactant_min)).
+R_min   = f"{{out_dir}}reactant/reactant_min.pdb"
+P_min   = f"{{out_dir}}product/product_min.pdb"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"   # default mace-polar-m (see relax cell's menu)
@@ -649,9 +651,10 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 ### GENERATE COMMANDS ###
 commands = []
 for _src, _dst in [(reactant_scan_pdb, R_min), (product_scan_pdb, P_min)]:
+    _sub = str(Path(_dst).parent)
     cmd = qcb_cmd(model, "opt", _src, "--model", model, "--charge", charge, "--multiplicity", multiplicity,
                   "--device", device, "--fix-preset", fix_preset, "--optimizer", optimizer,
-                  "--fmax", fmax, "--max-steps", max_steps, "--outdir", out_dir, "--output-pdb", _dst)
+                  "--fmax", fmax, "--max-steps", max_steps, "--outdir", _sub, "--output-pdb", _dst)
     if head: cmd += ["--head", head]
     commands.append(" ".join(str(x) for x in cmd))
 with open(commands_file_path, "w") as f:
@@ -664,59 +667,249 @@ print(f"\\n# Outputs: {{R_min}} , {{P_min}}  (barrier = E(TS) - E(reactant_min))
     return [("markdown", md), ("code", code)]
 
 
-def cell_neb_opaa(profile, step):
+def cell_path_search(profile, step, optional=False):
+    """ONE modular path-search cell: CI-NEB / GSM / FSM via a `path_method` selector."""
     D = defaults(profile)
-    md = f"# **STEP {step}: *(optional, more rigorous)* CI-NEB between the minimized endpoints (`cowboy-qc neb`)**"
+    opt_tag = "*(optional, more rigorous than the 1-D scan)* " if optional else ""
+    md = f"# **STEP {step}: {opt_tag}Path search — CI-NEB / GSM / FSM (one cell, pick `path_method`)**"
     code = f'''\
 ##################################################################
-###  OPTIONAL: DOUBLE-ENDED CI-NEB  (more rigorous than 1-D scan) ###
+###  DOUBLE-ENDED PATH SEARCH  (CI-NEB | GSM | FSM — selectable)  ###
 ##################################################################
-# OPTIONAL alternative path search. A 1-D scan can slice BESIDE the true saddle for an
-# ASYNCHRONOUS SN2-at-P (P-O_nuc and P-O_lg not changing in lockstep). A double-ended
-# geodesic CI-NEB between the two MINIMIZED endpoints relaxes all orthogonal DOFs at every
-# image, so its climbing image is a better guess. Feed it to refine-ts via --from-neb.
-# (If your scan peak already refines to a clean 1-imag-mode saddle, you can skip this.)
+# ONE cell, plug-and-play method. Between a reactant and product (the MINIMIZED
+# endpoints), find a TS guess. Set `path_method`:
+#   'ci-neb' : climbing-image NEB (qcb neb) — robust, geodesic interp, honours --fix-preset
+#   'gsm'    : Growing String (qcb gsm --method gsm) — cheaper; NO ASE constraints
+#   'fsm'    : Freezing String (qcb gsm --method fsm) — cheapest; NO ASE constraints
+# (AutoNEB / pyGSM / single-ended SE-GSM are also available via
+#  `cowboy-qc ts-entry --path-method {{autoneb|pygsm-de|gsm-se}}`.)
+# A 1-D scan can slice BESIDE the true saddle for an ASYNCHRONOUS step; a double-ended
+# search relaxes all orthogonal DOFs, so it's a better guess there. Feed CI-NEB to
+# refine-ts via --from-neb; for GSM/FSM use the emitted TS-guess structure.
 
 ### INPUTS ###
-reactant_min = f"{{RELAX_MINIMIZE_DIR}}endpoints/reactant_min.pdb"
-product_min  = f"{{RELAX_MINIMIZE_DIR}}endpoints/product_min.pdb"
+reactant_min = f"{{RELAX_MINIMIZE_DIR}}endpoints/reactant/reactant_min.pdb"   # or any reactant basin
+product_min  = f"{{RELAX_MINIMIZE_DIR}}endpoints/product/product_min.pdb"     # same atom order!
 
 ### OUTPUTS ###
-out_dir = f"{{PATH_SEARCH_DIR}}neb/"
+path_method = "ci-neb"          # 'ci-neb' | 'gsm' | 'fsm'   <-- pick the method
+out_dir     = f"{{PATH_SEARCH_DIR}}{{path_method}}/"
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"
 charge, multiplicity = {D['charge']}, {D['spin']}
 
-### NEB PARAMETERS ###
-fix_preset    = "ca-only"
-n_images      = 17              # publication-tier; 11 for a quicker pass
-interpolation = "geodesic"      # REQUIRED for dense/charged sites (never 'linear')
-optimizer     = "fire"
+### PATH PARAMETERS ###
+n_images      = 17              # CI-NEB publication-tier (11 quicker); GSM/FSM ~15
+interpolation = "geodesic"      # CI-NEB only — REQUIRED for dense/charged sites (never 'linear')
+optimizer     = "fire"          # CI-NEB only
+fix_preset    = "ca-only"       # CI-NEB only (string methods ignore ASE constraints)
+fmax          = 0.05
 
 ### COMMAND / SUBMIT FILE NAMES ###
-commands_name      = f"{{PROJECT_NAME}}_neb"
+commands_name      = f"{{PROJECT_NAME}}_path_{{path_method}}"
 commands_file_path = os.path.join(CMDS_DIR, commands_name)
 
 ### SANITY CHECKS ###
 for p in (reactant_min, product_min):
     if not Path(p).is_file():
-        raise FileNotFoundError(f"minimized endpoint not found: {{p}}  (run min-endpoints first)")
+        raise FileNotFoundError(f"endpoint not found: {{p}}  (run min-endpoints first)")
 Path(out_dir).mkdir(parents=True, exist_ok=True)
 
 ### GENERATE COMMANDS ###
 commands = []
-cmd = qcb_cmd(model, "neb", reactant_min, product_min, "--model", model, "--charge", charge,
-              "--multiplicity", multiplicity, "--device", device, "--fix-preset", fix_preset, "--n-images", n_images,
-              "--interpolation", interpolation, "--optimizer", optimizer, "--outdir", out_dir)
+if path_method == "ci-neb":
+    cmd = qcb_cmd(model, "neb", reactant_min, product_min, "--model", model, "--charge", charge,
+                  "--multiplicity", multiplicity, "--device", device, "--fix-preset", fix_preset,
+                  "--n-images", n_images, "--interpolation", interpolation, "--optimizer", optimizer,
+                  "--outdir", out_dir)
+    _feed = f"refine-ts: set from_neb = '{{out_dir}}'"
+elif path_method in ("gsm", "fsm"):
+    # qcb gsm: no --multiplicity / no --fix-preset (string methods take no ASE constraints)
+    cmd = qcb_cmd(model, "gsm", reactant_min, product_min, "--method", path_method, "--model", model,
+                  "--charge", charge, "--device", device, "--n-images", n_images, "--fmax", fmax,
+                  "--outdir", out_dir)
+    _feed = f"refine-ts: feed the TS-guess structure written under {{out_dir}}"
+else:
+    raise ValueError(f"path_method must be ci-neb|gsm|fsm, got {{path_method!r}}")
 if head: cmd += ["--head", head]
+commands.append(" ".join(str(x) for x in cmd))
+with open(commands_file_path, "w") as f:
+    f.write("\\n".join(commands) + "\\n")
+print(f"# {{len(commands)}} command(s) [{{path_method}}] → {{commands_file_path}}")
+for c in commands: print("\\n" + c)
+print(f"\\n# Output dir: {{out_dir}}  → {{_feed}}")
+{sbatch(qtime="24:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
+'''
+    return [("markdown", md), ("code", code)]
+
+
+def _analysis_cell(step, title, body):
+    """An ANALYSIS cell (no sbatch): loads a step's outputs + reports/plots."""
+    md = f"# **STEP {step}: {title}**"
+    return [("markdown", md), ("code", body)]
+
+
+def cell_scan_analysis(profile, step):
+    body = '''\
+##################################################################
+###  ANALYSIS: 1-D SCAN PROFILE + TS GUESS  (run after the scan) ###
+##################################################################
+# Loads scan-summary.json + the trajectory energies and plots the energy profile;
+# reports the barrier estimate and where the TS guess (max-E frame) sits.
+
+### INPUTS ###
+scan_dir = f"{SCAN_DIR}scan/"
+
+### ANALYSIS ###
+import json
+_summary = Path(scan_dir) / "scan-summary.json"
+if not _summary.is_file():
+    print(f"# no scan-summary.json yet at {scan_dir} — run the scan step first.");
+else:
+    s = json.loads(_summary.read_text())
+    print(f"barrier (scan estimate) : {s.get('barrier_kcal'):.2f} kcal/mol")
+    print(f"TS-guess coordinate     : {s.get('max_coord_value'):.3f}  (frame {s.get('max_energy_idx')})")
+    # plot the profile from the trajectory energies
+    try:
+        from ase.io import read as _read
+        frames = _read(str(Path(scan_dir) / "scan-trajectory.xyz"), index=":")
+        e = [f.info.get("energy_eV", 0.0) for f in frames]
+        e0 = min(e); ek = [(x - e0) * 23.0605 for x in e]   # eV -> kcal/mol, rel
+        fig, ax = plt.subplots(figsize=(5, 3.2))
+        ax.plot(range(len(ek)), ek, "o-", color=nb.good_teal)
+        ax.axvline(s.get("max_energy_idx", 0), ls="--", color=nb.good_red, label="TS guess")
+        ax.set_xlabel("scan frame"); ax.set_ylabel("rel. energy (kcal/mol)")
+        ax.set_title("1-D relaxed scan profile"); ax.legend(); plt.tight_layout(); plt.show()
+    except Exception as _ex:
+        print(f"# (plot skipped: {_ex})")
+'''
+    return _analysis_cell(step, "Analysis — scan profile + TS guess", body)
+
+
+def cell_refine_analysis(profile, step):
+    body = '''\
+##################################################################
+###  ANALYSIS: REFINED-TS VERDICT  (run after refine-ts)        ###
+##################################################################
+# Reads refine-ts summary.json: did we get a genuine first-order saddle?
+# (exactly one imaginary mode below the cutoff, with enough reactive-atom overlap).
+
+### INPUTS ###
+refine_summary = f"{REFINE_TS_DIR}refine/summary.json"
+
+### ANALYSIS ###
+import json
+_p = Path(refine_summary)
+if not _p.is_file():
+    print(f"# no summary.json yet at {refine_summary} — run refine-ts first.")
+else:
+    r = json.loads(_p.read_text())
+    verdict = "PASS ✓" if r.get("overall_pass") else "FAIL ✗"
+    print(f"refine-ts verdict        : {verdict}")
+    print(f"n_imag (significant)     : {r.get('n_imag')}   (want exactly 1)")
+    print(f"imaginary frequency      : {r.get('imag_freq_cm')} cm^-1   (want < -50)")
+    print(f"imag-mode reactive overlap: {r.get('imag_mode_overlap')}   (want >= 0.5; 0.7-0.8 for SN2)")
+    print(f"E(TS)                    : {r.get('energy_eV')} eV ({r.get('energy_kcal_mol'):.2f} kcal/mol)")
+    print(f"saddle backend used      : {r.get('backend_used')}")
+    if not r.get("overall_pass"):
+        print("\\n# FAIL → inspect: wrong/insufficient imaginary mode, or a 2nd imag mode."
+              " Try a better guess (CI-NEB), --backend auto, or check for a pentacoordinate intermediate.")
+'''
+    return _analysis_cell(step, "Analysis — refined-TS verdict (1 imaginary mode?)", body)
+
+
+def cell_barrier_summary(profile, step):
+    body = '''\
+##################################################################
+###  ANALYSIS: ENERGY BARRIER + REACTION ENERGY + RATE          ###
+##################################################################
+# The headline number. Barrier height = E(TS) - E(reactant_min); reaction energy =
+# E(product_min) - E(reactant_min). Reads the three opt/refine summary.json energies.
+# Then an Eyring estimate of the rate constant k(T) from the barrier.
+
+### INPUTS ###
+ts_summary       = f"{REFINE_TS_DIR}refine/summary.json"
+reactant_summary = f"{RELAX_MINIMIZE_DIR}endpoints/reactant/opt-summary.json"
+product_summary  = f"{RELAX_MINIMIZE_DIR}endpoints/product/opt-summary.json"
+
+### PARAMETERS ###
+T = 298.15                       # K, for the Eyring rate
+
+### ANALYSIS ###
+import json, math
+def _E(path):   # eV from a summary.json
+    p = Path(path)
+    return json.loads(p.read_text()).get("energy_eV") if p.is_file() else None
+E_ts, E_r, E_p = _E(ts_summary), _E(reactant_summary), _E(product_summary)
+EV2KCAL = 23.0605
+if None in (E_ts, E_r):
+    print("# need E(TS) and E(reactant_min). Missing:",
+          [n for n, v in [("E_TS", E_ts), ("E_reactant", E_r)] if v is None],
+          "— run refine-ts + min-endpoints first.")
+else:
+    dG_fwd = (E_ts - E_r) * EV2KCAL
+    print(f"forward barrier  ΔE‡(fwd) = {dG_fwd:8.2f} kcal/mol")
+    if E_p is not None:
+        dE_rxn = (E_p - E_r) * EV2KCAL
+        dG_rev = (E_ts - E_p) * EV2KCAL
+        print(f"reverse barrier  ΔE‡(rev) = {dG_rev:8.2f} kcal/mol")
+        print(f"reaction energy  ΔE(rxn)  = {dE_rxn:8.2f} kcal/mol")
+    # Eyring: k = (kB T / h) exp(-ΔG‡ / RT)   (electronic barrier as a ΔG‡ proxy)
+    kB, h, R = 1.380649e-23, 6.62607015e-34, 1.987204e-3   # J/K, J·s, kcal/mol/K
+    k = (kB * T / h) * math.exp(-dG_fwd / (R * T))
+    print(f"\\nEyring k({T:.0f} K)         = {k:.3e} s^-1   (ΔE‡ used as ΔG‡ proxy; add ZPE/entropy for rigor)")
+    print("# NOTE: an MLFF electronic barrier; for a publication number re-evaluate at DFT (Step: ORCA).")
+'''
+    return _analysis_cell(step, "Analysis — energy barrier + reaction energy + Eyring rate", body)
+
+
+def cell_aefm_opaa(profile, step):
+    D = defaults(profile)
+    md = f"# **STEP {step}: *(optional, EXPERIMENTAL)* AEFM refine the TS guess (out-of-domain on metals)**"
+    code = f'''\
+##################################################################
+###  OPTIONAL/EXPERIMENTAL: AEFM refine on the di-Zn guess       ###
+##################################################################
+# ⚠ EXPERIMENTAL + OUT OF DOMAIN. AEFM is trained on CHNO gas-phase organics; a di-Zn/P
+# active site is OUTSIDE its training, so its weights for Zn/P are UNTRAINED and the
+# refinement is UNVALIDATED. AEFM does NOT crash on metals (LEFTNet embeds Z<100) — unlike
+# React-OT — so you CAN try it with --allow-out-of-domain to see if it helps the guess.
+# The QM saddle+Hessian+IRC gate (refine-ts/validate-ts) remains the sole authority; treat
+# any AEFM output as a guess to be re-refined, never as a result. Runs in the AEFM sidecar.
+
+### INPUTS ###
+guess_xyz = f"{{SCAN_DIR}}scan/ts_guess.xyz"     # a CHNO+metal TS guess as .xyz (convert the pdb)
+
+### OUTPUTS ###
+refined_out = f"{{GENERATIVE_DIR}}aefm_opaa_refined.xyz"
+out_dir     = f"{{GENERATIVE_DIR}}aefm_opaa/"
+
+### MODEL ###
+charge, multiplicity = {D['charge']}, {D['spin']}
+
+### COMMAND / SUBMIT FILE NAMES ###
+commands_name      = f"{{PROJECT_NAME}}_aefm_experimental"
+commands_file_path = os.path.join(CMDS_DIR, commands_name)
+
+### SANITY CHECKS ###
+if not Path(guess_xyz).is_file():
+    print(f"# convert your TS-guess pdb to xyz first (AEFM reads xyz): {{guess_xyz}}")
+Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+### GENERATE COMMANDS ###
+# NOTE: --allow-out-of-domain is REQUIRED here (Zn/P are out of AEFM's CHNO training).
+commands = []
+cmd = sidecar_cmd(AEFM_SIF, "ts-refine", "--method", "aefm", "--ts-guess", guess_xyz,
+                  "--charge", charge, "--multiplicity", multiplicity, "--allow-out-of-domain",
+                  "--out", refined_out, "--outdir", out_dir)
 commands.append(" ".join(str(x) for x in cmd))
 with open(commands_file_path, "w") as f:
     f.write("\\n".join(commands) + "\\n")
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
-print(f"\\n# Output dir: {{out_dir}}  → in refine-ts set  from_neb = '{{out_dir}}'")
-{sbatch(qtime="24:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
+print(f"\\n# Output: {{refined_out}}  (EXPERIMENTAL — re-refine + validate with the QM gate!)")
+{sbatch(qtime="02:00:00", cpus="4", mem="32g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1387,13 +1580,17 @@ def build(profile):
     else:
         cells.append(overview_opaa())
     cells += cells_init(profile)
+    _path_opt = lambda p, s: cell_path_search(p, s, optional=True)   # OPAA: optional/alt path search
     if profile == "opaa":
         seq = [cell_protonate, cell_monitor, cell_reaction_spec, cell_relax, cell_scan,
-               cell_min_endpoints, cell_neb_opaa, cell_refine_ts, cell_validate, cell_irc, cell_dft]
+               cell_scan_analysis, cell_min_endpoints, _path_opt,
+               cell_refine_ts, cell_refine_analysis, cell_validate, cell_irc,
+               cell_barrier_summary, cell_aefm_opaa, cell_dft]
     else:
         seq = [cell_protonate, cell_monitor, cell_reaction_spec, cell_relax, cell_scan,
-               cell_neb, cell_gsm, cell_single_ended, cell_ts_entry, cell_reactot, cell_aefm,
-               cell_refine_ts, cell_validate, cell_irc, cell_dft]
+               cell_scan_analysis, cell_min_endpoints, cell_path_search, cell_single_ended,
+               cell_ts_entry, cell_reactot, cell_aefm, cell_refine_ts, cell_refine_analysis,
+               cell_validate, cell_irc, cell_barrier_summary, cell_dft]
     for i, fn in enumerate(seq):
         cells += fn(profile, i)
     return cells
