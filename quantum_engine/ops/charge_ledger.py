@@ -114,8 +114,7 @@ class ChargeLedger:
     def to_dict(self) -> dict[str, Any]:
         return {
             "total": self.total,
-            "multiplicity": self.spin,   # canonical key (M=2S+1)
-            "spin": self.spin,           # legacy alias (back-compat readers)
+            "spin": self.spin,   # NB: holds the MULTIPLICITY M=2S+1 (calculator-convention key name)
             "components": dict(self.components),
             "notes": dict(self.notes),
             "source": self.source,
@@ -306,7 +305,6 @@ def inject_into_atoms(atoms, ledger: ChargeLedger) -> None:
     """
     atoms.info["charge"] = ledger.total
     atoms.info["spin"] = ledger.spin
-    atoms.info["multiplicity"] = ledger.spin
     atoms.info["charge_ledger"] = ledger.to_dict()
 
 

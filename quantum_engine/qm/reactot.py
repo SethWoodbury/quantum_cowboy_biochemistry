@@ -167,7 +167,6 @@ def run(reactant: Atoms, product: Atoms, *, charge: int = 0, spin: int = 1,
         ts.set_positions(ts_pos)
         ts.info["charge"] = charge
         ts.info["spin"] = spin
-        ts.info["multiplicity"] = spin
         out = outdir / "reactot_ts.xyz"
         ase_write(str(out), ts, format="extxyz")
         log.info("React-OT: generated TS guess (%d atoms) → %s", len(ts), out)

@@ -71,7 +71,6 @@ def _midpoint(reactant: Atoms, product: Atoms, *, charge: int, spin: int,
     ts = images[len(images) // 2].copy()
     ts.info["charge"] = charge
     ts.info["spin"] = spin
-    ts.info["multiplicity"] = spin
     out = outdir / "proposed_ts.xyz"
     ase_write(str(out), ts, format="extxyz")
     log.info("midpoint proposer: TS guess at the %s midpoint of R→P",

@@ -72,7 +72,6 @@ def _calc_fn(ctx: RunContext):
 def _stamp(atoms: Atoms, ctx: RunContext) -> Atoms:
     atoms.info["charge"] = ctx.charge
     atoms.info["spin"] = ctx.multiplicity
-    atoms.info["multiplicity"] = ctx.multiplicity
     return atoms
 
 
