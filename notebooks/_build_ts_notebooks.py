@@ -848,16 +848,16 @@ if None in (E_ts, E_r):
           [n for n, v in [("E_TS", E_ts), ("E_reactant", E_r)] if v is None],
           "— run refine-ts + min-endpoints first.")
 else:
-    dG_fwd = (E_ts - E_r) * EV2KCAL
-    print(f"forward barrier  ΔE‡(fwd) = {dG_fwd:8.2f} kcal/mol")
+    dE_fwd = (E_ts - E_r) * EV2KCAL   # ELECTRONIC barrier ΔE‡ (no ZPE/thermal/entropy)
+    print(f"forward barrier  ΔE‡(fwd) = {dE_fwd:8.2f} kcal/mol")
     if E_p is not None:
         dE_rxn = (E_p - E_r) * EV2KCAL
-        dG_rev = (E_ts - E_p) * EV2KCAL
-        print(f"reverse barrier  ΔE‡(rev) = {dG_rev:8.2f} kcal/mol")
+        dE_rev = (E_ts - E_p) * EV2KCAL
+        print(f"reverse barrier  ΔE‡(rev) = {dE_rev:8.2f} kcal/mol")
         print(f"reaction energy  ΔE(rxn)  = {dE_rxn:8.2f} kcal/mol")
-    # Eyring: k = (kB T / h) exp(-ΔG‡ / RT)   (electronic barrier as a ΔG‡ proxy)
+    # Eyring: k = (kB T / h) exp(-ΔG‡ / RT); here we use the ELECTRONIC ΔE‡ as a ΔG‡ proxy.
     kB, h, R = 1.380649e-23, 6.62607015e-34, 1.987204e-3   # J/K, J·s, kcal/mol/K
-    k = (kB * T / h) * math.exp(-dG_fwd / (R * T))
+    k = (kB * T / h) * math.exp(-dE_fwd / (R * T))
     print(f"\\nEyring k({T:.0f} K)         = {k:.3e} s^-1   (ΔE‡ used as ΔG‡ proxy; add ZPE/entropy for rigor)")
     print("# NOTE: an MLFF electronic barrier; for a publication number re-evaluate at DFT (Step: ORCA).")
 '''
@@ -879,11 +879,12 @@ def cell_aefm_opaa(profile, step):
 # any AEFM output as a guess to be re-refined, never as a result. Runs in the AEFM sidecar.
 
 ### INPUTS ###
-guess_xyz = f"{{SCAN_DIR}}scan/ts_guess.xyz"     # a CHNO+metal TS guess as .xyz (convert the pdb)
+guess_pdb = f"{{SCAN_DIR}}scan/ts_guess.pdb"     # the scan/refine TS guess (pdb)
 
 ### OUTPUTS ###
-refined_out = f"{{GENERATIVE_DIR}}aefm_opaa_refined.xyz"
 out_dir     = f"{{GENERATIVE_DIR}}aefm_opaa/"
+guess_xyz   = f"{{out_dir}}ts_guess.xyz"          # AEFM reads xyz — converted below
+refined_out = f"{{out_dir}}aefm_opaa_refined.xyz"
 
 ### MODEL ###
 charge, multiplicity = {D['charge']}, {D['spin']}
@@ -893,142 +894,29 @@ commands_name      = f"{{PROJECT_NAME}}_aefm_experimental"
 commands_file_path = os.path.join(CMDS_DIR, commands_name)
 
 ### SANITY CHECKS ###
-if not Path(guess_xyz).is_file():
-    print(f"# convert your TS-guess pdb to xyz first (AEFM reads xyz): {{guess_xyz}}")
+if not Path(guess_pdb).is_file():
+    print(f"# TS-guess pdb not found yet: {{guess_pdb}}  (run scan/refine-ts first)")
 Path(out_dir).mkdir(parents=True, exist_ok=True)
 
 ### GENERATE COMMANDS ###
-# NOTE: --allow-out-of-domain is REQUIRED here (Zn/P are out of AEFM's CHNO training).
+# (1) convert the pdb guess -> xyz (AEFM reads xyz); (2) ts-refine with --allow-out-of-domain
+# (REQUIRED — Zn/P are out of AEFM's CHNO training). Two commands, run in order.
 commands = []
-cmd = sidecar_cmd(AEFM_SIF, "ts-refine", "--method", "aefm", "--ts-guess", guess_xyz,
-                  "--charge", charge, "--multiplicity", multiplicity, "--allow-out-of-domain",
-                  "--out", refined_out, "--outdir", out_dir)
-commands.append(" ".join(str(x) for x in cmd))
+conv_py = f"{{out_dir}}pdb2xyz.py"
+Path(conv_py).write_text(
+    f"from ase.io import read, write; write(r'{{guess_xyz}}', read(r'{{guess_pdb}}'))\\n")
+cmd_conv = [*APPTAINER(AEFM_SIF), "python", conv_py]
+cmd_ref = sidecar_cmd(AEFM_SIF, "ts-refine", "--method", "aefm", "--ts-guess", guess_xyz,
+                      "--charge", charge, "--multiplicity", multiplicity, "--allow-out-of-domain",
+                      "--out", refined_out, "--outdir", out_dir)
+commands.append(" ".join(str(x) for x in cmd_conv))
+commands.append(" ".join(str(x) for x in cmd_ref))
 with open(commands_file_path, "w") as f:
     f.write("\\n".join(commands) + "\\n")
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Output: {{refined_out}}  (EXPERIMENTAL — re-refine + validate with the QM gate!)")
-{sbatch(qtime="02:00:00", cpus="4", mem="32g", queue="gpu", gpu="'small'")}
-'''
-    return [("markdown", md), ("code", code)]
-
-
-def cell_neb(profile, step):
-    D = defaults(profile)
-    md = f"# **STEP {step}: Double-Ended Path Search — CI-NEB / AutoNEB (`cowboy-qc neb`)**"
-    code = f'''\
-##################################################################
-###     DOUBLE-ENDED PATH SEARCH   (cowboy-qc neb; needs R AND P)    ###
-##################################################################
-# Climbing-image NEB between a reactant and product (same atom ordering, or supply an
-# atom_map in the spec). Geodesic interpolation is the default and STRONGLY recommended
-# for dense/charged sites (linear interpolation can blow energies up). The climbing
-# image is your TS guess; refine-ts reads it via  --from-neb {{out_dir}}.
-
-### INPUTS ###
-reactant_pdb = f"{{RELAX_MINIMIZE_DIR}}relax/reactant.pdb"   # EDIT  (relaxed reactant basin)
-product_pdb  = f"{{RELAX_MINIMIZE_DIR}}relax/product.pdb"    # EDIT  (relaxed product basin)
-
-### OUTPUTS ###
-out_dir = f"{{PATH_SEARCH_DIR}}neb/"
-
-### ENERGY MODEL ###
-model, head, device = {D['model']}, {D['head']}, "cuda"
-charge, multiplicity = {D['charge']}, {D['spin']}
-
-### CONSTRAINTS ###
-fix_preset = "ca-only"
-
-### NEB PARAMETERS ###
-n_images      = 11              # 7-9 small, 13-17 multi-bond, 17-25 floppy/metal
-interpolation = "geodesic"      # geodesic (recommended) | idpp | linear
-optimizer     = "fire"          # fire | lbfgs | mdmin | bfgs | ode
-key_bonds     = []              # [("serial:A","serial:B"), ...] bond-aware kink detection (optional)
-
-### CONSTANTS ###
-CONTAINER = container_for(model)
-
-### COMMAND / SUBMIT FILE NAMES ###
-commands_name      = f"{{PROJECT_NAME}}_neb"
-commands_file_path = os.path.join(CMDS_DIR, commands_name)
-
-### SANITY CHECKS ###
-for p in (reactant_pdb, product_pdb):
-    if not Path(p).is_file():
-        raise FileNotFoundError(f"endpoint not found: {{p}}")
-Path(out_dir).mkdir(parents=True, exist_ok=True)
-
-### GENERATE COMMANDS ###
-commands = []
-cmd  = qcb_cmd(model, "neb", reactant_pdb, product_pdb, "--model", model, "--charge", charge,
-               "--multiplicity", multiplicity, "--device", device, "--fix-preset", fix_preset,
-               "--n-images", n_images, "--interpolation", interpolation, "--optimizer", optimizer,
-               "--outdir", out_dir)
-if head: cmd += ["--head", head]
-for a, b in key_bonds: cmd += ["--key-bond", f"{{a}},{{b}}"]
-commands.append(" ".join(str(x) for x in cmd))
-with open(commands_file_path, "w") as f:
-    f.write("\\n".join(commands) + "\\n")
-print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
-for c in commands: print("\\n" + c)
-print(f"\\n# Output dir: {{out_dir}}  → feed refine-ts with  --from-neb {{out_dir}}")
-{sbatch(qtime="24:00:00", cpus="8", mem="64g", queue="gpu", gpu="'large'")}
-'''
-    return [("markdown", md), ("code", code)]
-
-
-def cell_gsm(profile, step):
-    D = defaults(profile)
-    md = f"# **STEP {step}: Double-Ended String — GSM / FSM (`cowboy-qc gsm`)**"
-    code = f'''\
-##################################################################
-###     GROWING / FREEZING STRING   (cowboy-qc gsm; needs R AND P)   ###
-##################################################################
-# String methods: cheaper than NEB, good TS guesses. GSM = Growing String,
-# FSM = Freezing String. NOTE: cowboy-qc gsm has NO --multiplicity/--spin and NO --fix-preset (string
-# methods don't take ASE constraints). For single-ended (reactant + driving coords)
-# use ts-entry --path-method gsm-se instead (see the single-ended step).
-
-### INPUTS ###
-reactant_pdb = f"{{RELAX_MINIMIZE_DIR}}relax/reactant.pdb"   # EDIT
-product_pdb  = f"{{RELAX_MINIMIZE_DIR}}relax/product.pdb"    # EDIT
-
-### OUTPUTS ###
-out_dir = f"{{PATH_SEARCH_DIR}}gsm/"
-
-### ENERGY MODEL ###
-model, head, device = {D['model']}, {D['head']}, "cuda"
-charge = {D['charge']}
-
-### GSM PARAMETERS ###
-gsm_method = "gsm"              # 'gsm' (Growing String) | 'fsm' (Freezing String)
-n_images   = 15
-fmax       = 0.05
-
-### COMMAND / SUBMIT FILE NAMES ###
-commands_name      = f"{{PROJECT_NAME}}_gsm"
-commands_file_path = os.path.join(CMDS_DIR, commands_name)
-
-### SANITY CHECKS ###
-for p in (reactant_pdb, product_pdb):
-    if not Path(p).is_file():
-        raise FileNotFoundError(f"endpoint not found: {{p}}")
-Path(out_dir).mkdir(parents=True, exist_ok=True)
-
-### GENERATE COMMANDS ###
-commands = []
-cmd  = qcb_cmd(model, "gsm", reactant_pdb, product_pdb, "--method", gsm_method, "--model", model,
-               "--charge", charge, "--device", device, "--n-images", n_images, "--fmax", fmax,
-               "--outdir", out_dir)
-if head: cmd += ["--head", head]
-commands.append(" ".join(str(x) for x in cmd))
-with open(commands_file_path, "w") as f:
-    f.write("\\n".join(commands) + "\\n")
-print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
-for c in commands: print("\\n" + c)
-print(f"\\n# Output dir: {{out_dir}}")
-{sbatch(qtime="24:00:00", cpus="8", mem="64g", queue="gpu", gpu="'large'")}
+{sbatch(qtime="02:00:00", cpj=2, cpus="4", mem="32g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
