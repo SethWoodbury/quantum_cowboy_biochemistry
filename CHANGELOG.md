@@ -53,8 +53,9 @@ case only — nothing is hardcoded to it.
 
 ### MLFF / containers
 - MACE-POLAR baked into the main container (the `PolarMACE` fork + `graph_longrange`);
-  factory guard fixed. UMA in a sidecar (numpy2/torch2.8). `site.py` auto-picks the
-  newest image. Two containers total.
+  factory guard fixed. Separate sidecars for incompatible stacks: UMA (numpy2/torch2.8),
+  React-OT, and AEFM (each gated behind its own image). `site.py` auto-picks the newest
+  image per family.
 
 ### CLI, notebook, docs
 - New subcommands: `cowboy-qc ts-entry`, `cowboy-qc monitor`, `cowboy-qc reaction-spec`.

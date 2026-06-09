@@ -1,4 +1,4 @@
-"""High-level TS search pipeline — NATIVE composition of qcb.ops primitives.
+"""High-level TS search pipeline — NATIVE composition of quantum_engine.ops primitives.
 
 This replaces the legacy subprocess-based wrapper around scripts/run_neb_ts.py.
 The pipeline is now pure Python composition of:
@@ -503,57 +503,3 @@ def _finalize_result(result, reactant, ts, product, e_r, e_ts, e_p, outdir,
     }
     (outdir / "summary.json").write_text(json.dumps(summary, indent=2))
     result["outputs"]["summary"] = str(outdir / "summary.json")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Legacy subprocess entry (kept for backward compat with old scripts)
-# ═══════════════════════════════════════════════════════════════════
-
-def run_legacy_subprocess(
-    pdb_file,
-    outdir,
-    strategy: str = "legacy",
-    model: str = "mace-omol",
-    charge: int | None = None,
-    extra_args: list[str] | None = None,
-    **kwargs,
-) -> dict:
-    """Call scripts/run_neb_ts.py as a subprocess (legacy compatibility).
-
-    Preserved ONLY for old SLURM scripts. New code should use `run()`.
-    WARNING: has known charge-state-bug in some configurations; verified
-    on R3 benchmarks (2026-04-22).
-    """
-    import subprocess
-    import sys
-
-    pdb_file = Path(pdb_file).resolve()
-    outdir = Path(outdir).resolve()
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    script = Path(__file__).resolve().parent.parent.parent / "scripts" / "run_neb_ts.py"
-
-    cmd = [
-        sys.executable, str(script),
-        str(pdb_file),
-        "--outdir", str(outdir),
-        "--model", model,
-        "--strategy", strategy,
-    ]
-    if charge is not None:
-        cmd.extend(["--charge", str(charge)])
-    if extra_args:
-        cmd.extend(extra_args)
-
-    log.info(f"ts legacy subprocess: {' '.join(cmd)}")
-    # Stream output (do not capture; these runs are long)
-    proc = subprocess.run(cmd)
-    if proc.returncode != 0:
-        log.error(f"  subprocess returned {proc.returncode}")
-
-    return {
-        "status": "completed" if proc.returncode == 0 else "failed",
-        "returncode": proc.returncode,
-        "outdir": str(outdir),
-        "outputs": {},
-    }

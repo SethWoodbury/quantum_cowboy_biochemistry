@@ -213,11 +213,11 @@ def _covalent_radius(symbol: str) -> float:
 
 
 # ---------------------------------------------------------------------------
-# xTB binary resolution (reuse what's already in qcb.mlff.xtb_refine)
+# xTB binary resolution (reuse what's already in quantum_engine.qm.xtb_refine)
 # ---------------------------------------------------------------------------
 
 def _resolve_xtb_binary() -> Optional[str]:
-    """Find xTB binary. Prefer qcb.mlff.xtb_refine's resolution, then PATH."""
+    """Find xTB binary. Prefer quantum_engine.qm.xtb_refine's resolution, then PATH."""
     try:
         from quantum_engine.qm.xtb_refine import XTB_BIN as _configured
         if _configured and os.path.isfile(_configured):
@@ -349,7 +349,7 @@ def spring_k_from_xtb(
             "method": "xtb_hessian",
             "atoms_included": 0,
             "success": False,
-            "diagnostics": "xTB binary not found (checked qcb.mlff.xtb_refine, qcb.config, PATH)",
+            "diagnostics": "xTB binary not found (checked quantum_engine.qm.xtb_refine, quantum_engine.config, PATH)",
         }
 
     # 1. Pick fragment indices

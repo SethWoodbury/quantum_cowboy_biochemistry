@@ -1,6 +1,6 @@
 """Intrinsic Reaction Coordinate (IRC) descent from a TS.
 
-Wraps qcb.mlff.irc.irc_from_ts_guess (full workflow) or run_irc (descent-only).
+Wraps quantum_engine.mlff.irc.irc_from_ts_guess (full workflow) or run_irc (descent-only).
 """
 from __future__ import annotations
 

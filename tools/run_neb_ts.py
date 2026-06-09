@@ -1,7 +1,7 @@
 from quantum_engine.units import EV_TO_KCAL
 #!/usr/bin/env python
 """
-DEPRECATED ENTRY POINT — use `scripts/qcb ts` or `python -m qcb.cli ts` instead.
+DEPRECATED ENTRY POINT — use `cowboy-qc ts` or `python -m quantum_engine.cli ts` instead.
 ================================================================================
 
 This script is the full TS-search pipeline (legacy/irc/cv-spring/mtd strategies
@@ -1230,7 +1230,7 @@ def run_neb(
     # NEB object
     neb = NEB(images, k=k_spring, allow_shared_calculator=False, method="improvedtangent")
 
-    # Interpolation: use qcb.mlff.interpolation unified entry point
+    # Interpolation: use quantum_engine.mlff.interpolation unified entry point
     # (supports geodesic, idpp, linear with automatic fallback)
     try:
         from quantum_engine.mlff.interpolation import interpolate as _qcb_interpolate
@@ -2437,7 +2437,7 @@ def run_pipeline(args):
                 make_calc, relax_dir, opt_c, fmax=args.fmax_end_final,
             )
         except ImportError:
-            log.warning("  qcb.mlff.endpoint_generation not found, falling back to spring method")
+            log.warning("  quantum_engine.mlff.endpoint_generation not found, falling back to spring method")
             start, end = generate_endpoints(
                 ase_atoms, bt_struct, ligand, opt_c, md_c, relax_dir,
                 spring_k=args.spring_k, spring_fmax=args.spring_fmax,
@@ -2453,7 +2453,7 @@ def run_pipeline(args):
                 make_calc, relax_dir, opt_c, n_steps=10, fmax=args.fmax_end_final,
             )
         except ImportError:
-            log.warning("  qcb.mlff.endpoint_generation not found, falling back to spring method")
+            log.warning("  quantum_engine.mlff.endpoint_generation not found, falling back to spring method")
             start, end = generate_endpoints(
                 ase_atoms, bt_struct, ligand, opt_c, md_c, relax_dir,
                 spring_k=args.spring_k, spring_fmax=args.spring_fmax,

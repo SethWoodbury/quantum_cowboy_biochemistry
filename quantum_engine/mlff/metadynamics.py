@@ -380,12 +380,27 @@ def _find_basins(grid: np.ndarray, fes: np.ndarray,
     return kept
 
 
-def _classify_basin(cv_val: float) -> Optional[str]:
-    if cv_val < -1.0:
+def _classify_basin(
+    cv_val: float,
+    *,
+    reactant_max: float = -1.0,
+    product_min: float = 2.0,
+    intermediate_range: tuple[float, float] = (-0.5, 1.5),
+) -> Optional[str]:
+    """Label a free-energy-surface minimum by its bond-difference CV value.
+
+    The default thresholds are **SN2-at-phosphorus heuristics** for the
+    bond-difference coordinate s = d(P,O_LG) − d(P,O_nuc) in Å (reactant: LG
+    still bonded, s ≪ 0; product: nucleophile bonded, s ≫ 0; pentacoordinate
+    intermediate near s ≈ 0). They are NOT reaction-agnostic — pass explicit
+    ``reactant_max``/``product_min``/``intermediate_range`` for other CVs.
+    """
+    lo, hi = intermediate_range
+    if cv_val < reactant_max:
         return "reactant"
-    if cv_val > 2.0:
+    if cv_val > product_min:
         return "product"
-    if -0.5 < cv_val < 1.5:
+    if lo < cv_val < hi:
         return "intermediate"
     return None
 

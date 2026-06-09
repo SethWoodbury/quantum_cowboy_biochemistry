@@ -11,7 +11,7 @@ extraction for QM/MM-style partitioning, plus:
 - *always-include*: explicit catalytic residues always make the cut
   regardless of distance (useful when the catres list is known a priori
   from a REMARK 666 line)
-- pairs cleanly with :func:`qcb.prep.cap.cap_backbone_h` for downstream
+- pairs cleanly with :func:`quantum_engine.prep.cap.cap_backbone_h` for downstream
   H-capping of the severed peptide bonds
 """
 

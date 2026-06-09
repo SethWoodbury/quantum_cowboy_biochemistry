@@ -2,7 +2,7 @@
 Backbone H-capping for cluster-cut active sites.
 
 When you carve a cluster out of a protein (e.g. with
-:func:`qcb.prep.extract.extract_active_site`), some residues end up with
+:func:`quantum_engine.prep.extract.extract_active_site`), some residues end up with
 severed peptide bonds — their backbone N (at the residue's "left" end) or
 backbone C (at the "right" end) was previously bonded to a neighbouring
 residue that didn't make the cut. For QM/MLFF calculations these dangling

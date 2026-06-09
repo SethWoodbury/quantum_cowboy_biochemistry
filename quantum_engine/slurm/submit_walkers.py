@@ -8,7 +8,7 @@ Modernisation vs enz-ts ``submit_rounds.sh`` + ``launch_walkers.sh``:
 
 * Pure Python — no shell stage. The sbatch script we generate just
   exec's a Python entry point that calls
-  :func:`qcb.ops.mtd_walkers.run_walker`. No env-var smuggling beyond
+  :func:`quantum_engine.ops.mtd_walkers.run_walker`. No env-var smuggling beyond
   the four SLURM provides natively.
 * Config is one JSON snapshot pickled to disk at submit time; every
   walker reads the same snapshot. Eliminates the rounds-edit-config
@@ -61,7 +61,7 @@ def _serialize_config(cfg: WalkerSweepConfig, snapshot_path: Path) -> Path:
 
 
 def _dump_cv(cv: Any) -> dict:
-    """Serialise a qcb.mlff.plumed_runner CV instance to a dict."""
+    """Serialise a quantum_engine.mlff.plumed_runner CV instance to a dict."""
     cls = type(cv).__name__
     return {"__class__": cls, **{k: v for k, v in cv.__dict__.items()}}
 
@@ -105,7 +105,7 @@ _SBATCH_TEMPLATE = """\
 #SBATCH -e {logs_dir}/r{round_num:03d}_w%a.err
 {gres_line}{deps_line}
 set -euo pipefail
-{python_bin} -m qcb.slurm.submit_walkers run-walker \\
+{python_bin} -m quantum_engine.slurm.submit_walkers run-walker \\
     --snapshot {snapshot} \\
     --walker-id "$SLURM_ARRAY_TASK_ID" \\
     --round {round_num}
@@ -285,7 +285,7 @@ def _detect_python() -> str:
 
 def _walker_main(argv: list[str]) -> int:
     import argparse
-    p = argparse.ArgumentParser(prog="qcb.slurm.submit_walkers")
+    p = argparse.ArgumentParser(prog="quantum_engine.slurm.submit_walkers")
     sub = p.add_subparsers(dest="cmd", required=True)
     rw = sub.add_parser("run-walker", help="Run a single walker for one round")
     rw.add_argument("--snapshot", required=True, type=Path)

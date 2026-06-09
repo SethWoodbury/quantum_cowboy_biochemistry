@@ -1137,20 +1137,6 @@ def _cmd_ts(args):
     from quantum_engine.io import load_structure, parse_constraints, build_fix_atoms
     from quantum_engine.select import preset_to_specs, STANDARD_EXCLUDED_RES
 
-    # Legacy subprocess mode (opt-in via --legacy-subprocess)
-    if getattr(args, "legacy_subprocess", False):
-        extra = list(args.passthrough or [])
-        if args.fix_preset:
-            extra.extend(["--constraint-mode", args.fix_preset])
-        if args.head:
-            extra.extend(["--head", args.head])
-        outdir = Path(args.outdir) if args.outdir else Path("qcb-ts-out")
-        return ts_op.run_legacy_subprocess(
-            args.input, outdir, strategy=args.strategy,
-            model=args.model, charge=args.charge, extra_args=extra,
-        )
-
-    # Native pipeline (default)
     atoms, bt_struct, charge_hint = load_structure(args.input)
     if args.charge is not None and charge_hint is not None and args.charge != charge_hint:
         logging.getLogger("quantum_engine.cli").warning(
@@ -1892,18 +1878,17 @@ def main(argv=None):
     p_ts.add_argument("--n-images", type=int, default=15)
     p_ts.add_argument("--interpolation", default="geodesic",
                       choices=["geodesic", "idpp", "linear"])
-    p_ts.add_argument("--cv-s-reactant", type=float, default=-2.0)
-    p_ts.add_argument("--cv-s-product", type=float, default=2.5)
+    p_ts.add_argument("--cv-s-reactant", type=float, default=-2.0,
+                      help="Reactant-basin target for the bond-difference CV s=d(P,lg)-d(P,nuc) (Å). "
+                           "Default -2.0 is an SN2-at-phosphorus heuristic; override for other reactions.")
+    p_ts.add_argument("--cv-s-product", type=float, default=2.5,
+                      help="Product-basin target for the bond-difference CV (Å). "
+                           "Default +2.5 is an SN2-at-phosphorus heuristic; override for other reactions.")
     p_ts.add_argument("--p-idx", type=int, default=None,
                       help="Override: P atom index for CV (auto-detected from ligand)")
     p_ts.add_argument("--nuc-idx", type=int, default=None)
     p_ts.add_argument("--lg-idx", type=int, default=None)
     p_ts.add_argument("--mtd-time-ps", type=float, default=100.0)
-    p_ts.add_argument("--legacy-subprocess", action="store_true",
-                      help="Use old subprocess wrapper around tools/run_neb_ts.py "
-                           "(has known energy-consistency bug; use only for backward compat)")
-    p_ts.add_argument("--passthrough", nargs=argparse.REMAINDER,
-                      help="(legacy-subprocess only) additional flags to pass to run_neb_ts.py")
     p_ts.add_argument("--log-level", default="INFO")
 
     # ts-entry — the reaction-agnostic orchestrator (ReactionSpec/RunContext)

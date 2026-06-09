@@ -1,3 +1,11 @@
+> ⚠️ **ARCHIVED (2026-06).** This guide documents the legacy `tools/run_neb_ts.py`
+> entry point, which is **deprecated**. The current, reaction-agnostic TS workflow is
+> `cowboy-qc ts-entry` (path → saddle → partial-Hessian → IRC-like gate). See
+> **[`ts_workflow.md`](ts_workflow.md)** (canonical core + entry-point decision tree),
+> **[`optimizers_and_engines.md`](optimizers_and_engines.md)** (swappable path/saddle/
+> optimizer/engine backends), and **[`extending.md`](extending.md)** (registering new
+> models/methods). Kept only for historical reference to the old NEB script interface.
+
 # NEB Transition State Search Guide
 
 Complete guide to the `run_neb_ts.py` pipeline for finding enzyme reaction barriers using MACE ML force fields.

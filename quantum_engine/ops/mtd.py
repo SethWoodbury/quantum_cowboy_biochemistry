@@ -1,4 +1,4 @@
-"""Well-tempered metadynamics (wraps qcb.mlff.metadynamics)."""
+"""Well-tempered metadynamics (wraps quantum_engine.mlff.metadynamics)."""
 from __future__ import annotations
 
 import logging

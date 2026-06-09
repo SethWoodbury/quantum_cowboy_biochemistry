@@ -46,7 +46,7 @@ Limitations
 -----------
 - GFN2 has known issues with charge-transfer states and multi-reference character
 - xTB optimization with constraints uses internal coordinates, some combinations fail
-- Requires xTB binary installed at the location in `qcb.config`
+- Requires xTB binary installed at the location in `quantum_engine.config`
 
 References
 ----------
@@ -76,7 +76,7 @@ log = logging.getLogger("quantum_engine.xtb_refine")
 
 def _resolve_xtb_binary() -> str | None:
     """Find xTB binary from quantum_engine.site, PATH, or None."""
-    # Prefer qcb.config (cluster-specific)
+    # Prefer quantum_engine.config (cluster-specific)
     try:
         from quantum_engine.site import XTB_BIN as _configured
         if _configured and os.path.isfile(_configured):
@@ -190,7 +190,7 @@ def xtb_optimize(
         (optimized_atoms_or_None, energy_eV_or_None). None if xTB failed.
     """
     if XTB_BIN is None or not os.path.isfile(XTB_BIN):
-        log.warning(f"  xTB binary not found (tried qcb.config and PATH)")
+        log.warning(f"  xTB binary not found (tried quantum_engine.config and PATH)")
         return None, None
 
     n_atoms = len(atoms)

@@ -8,7 +8,7 @@ everyone else's HILLS files at every ``WALKERS_RSTRIDE`` step so the
 deposited bias is collective. This module provides the orchestration
 around that PLUMED feature (PLUMED also has a separate top-level
 ``MULTIPLE_WALKERS`` action; we use the inline form because that's what
-``qcb.mlff.plumed_runner`` already emits):
+``quantum_engine.mlff.plumed_runner`` already emits):
 
 * :class:`WalkerSweepConfig` — single typed dataclass with every
   parameter for the sweep (no YAML hierarchy gymnastics).
@@ -16,11 +16,11 @@ around that PLUMED feature (PLUMED also has a separate top-level
   walker's working directory, decides whether to resume, runs MD with a
   multi-walker-configured PLUMED, and writes round-tagged outputs.
 * :func:`merge_walkers` — post-sweep aggregation: read every walker's
-  HILLS into a single :class:`qcb.analysis.fes.HillsData` (delegates to
-  :func:`qcb.analysis.fes.parse_hills_dir`).
+  HILLS into a single :class:`quantum_engine.analysis.fes.HillsData` (delegates to
+  :func:`quantum_engine.analysis.fes.parse_hills_dir`).
 
 The matching SLURM array job submitter lives in
-:mod:`qcb.slurm.submit_walkers` so the orchestration stays cleanly
+:mod:`quantum_engine.slurm.submit_walkers` so the orchestration stays cleanly
 separated from the cluster-specific submission policy.
 
 This is a modernised re-implementation of enz-ts's
@@ -68,7 +68,7 @@ class WalkerSweepConfig:
     # Required
     structure: Path                 # input structure (PDB or CIF)
     output_dir: Path                # parent dir for the sweep
-    cv: Any                         # qcb.mlff.plumed_runner CV instance
+    cv: Any                         # quantum_engine.mlff.plumed_runner CV instance
                                     # (DistanceCV, DistanceDifferenceCV, AngleCV, ...)
 
     # Walker / round counts
@@ -158,8 +158,8 @@ def run_walker(
     history; we don't restart velocities. The new round writes its own
     output to ``round_NNN/`` regardless.
 
-    The MD itself is delegated to :func:`qcb.mlff.metadynamics` for the
-    actual integrator, and :mod:`qcb.mlff.plumed_runner` for the multi-
+    The MD itself is delegated to :func:`quantum_engine.mlff.metadynamics` for the
+    actual integrator, and :mod:`quantum_engine.mlff.plumed_runner` for the multi-
     walker PLUMED setup. We just hand them the right paths.
 
     Args:
@@ -330,7 +330,7 @@ def merge_walkers(output_dir: Path) -> dict:
     PLUMED restart-backup files (``bck.*HILLS*``) are filtered out.
 
     Returns a dict ``{n_walkers, n_hills_total, hills: HillsData}`` ready
-    to feed into :func:`qcb.analysis.fes.fes_from_hills_2d` etc.
+    to feed into :func:`quantum_engine.analysis.fes.fes_from_hills_2d` etc.
     """
     import re
     output_dir = Path(output_dir)

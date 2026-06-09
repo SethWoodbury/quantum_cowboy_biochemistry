@@ -1,3 +1,9 @@
+> ⚠️ **ARCHIVED (2026-06).** These step-by-step protocols predate the reaction-agnostic
+> `cowboy-qc ts-entry` orchestrator and reference removed/renamed entry points. For the
+> current workflow see **[`ts_workflow.md`](ts_workflow.md)**,
+> **[`optimizers_and_engines.md`](optimizers_and_engines.md)**, and
+> **[`extending.md`](extending.md)**. Kept for historical reference only.
+
 # Standard Protocols
 
 Step-by-step protocols for common use cases with QCB.

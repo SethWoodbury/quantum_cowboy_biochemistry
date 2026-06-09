@@ -2,7 +2,7 @@
 
 Philosophy
 ----------
-The previous approach (`qcb.mlff.irc:_xtb_reference_bond_lengths` inside
+The previous approach (`quantum_engine.mlff.irc:_xtb_reference_bond_lengths` inside
 scripts/run_neb_ts.py) extracted the ligand AND first-shell coordinating
 atoms (metals, water, catalytic sidechains). This is slow (>30 atoms),
 expensive (xTB SCF convergence issues), and fragile (charge assignment to
