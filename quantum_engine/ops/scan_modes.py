@@ -50,6 +50,34 @@ def _relax(atoms, *, fmax, max_opt_steps, backend, logfile) -> int:
     return int(res.n_steps)
 
 
+def _pick_ts_guess(energies):
+    """Pick the TS-guess frame from a relaxed reactant->product scan profile.
+
+    Returns ``(ts_idx, reactant_basin_idx, barrierless)``.
+
+    In a *relaxed* scan the two endpoints are basins by construction (the scan
+    drives the reaction coordinate while everything else minimizes), so the
+    global energy maximum can land on a strained endpoint when the scan range
+    overshoots a basin. The transition state is therefore the highest *interior*
+    local maximum (a frame at least as high as both neighbours); the forward
+    barrier is measured from the lowest frame on its reactant side.
+
+    If there is no interior local maximum the profile is monotonic — barrierless
+    along this coordinate within the scanned range — and we fall back to the
+    global argmax with ``barrierless=True`` so callers can warn / widen the range.
+    """
+    e = np.asarray(energies, dtype=float)
+    n = e.size
+    if n < 3:
+        return int(np.argmax(e)), int(np.argmin(e)), True
+    interior = [i for i in range(1, n - 1) if e[i] >= e[i - 1] and e[i] >= e[i + 1]]
+    if not interior:
+        gi = int(np.argmax(e))
+        return gi, (int(np.argmin(e[: gi + 1])) if gi > 0 else 0), True
+    ts = max(interior, key=lambda i: e[i])
+    return ts, int(np.argmin(e[: ts + 1])), False
+
+
 def _assemble(values, energies, relax_steps, frames, outdir, *, label, meta):
     """Write csv/xyz/plot/summary and build the standard scan result dict."""
     from ase.io import write as ase_write  # noqa: PLC0415
@@ -80,30 +108,43 @@ def _assemble(values, energies, relax_steps, frames, outdir, *, label, meta):
     except Exception as exc:  # noqa: BLE001
         log.warning("  plot failed: %s", exc)
 
-    max_idx = int(np.argmax(energies))
+    ts_idx, reactant_basin_idx, barrierless = _pick_ts_guess(energies)
+    global_max_idx = int(np.argmax(energies))
+    barrier_kcal = float((energies[ts_idx] - energies[reactant_basin_idx]) * EV_TO_KCAL)
     result = {
         "status": "completed",
         "mode": meta.get("mode"),
-        "atoms": frames[max_idx].copy(),         # TS *guess* = profile peak
-        "ts_guess": frames[max_idx].copy(),
-        "ts_guess_idx": max_idx,
+        "atoms": frames[ts_idx].copy(),          # TS *guess* = highest interior maximum
+        "ts_guess": frames[ts_idx].copy(),
+        "ts_guess_idx": ts_idx,
+        "reactant_basin_idx": reactant_basin_idx,
+        "barrierless": barrierless,
         "coord_values": [float(v) for v in values],
         "energies_eV": energies.tolist(),
         "relative_energies_kcal": rel_kcal.tolist(),
-        "max_energy_idx": max_idx,
-        "max_coord_value": float(values[max_idx]),
-        "barrier_kcal": float(rel_kcal[max_idx]),
+        "max_energy_idx": global_max_idx,        # global argmax (may be an endpoint/basin)
+        "max_coord_value": float(values[global_max_idx]),
+        "ts_coord": float(values[ts_idx]),
+        "barrier_kcal": barrier_kcal,            # forward: E(TS guess) - E(reactant basin)
+        "energy_span_kcal": float(rel_kcal[global_max_idx]),
         "frames": frames,
         "outputs": {"csv": str(csv_path), "trajectory": str(xyz_path),
                     "plot": str(png_path) if png_path else None},
     }
-    summary = {**meta, "barrier_kcal": result["barrier_kcal"],
-               "max_coord_value": result["max_coord_value"],
+    summary = {**meta, "barrier_kcal": barrier_kcal, "ts_coord": result["ts_coord"],
+               "ts_guess_idx": ts_idx, "reactant_basin_idx": reactant_basin_idx,
+               "barrierless": barrierless, "max_coord_value": result["max_coord_value"],
+               "max_energy_idx": global_max_idx, "energy_span_kcal": result["energy_span_kcal"],
                "n_steps": len(values)}
     (outdir / f"{label}-summary.json").write_text(json.dumps(summary, indent=2))
     result["outputs"]["summary"] = str(outdir / f"{label}-summary.json")
-    log.info("scan-%s done: barrier = %.2f kcal/mol at coord = %.3f",
-             meta.get("mode"), result["barrier_kcal"], result["max_coord_value"])
+    if barrierless:
+        log.info("scan-%s done: NO interior barrier in range (monotonic) — span %.2f kcal/mol; "
+                 "widen/shift the range or inspect the profile",
+                 meta.get("mode"), result["energy_span_kcal"])
+    else:
+        log.info("scan-%s done: forward barrier = %.2f kcal/mol ; TS guess at coord = %.3f (frame %d)",
+                 meta.get("mode"), barrier_kcal, result["ts_coord"], ts_idx)
     return result
 
 

@@ -94,14 +94,26 @@ def _require() -> None:
 # divergence). Getting the model Hessians / trust radii / Gaussian thresholds
 # right requires the coords/energy/forces to be in genuine atomic units.
 
-def _atoms_to_geom(atoms: Atoms, coord_type: str = "cart"):
-    """Build a fresh pysisyphus :class:`Geometry` (BOHR) from an ASE ``Atoms`` (Å)."""
+def _atoms_to_geom(atoms: Atoms, coord_type: str = "cart", freeze_atoms=None):
+    """Build a fresh pysisyphus :class:`Geometry` (BOHR) from an ASE ``Atoms`` (Å).
+
+    ``freeze_atoms``: optional iterable of 0-based atom indices to hold fixed in
+    Cartesian space. pysisyphus zeroes the gradient on these atoms, so they stay
+    put through saddle searches AND chain-of-states grows — ``GrowingString``
+    grows nodes via ``Geometry.copy()``, which preserves ``freeze_atoms``, so the
+    interpolated nodes inherit the constraint too. ``None``/empty = no freeze
+    (unchanged behaviour).
+    """
     from pysisyphus.Geometry import Geometry
     from pysisyphus.constants import ANG2BOHR
+    kw = {}
+    if freeze_atoms is not None and len(freeze_atoms):
+        kw["freeze_atoms"] = list(freeze_atoms)
     return Geometry(
         atoms.get_chemical_symbols(),
         atoms.get_positions().flatten() * ANG2BOHR,   # Å -> bohr
         coord_type=coord_type,
+        **kw,
     )
 
 

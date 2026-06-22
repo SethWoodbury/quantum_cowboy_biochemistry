@@ -111,21 +111,25 @@ def _resolve_reactive_indices(
 ) -> list[int]:
     """Translate user-supplied reactive-atom specs to 0-based ASE indices.
 
-    Accepted formats:
-      - integer or numeric string: 1-based PDB serial number (preferred for
-        users who copy from a PDB viewer).
-      - ``"0:NAME"``: 0-based ASE index.
-      - ``"RES:ID:ATOM"``: residue-name + residue-id + atom-name (requires
-        the biotite template). Example: ``"SUB:1:P1"`` — note this lookup
-        is *user-driven*, not hardcoded.
-
-    The 1-based serial assumption matches the PDB spec; ``ase.io.read`` of a
-    PDB preserves order, so PDB serial == ASE index + 1.
+    With a PDB ``bt_template`` this delegates to the central resolver
+    (:func:`quantum_engine.io.atom_descriptor.resolve_atom`), which accepts EVERY
+    form: flexible descriptors (``OHX-O3``, ``A519-ZN``, ``ZN519-ZN``), ``serial:N``,
+    ``CHAIN:RESID:ATOM`` / ``RESNAME:RESID:ATOM`` (e.g. ``SUB:1:P1``), ``0:N``, and
+    bare ints as **1-based PDB serials** (the PDB-viewer convention; ``ase.io.read``
+    preserves order so serial == index+1). Without a template only int/``0:N`` work.
     """
     out: list[int] = []
+    table = None
+    if bt_template is not None:
+        from quantum_engine.io.atom_descriptor import AtomTable, resolve_atom
+        table = AtomTable.from_biotite(bt_template)
     for spec in reactive_atoms:
+        if table is not None:
+            out.append(resolve_atom(spec, table, bare_int="serial"))
+            continue
+        # No template: only integers (1-based serial) and explicit 0:N indices.
         if isinstance(spec, int):
-            out.append(spec - 1)  # interpret int as 1-based
+            out.append(spec - 1)
             continue
         s = str(spec).strip()
         if s.startswith("0:"):
@@ -134,31 +138,10 @@ def _resolve_reactive_indices(
         if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
             out.append(int(s) - 1)
             continue
-        # RES:ID:ATOM lookup
-        if bt_template is None:
-            raise ValueError(
-                f"reactive_atoms spec {s!r} requires a PDB template — pass "
-                "atomic indices instead, or load the structure from PDB."
-            )
-        parts = s.split(":")
-        if len(parts) != 3:
-            raise ValueError(
-                f"reactive_atoms spec {s!r} not in 'RES:ID:ATOM' form; "
-                "use integers (1-based PDB serial) or '0:idx'"
-            )
-        res_name, res_id, atom_name = parts
-        try:
-            res_id_int = int(res_id)
-        except ValueError as exc:
-            raise ValueError(f"residue id in {s!r} must be int") from exc
-        idxs = np.where(
-            (np.asarray(bt_template.res_name) == res_name)
-            & (np.asarray(bt_template.res_id) == res_id_int)
-            & (np.asarray(bt_template.atom_name) == atom_name)
-        )[0]
-        if not len(idxs):
-            raise ValueError(f"reactive_atoms spec {s!r} not found in template")
-        out.append(int(idxs[0]))
+        raise ValueError(
+            f"reactive_atoms spec {s!r} requires a PDB template — pass a 1-based "
+            "serial or '0:idx', or load the structure from PDB for descriptors."
+        )
 
     out_unique = sorted(set(out))
     if not out_unique:
@@ -424,6 +407,24 @@ def run(
         value=overlap,
     ))
     overall = all(c.passed for c in checks)
+
+    # Diagnostic: a "converged" result with too few imaginary modes almost always means
+    # the saddle search MINIMISED into a basin rather than climbing to a saddle (the
+    # classic Sella-Cartesian failure on flat enzyme surfaces — it fooled us once). Make
+    # that loud and actionable rather than a silent FAIL the user has to interpret.
+    if not overall and converged and (n_imag is not None) and n_imag < criteria.n_imag_expected:
+        from quantum_engine.analysis.ts_sanity import emit  # noqa: PLC0415
+        emit([("WARNING",
+            f"refine-ts converged (fmax {fmax_final:.3f} eV/Å) but found n_imag={n_imag} "
+            f"(expected {criteria.n_imag_expected}) — the search likely COLLAPSED into a basin "
+            f"(a minimum), not a transition state. If backend '{backend_used}' is a minimiser, retry "
+            f"with a CLIMBING backend: --backend dimer (seed it via --from-neb) or --backend sella-internal.")])
+
+    # Always surface a FLAT / SHALLOW / wrong-character caution (independent of pass/fail):
+    # a soft imaginary mode or low reactive-atom overlap means the TS is not sharply defined —
+    # at the MLFF level that is either a genuinely flat (well-catalysed) barrier or model smoothing.
+    from quantum_engine.analysis.ts_sanity import flag_flat_or_soft_ts as _flat_ts, emit as _emit_ts
+    _emit_ts(_flat_ts(imag_freq_cm=imag_freq_cm, reactive_overlap=overlap))
 
     # ------------------------------------------------------------------
     # Step 4: write artefacts

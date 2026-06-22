@@ -23,6 +23,13 @@ submit/
 slurm-*.out
 slurm-*.err
 
+# Heavy notebook run-output (trajectories / intermediates) — regenerable. Keep
+# only the curated deliverables/ subdir (small TS + endpoint PDBs).
+notebooks/*/output/*
+!notebooks/*/output/deliverables/
+# Stray root-level run logs (cos.log / optimizer.log / pysisyphus.log)
+/*.log
+
 # Per-id caches (M-CSA / ChEBI fetches; recreated on demand)
 data/mcsa_cache/
 data/chebi_cache/

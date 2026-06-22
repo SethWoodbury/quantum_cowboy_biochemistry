@@ -50,7 +50,7 @@ nb.submit_array_job(commands_file_path, qtime, cpus_per_task, job_name, memory, 
     requeue=requeue, max_restarts=max_restarts, pre_timeout_seconds=pre_timeout_seconds, extra_sbatch=extra_sbatch, force_redo=force_redo,) # requeue / resilience & escape hatch
 """.rstrip("\n")
 
-def sbatch(qtime="12:00:00", cpj=1, cpus="8", mem="64g", queue="gpu", gpu="'small'"):
+def sbatch(qtime="04:00:00", cpj=1, cpus="1", mem="6g", queue="gpu", gpu="'small'"):
     return (SBATCH.replace("@@QTIME@@", qtime).replace("@@CPJ@@", str(cpj))
             .replace("@@CPUS@@", str(cpus)).replace("@@MEM@@", mem)
             .replace("@@QUEUE@@", queue).replace("@@GPU@@", gpu))
@@ -61,15 +61,18 @@ def sbatch(qtime="12:00:00", cpj=1, cpus="8", mem="64g", queue="gpu", gpu="'smal
 def init_cell(profile):
     if profile == "opaa":
         proj = "opaa_theozyme"
+        _demo = "f'{HOME_DIR}codebase_projects/quantum_cowboy_biochemistry/notebooks/opaa_theozyme"
         sysblock = ("HOME_DIR      = '/home/woodbuse/'\n"
-                    "THEOZYME_DIR  = f'{HOME_DIR}for/antonia/opaa_theozyme/'\n"
+                    f"THEOZYME_DIR  = {_demo}/theozyme/'\n"
                     "SYSTEM_DIR    = THEOZYME_DIR        # the active-site / structure working dir\n")
-        wd = "f'{HOME_DIR}for/antonia/opaa_theozyme'"
+        wd = f"{_demo}'"
+        od = f"{_demo}/output/'"
     else:
         proj = "my_reaction"          # EDIT
         sysblock = ("HOME_DIR      = '/home/woodbuse/'\n"
                     "SYSTEM_DIR    = f'{HOME_DIR}my_reaction/'   # EDIT: your structure / active-site working dir\n")
         wd = "SYSTEM_DIR"
+        od = "SYSTEM_DIR"
     return f'''\
 # ═══════════════════════════════════════════════════════════════════════════════
 #  NOTEBOOK INITIALIZATION — run this cell at the start of every session
@@ -82,7 +85,7 @@ PROJECT_NAME = '{proj}'
 {sysblock}
 # >> manual overrides (set to None to use defaults)
 _WORKING_DIR_OVERRIDE = {wd}   # default: notebook directory
-_OUTPUT_DIR_OVERRIDE  = {wd}   # default: WORKING_DIR/output/
+_OUTPUT_DIR_OVERRIDE  = {od}   # default: WORKING_DIR/output/
 
 # >> subdirectories to create (each becomes an UPPERCASE <NAME>_DIR global)
 WORKING_SUBDIRS = ['cmds', 'submit', 'logs', 'FINAL']
@@ -138,7 +141,7 @@ GIT_DIR             = f'{{HOME_DIR}}git/'
 OBABEL_PATH         = f'{{HOME_DIR}}conda_envs/openbabel_env/bin/obabel'
 
 # >> CONTAINERS (Cowboy Quantum Chemistry) — EDIT to your deployed sif paths.
-#    MAIN_SIF has the MLFFs (MACE / MACE-OMol / ORB / AIMNet2) + xTB + the `qcb` CLI.
+#    MAIN_SIF has the MLFFs (MACE / MACE-OMol / ORB / AIMNet2) + xTB + the `cowboy-qc` CLI.
 #    UMA_SIF holds the FairChem models (UMA / eSEN / AllScAIP). The generative MODELS
 #    (React-OT proposer, AEFM refiner) each live in their own sidecar.
 MAIN_SIF    = '/net/software/containers/users/woodbuse/quantum_chem/quantum_chem-20260604.sif'
@@ -155,15 +158,18 @@ def APPTAINER(sif, gpu=True):
     """apptainer exec prefix (list). --nv for GPU; binds /home + /net."""
     return ['apptainer', 'exec'] + (['--nv'] if gpu else []) + ['--bind', '/home', '--bind', '/net', sif]
 
+# The `cowboy-qc` console-script is NOT baked into the sifs — invoke the CLI as a
+# module against the bind-mounted repo (PYTHONPATH) instead. One definition, reused
+# everywhere (qcb_cmd / sidecar_cmd / monitor / reaction-spec).
+CLI = ['env', f'PYTHONPATH={{QUANTUM_COWBOY_DIR}}', 'python', '-m', 'quantum_engine.cli']
+
 def qcb_cmd(model, *args, gpu=True):
-    """Full `cowboy-qc <args>` command (list) in the sif that can load `model`."""
-    return [*APPTAINER(container_for(model), gpu=gpu), 'cowboy-qc', *map(str, args)]
+    """Full cowboy-qc CLI command (list) in the sif that can load `model`."""
+    return [*APPTAINER(container_for(model), gpu=gpu), *CLI, *map(str, args)]
 
 def sidecar_cmd(sif, *args, gpu=True):
-    """A generative-sidecar command: cowboy-qc isn't installed there, so run the CLI module
-    with the bind-mounted repo on PYTHONPATH."""
-    return [*APPTAINER(sif, gpu=gpu), 'env', f'PYTHONPATH={{QUANTUM_COWBOY_DIR}}',
-            'python', '-m', 'quantum_engine.cli', *map(str, args)]
+    """A generative-sidecar command (React-OT / AEFM) in its own sif."""
+    return [*APPTAINER(sif, gpu=gpu), *CLI, *map(str, args)]
 
 # > SETUP
 for p in [WORKING_DIR, OUTPUT_DIR]:
@@ -190,24 +196,34 @@ def cells_init(profile):
 def defaults(profile):
     if profile == "opaa":
         return dict(
-            unprot='f"{THEOZYME_DIR}opaa_3l7g_optimal_maximal_theozyme_pxn_unprotonated.pdb"',
+            unprot='f"{THEOZYME_DIR}input_theozyme/opaa_3l7g_optimal_maximal_theozyme_pxn_unprotonated.pdb"',
             prot='f"{PROTOMERS_DIR}opaa_3l7g_optimal_maximal_theozyme_pxn.pdb"',
             model="'mace-polar-m'", head="None", charge="0", spin="1",
-            # SN2-at-P: O_nuc(hydroxide)..P forming, P..O_lg breaking. EDIT serials per structure.
-            f_nuc="'serial:1872'", f_elec="'serial:1850'", b_p="'serial:1850'", b_lg="'serial:1860'",
-            scan_nuc="1871", scan_p="1849",   # 0-based = serial-1 (for cowboy-qc scan / fix-bond)
-            react_serials="1872, 1850, 1860",   # 1-based serials (for refine-ts/validate-ts)
+            # SN2-at-P by atom DESCRIPTOR: nucleophile OHX-O3 attacks P (SUB-P1);
+            # the P-O7 (SUB-O7) leaving-group bond breaks. (Works for any reaction;
+            # see the ATOM TOKENS note. Also accepts serial:N / CHAIN:RESID:ATOM / index.)
+            f_nuc="'OHX-O3'", f_elec="'SUB-P1'", b_p="'SUB-P1'", b_lg="'SUB-O7'",
+            scan_nuc="'OHX-O3'", scan_p="'SUB-P1'",   # scanned forming bond O_nuc..P
+            react_serials="'OHX-O3', 'SUB-P1', 'SUB-O7'",   # reactive atoms (nuc, P, lg)
             ptm='{}',              # OPAA construct: NO post-translational modification (no KCX)
-            ligand_charges='{}',   # net charge of the protonated system = 0 (set on --charge)
+            # HETATM (non-protein) charge — NEVER assumed: 2x Zn(II) +2, bridging OHX -1, SUB 0 = +3
+            ligand_charges='{"ZN": 2, "OHX": -1, "SUB": 0}',
+            nonprotein_charge='None',
+            # monitor / CV atoms by descriptor (forming OHX-O3..SUB-P1, breaking SUB-P1..SUB-O7)
+            monitor_bonds=('[("OHX-O3", "SUB-P1"),    # forming: hydroxide O -> phosphorus\n'
+                           '                      ("SUB-P1", "SUB-O7")]    # breaking: phosphorus -> leaving-group O'),
         )
     return dict(
         unprot='f"{SYSTEM_DIR}structure_unprotonated.pdb"   # EDIT',
         prot='f"{PROTOMERS_DIR}structure.pdb"               # EDIT',
         model="'mace-polar-m'", head="None", charge="0", spin="1",
-        f_nuc="'serial:NUC'", f_elec="'serial:ELEC'", b_p="'serial:ELEC'", b_lg="'serial:LG'",
-        scan_nuc="0", scan_p="1",
-        react_serials="1, 2, 3",
-        ptm='{}', ligand_charges='{}',
+        f_nuc="'RES-NUC'", f_elec="'RES-CENTER'", b_p="'RES-CENTER'", b_lg="'RES-LG'",   # EDIT: e.g. OHX-O3, A519-ZN, serial:1872, 0:1848
+        scan_nuc="'RES-NUC'", scan_p="'RES-CENTER'",   # EDIT
+        react_serials="'RES-NUC', 'RES-CENTER', 'RES-LG'",   # EDIT
+        ptm='{}',
+        ligand_charges='{}',   # "RESNAME": charge for each non-water HETATM (none -> not assumed)
+        nonprotein_charge='None',
+        monitor_bonds='[]',
     )
 
 
@@ -231,6 +247,9 @@ MODEL_MENU = '''\
 
 def cell_protonate(profile, step):
     D = defaults(profile)
+    nonprot_note = ('# OPAA di-Zn site: 2x Zn(II) +2 + bridging OHX -1 + SUB 0  ->  +3'
+                    if profile == "opaa" else
+                    '# leave empty to report ONLY the protein charge (non-protein never assumed)')
     md = f"# **STEP {step}: Protonate / Generate Protomers**"
     code = f'''\
 ##################################################################
@@ -258,8 +277,7 @@ output_pdb = {D['prot']}
 
 ### CONSTANTS ###
 CONTAINER  = MAIN_SIF       # the cowboy-qc / protonator container (defined in INIT)
-PROTONATOR = f"{{QUANTUM_COWBOY_DIR}}quantum_engine/prep/protonator.py"
-# (`cowboy-qc protonate <same args>` is equivalent to running this file directly.)
+PROTONATOR = f"{{QUANTUM_COWBOY_DIR}}quantum_engine/prep/protonator.py" # (`cowboy-qc protonate <same args>` is equivalent to running this file directly.)
 
 ### PROTONATOR PARAMETERS ###
 # --- core ----------------------------------------------------------
@@ -277,9 +295,13 @@ set_overrides = {{}}
 # --- PTMs (you MUST declare them; residue is then frozen) ----------
 ptm        = {D['ptm']}            # "CHAIN:RESID": CODE (KCX SEP TPO PTR ...)
 ptm_charge = {{}}                  # "CHAIN:RESID": int (overrides default charge)
-# --- ligand ---------------------------------------------------------
+# --- non-protein (HETATM) charge — NEVER assumed; declare it yourself --------------
+# Per-residue formal charges (summed over INSTANCES, so two ZN at +2 -> +4), OR a
+# single total via nonprotein_charge. Reported as NET_THEOZYME_NONPROTEIN_CHARGE.
+{nonprot_note}
 protonate_ligands = False      # stub (HETATM assumed already protonated)
-ligand_charges    = {D['ligand_charges']}   # "RESNAME": charge (for total-charge reporting)
+ligand_charges    = {D['ligand_charges']}   # "RESNAME": charge per non-water HETATM
+nonprotein_charge = {D['nonprotein_charge']}        # int OVERRIDES the dict with one total; None = use dict
 # --- protomer tuning (only when protomers > 1) ---------------------
 protomer_min_prob     = 0.15
 protomer_max_variable = 12
@@ -312,6 +334,7 @@ for k, v in set_overrides.items():   cmd += ["--set", f"{{k}}={{v}}"]
 for k, v in ptm.items():             cmd += ["--ptm", f"{{k}}={{v}}"]
 for k, v in ptm_charge.items():      cmd += ["--ptm-charge", f"{{k}}={{v}}"]
 for k, v in ligand_charges.items():  cmd += ["--ligand-charge", f"{{k}}={{v}}"]
+if nonprotein_charge is not None:    cmd += ["--nonprotein-charge", str(nonprotein_charge)]
 if protonate_ligands: cmd += ["--protonate-ligands"]
 if protomers > 1:
     cmd += ["--protomer-min-prob", str(protomer_min_prob), "--protomer-max-variable", str(protomer_max_variable)]
@@ -341,6 +364,7 @@ if print_commands:
 
 
 def cell_monitor(profile, step):
+    D = defaults(profile)
     md = f"# **STEP {step}: Monitor Active Site (bond / metal coordination)**"
     code = f'''\
 ##################################################################
@@ -353,21 +377,23 @@ def cell_monitor(profile, step):
 print_commands = True
 
 ### INPUTS ###
-input_pdb = {defaults(profile)['prot']}
+input_pdb = {D['prot']}
 
 ### OUTPUTS ###
 out_dir = MONITOR_DIR
 
 ### MONITOR PARAMETERS ###
-# 0-based atom-index pairs to measure (e.g. forming/breaking bonds); [] for none.
-monitor_bond_pairs = []        # e.g. [(1849, 1871)]   (0-based ASE indices)
+# Atom pairs to measure. Each atom is a descriptor — RESNAME-ATOM (OHX-O3),
+# <Chain><ResNo>-ATOM (A519-ZN), <RESNAME><ResNo>-ATOM (ZN519-ZN), CHAIN:RESID:ATOM
+# (A:519:ZN) — or a 0-based index. (`cowboy-qc monitor --bond` resolves these.)
+monitor_bond_pairs = {D['monitor_bonds']}
 report_metals      = True      # auto-detect metals + their coordination shells
 
 ### CONSTANTS ###
 CONTAINER = MAIN_SIF
 
 ### BUILD THE COMMAND ###
-cmd = [*APPTAINER(CONTAINER, gpu=False), "cowboy-qc", "monitor", input_pdb, "--outdir", out_dir]
+cmd = [*APPTAINER(CONTAINER, gpu=False), *CLI, "monitor", input_pdb, "--outdir", out_dir]
 for i, j in monitor_bond_pairs: cmd += ["--bond", f"{{i}},{{j}}"]
 if report_metals: cmd += ["--metals"]
 
@@ -392,8 +418,10 @@ def cell_reaction_spec(profile, step):
 # forming/breaking bonds, the reactive atoms (imag-mode overlap set), and an optional
 # 1-D collective variable (cv) used by scans + the reactant-only entry.
 #
-# ATOM TOKENS: "serial:N" (1-based PDB serial, RECOMMENDED), "CHAIN:RESID:NAME"
-#              (e.g. "A:169:NZ"), or a bare 0-based ASE index. Use one style consistently.
+# ATOM TOKENS (every cowboy-qc command that takes a PDB resolves these): RESNAME-ATOM
+#              (OHX-O3, SUB-P1), <Chain><ResNo>-ATOM (A519-ZN), <RESNAME><ResNo>-ATOM
+#              (ZN519-ZN), CHAIN:RESID:ATOM (A:169:NZ), serial:N (1-based), 0:N, or a
+#              0-based index. A token must be UNIQUE — ambiguous ones error with candidates.
 # IMPORTANT: charge & multiplicity are NOT read from this YAML — always pass --charge/--multiplicity on
 #            every cowboy-qc command (the YAML keys would be silently ignored).
 
@@ -410,9 +438,10 @@ spec_path = f"{{REACTION_SPEC_DIR}}reaction_spec.yaml"
 forming_bonds  = [({D['f_nuc']}, {D['f_elec']})]     # e.g. O_nuc -> P
 breaking_bonds = [({D['b_p']}, {D['b_lg']})]     # e.g. P -> O_leaving
 reactive_atoms = [{D['f_nuc']}, {D['f_elec']}, {D['b_lg']}]   # atoms on the imaginary mode
-# Optional 1-D collective variable (bond_difference: s = d(a,b) - d(a,c)); set cv_kind=None to omit.
+# Optional 1-D collective variable (bond_difference: s = d(a,b) - d(a,c) over EXACTLY 3
+# atoms [a=center, b=breaking-partner, c=forming-partner]); set cv_kind=None to omit.
 cv_kind  = "bond_difference"
-cv_atoms = [{D['f_nuc']}, {D['f_elec']}, {D['b_p']}, {D['b_lg']}]   # [a, b, a, c]
+cv_atoms = [{D['b_p']}, {D['b_lg']}, {D['f_nuc']}]   # [center, breaking, forming]
 # Optional reactant->product atom map for double-ended methods ({{}} = identical ordering).
 atom_map = {{}}
 
@@ -436,7 +465,7 @@ Path(spec_path).write_text(spec_yaml)
 print(f"# wrote {{spec_path}}\\n"); print(spec_yaml)
 
 ### BUILD + PRINT VALIDATION COMMAND ###
-cmd = [*APPTAINER(CONTAINER, gpu=False), "cowboy-qc", "reaction-spec", spec_path, "--structure", struct_pdb]
+cmd = [*APPTAINER(CONTAINER, gpu=False), *CLI, "reaction-spec", spec_path, "--structure", struct_pdb]
 if print_commands:
     print("### VALIDATE (copy-paste into terminal) ###")
     print(" ".join(str(x) for x in cmd))
@@ -453,11 +482,10 @@ def cell_relax(profile, step):
 ##################################################################
 # Relax ANY input geometry: a reactant, a product, a TS-region pose, or the whole
 # protonated cluster. The constraint regime is the key knob:
-#   * unconstrained   (fix_preset='none')      -> a true minimum (final R / P endpoints)
-#   * CA-frozen        (fix_preset='ca-only')  -> scaffold the backbone, let chemistry breathe
-#   * bond-pinned      (fix_bonds=[...])        -> hold the forming/breaking distance(s) while
-#                                                  everything else relaxes (constrained TS-region min)
-# fix_bond / restrain_bond use 0-based ASE indices (= PDB serial - 1).
+#   * unconstrained    (fix_preset='none')      -> a true minimum (final R / P endpoints)
+#   * CA-frozen        (fix_preset='ca-only')   -> scaffold the backbone, let chemistry breathe
+#   * bond-pinned      (fix_bonds=[...])        -> hold the forming/breaking distance(s) while everything else relaxes (constrained TS-region min)
+# fix_bond / restrain_bond atoms accept any token: descriptor (OHX-O3, A519-ZN), serial:N, CHAIN:RESID:ATOM, or a 0-based index. (Trailing R0/K stays numeric.)
 
 ### INPUTS ###
 input_pdb = {D['prot']}        # the geometry to relax (reactant / product / ts-region / cluster)
@@ -466,20 +494,35 @@ input_pdb = {D['prot']}        # the geometry to relax (reactant / product / ts-
 out_dir     = f"{{RELAX_MINIMIZE_DIR}}relax/"
 relaxed_pdb = f"{{out_dir}}relaxed.pdb"
 
-{MODEL_MENU}
-model  = {D['model']}
-head   = {D['head']}            # MACE multi-head only (e.g. 'omol' for mace-mh-1); None for polar/omol
-device = "cuda"
-charge       = {D['charge']}        # FULL-cluster net charge (CLI-only; the spec YAML ignores charge/multiplicity)
-multiplicity = {D['spin']}        # spin MULTIPLICITY M=2S+1 (1=singlet/no radicals, 2=doublet, 3=triplet)
-                                    # NOTE: the CLI flag is --multiplicity. (--spin takes S and converts to 2S+1.)
+### ENERGY MODEL (plug-and-play: change `model`/`head`; container_for() picks the sif) ###
+# Charged METAL active sites (e.g. di-Zn) — use a CHARGE-AWARE model:
+#   mace-polar-m : polarizable + long-range electrostatics — IDEAL for a charged metal pocket (DEFAULT; baked into MAIN_SIF, loads in-process). sizes -s|-m|-l
+#   mace-omol    : wB97M-V/OMol25, charge-aware, highest accuracy (large GPU: A6000/H200)
+#   mace-mh-1    : multi-head foundation model -> set head='omol' for the OMol25 head
+#   orb-mol-conservative : Orbital-Materials, charge/spin-aware, Zn-capable (true gradients)
+#   uma-m-1p1 / esen-sm-conserving / allscaip-md-conserving : FairChem (route to UMA_SIF)
+# Organic-only (NO metals): mace-off-* (wB97M organic) ; aimnet2-rxn (CHON, TS-tuned).
+# AVOID GFN2-xTB on metals (not charge-aware there). --head applies to MACE multi-head only.
+model        = 'mace-polar-m'
+head         = None            # MACE multi-head only (e.g. 'omol' for mace-mh-1); None for polar/omol
+device       = "cuda"
+charge       = 0               # FULL-cluster net charge (CLI-only; the spec YAML ignores charge/multiplicity)
+multiplicity = 1               # spin MULTIPLICITY M=2S+1 (1=singlet/no radicals, 2=doublet, 3=triplet) # NOTE: the CLI flag is --multiplicity. (--spin takes S and converts to 2S+1.)
 
 ### CONSTRAINTS ###
-fix_preset = "ca-only"          # 'none' | 'ca-only' | 'backbone' | 'backbone-water'
-extra_fix  = []                 # extra select specs, e.g. ['residue HOH', 'chain B', 'resid 169']
-extra_free = []                 # subtract from the preset, e.g. ['atoms ZN1 ZN2']
-fix_bonds      = []             # hard-pin: [[i, j]] or [[i, j, R0]]  (0-based ASE idx)  e.g. [[{D['scan_p']}, {D['scan_nuc']}]]
+fix_preset     = "ca-only"      # 'none' | 'ca-only' | 'backbone' | 'backbone-water'
+extra_fix      = []             # extra select specs, e.g. ['residue HOH', 'chain B', 'resid 169']
+extra_free     = []             # subtract from the preset, e.g. ['atoms ZN1 ZN2']
+fix_bonds      = []             # hard-pin: [[A, B]] or [[A, B, R0]] (atom tokens)  e.g. [[{D['scan_p']}, {D['scan_nuc']}]]
 restrain_bonds = []             # harmonic: [[i, j, K, R0]]  (0-based; K in eV/A^2)
+
+### TS-GUESS AUTO-PIN (pull forming/breaking bonds from the STEP-2 reaction spec) ###
+# A TS-region pose is a SADDLE: a plain minimizer rolls downhill OFF it and collapses to the
+# reactant or product. Set is_ts_guess=True to auto-pin the reaction-spec's forming+breaking
+# bonds (at their current lengths) so only the scaffold/H-bonds/waters relax. Pins in `fix_bonds`
+# above are ADDED on top; set is_ts_guess=False for a reactant/product/cluster (a real minimum).
+is_ts_guess        = True
+reaction_spec_yaml = f"{{REACTION_SPEC_DIR}}reaction_spec.yaml"   # STEP 2 output (forming/breaking bonds)
 
 ### OPT PARAMETERS ###
 optimizer = "lbfgs"             # lbfgs | bfgs | fire
@@ -502,7 +545,17 @@ if head: cmd += ["--head", head]
 cmd += ["--fix-preset", fix_preset]
 for s in extra_fix:  cmd += ["--fix", s]
 for s in extra_free: cmd += ["--free", s]
-for b in fix_bonds:      cmd += ["--fix-bond", *map(str, b)]
+# is_ts_guess: pin the STEP-2 reaction spec's forming+breaking bonds (held at current length)
+auto_fix_bonds = []
+if is_ts_guess:
+    import yaml
+    if not Path(reaction_spec_yaml).is_file():
+        raise FileNotFoundError(f"is_ts_guess=True needs the STEP-2 reaction spec: {{reaction_spec_yaml}}")
+    _rs = yaml.safe_load(Path(reaction_spec_yaml).read_text()) or {{}}
+    auto_fix_bonds = [list(b) for b in (_rs.get("forming_bonds") or [])] + \\
+                     [list(b) for b in (_rs.get("breaking_bonds") or [])]
+    print(f"# is_ts_guess=True -> auto-pinned {{len(auto_fix_bonds)}} reaction bond(s): {{auto_fix_bonds}}")
+for b in (auto_fix_bonds + list(fix_bonds)): cmd += ["--fix-bond", *map(str, b)]
 for b in restrain_bonds: cmd += ["--restrain-bond", *map(str, b)]
 cmd += ["--optimizer", optimizer, "--fmax", fmax, "--max-steps", max_steps,
         "--outdir", out_dir, "--output-pdb", relaxed_pdb]
@@ -512,50 +565,86 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Output: {{relaxed_pdb}}")
-{sbatch(qtime="12:00:00", cpus="8", mem="64g", queue="gpu", gpu="'small'")}
+{sbatch(qtime="02:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
 
 def cell_scan(profile, step):
     D = defaults(profile)
-    md = f"# **STEP {step}: 1-D Relaxed Scan → TS Guess + Endpoints (`cowboy-qc scan`)**"
+    md = f"""# **STEP {step}: 1-D Relaxed Scan → Reactant, Product & TS Guess (`cowboy-qc scan`)**
+
+A 1-D *relaxed* scan slides one reaction coordinate and re-minimizes everything else at each
+step. In one shot it yields the **reactant** (one end), the **product** (other end), and a
+**TS guess** (highest-energy frame) that feeds `refine-ts`.
+
+**Two coordinate choices — set `scan_kind`:**
+
+| `scan_kind` | coordinate | when to use |
+|---|---|---|
+| `"bond"` | one forming/breaking bond distance `d(i,j)` | a single bond dominates the step |
+| `"bond-difference"` | the More-O'Ferrall–Jencks CV `s = d(center,breaking) − d(center,forming)` | **SN2-like** steps — drives both bonds antisymmetrically and does **not** pre-bias concerted vs stepwise *(recommended here)* |
+
+**Direction matters** — the scan always runs **reactant → product**, so `frame[0]` is the reactant
+and `frame[-1]` the product:
+- `"bond"` on the *forming* bond: **long** (nucleophile far ⇒ reactant) → **short** (bonded ⇒ product).
+- `"bond-difference"`: **s ≪ 0** (reactant) → **s ≫ 0** (product).
+
+> ⚠️ **Your monitor showed the active site already near the TS** (O3–P ≈ 1.97 Å bonded, P–O7
+> stretched). So push the **reactant** end far enough (O3–P ≳ 3.2 Å, or `s ≈ −2.5`) to reach a
+> clean reactant basin, and don't be surprised if the TS guess lands near `frame[0]`. If a
+> **pentacoordinate phosphorane intermediate** is real you'll see a dip mid-scan — the optional
+> **2-D scan below** resolves concerted vs stepwise.
+
+**Troubleshooting**
+- *Product never forms / reactant never separates* → widen `scan_start`/`scan_end`.
+- *Jagged profile / hysteresis* → more `scan_n_steps`, lower `scan_fmax`, or use `"bond-difference"`.
+- *A bond snaps or the cluster distorts* → tighten `fix_preset` (e.g. `"backbone"`) so only the coordinate moves.
+- *Endpoints look swapped* → re-check the direction note above (`frame[0]` must be the reactant)."""
     code = f'''\
 ##################################################################
-###     1-D RELAXED SCAN   (cowboy-qc scan; bond / angle / dihedral) ###
+###     1-D RELAXED SCAN   (cowboy-qc scan; reactant -> product) ###
 ##################################################################
-# Slide one internal coordinate (a forming/breaking BOND for SN2-like steps) and
-# relax everything else at each step. The scan gives you, in one shot:
-#   * an approximate reactant basin (one end of the scan)
-#   * an approximate product basin  (other end)
-#   * an approximate TS guess        (highest-energy frame)  -> feeds Step refine-ts
-# cowboy-qc scan INDICES are 0-based ASE indices (= PDB serial - 1).
+# Slides the reaction coordinate and relaxes everything else at each step ->
+# reactant (frame 0), product (last frame), TS guess (highest-E frame -> refine-ts).
+# Atom tokens are descriptors (OHX-O3), serial:N, CHAIN:RESID:ATOM, or 0-based indices.
 
 ### INPUTS ###
 relaxed_pdb = f"{{RELAX_MINIMIZE_DIR}}relax/relaxed.pdb"   # usually the CA-frozen relaxed cluster
 
 ### OUTPUTS ###
-# A 1-D relaxed scan IS a (single-ended, 1-coordinate) PATH SEARCH: it yields a TS
-# GUESS (highest-E frame) AND approximate reactant/product endpoints (the two ends).
 out_dir           = f"{{SCAN_DIR}}scan/"
 ts_guess_pdb      = f"{{out_dir}}ts_guess.pdb"        # max-energy frame -> Step refine-ts
-reactant_scan_pdb = f"{{out_dir}}reactant_scan.pdb"  # first frame (approx reactant) -> minimize next
-product_scan_pdb  = f"{{out_dir}}product_scan.pdb"   # last frame  (approx product)  -> minimize next
+reactant_scan_pdb = f"{{out_dir}}reactant_scan.pdb"  # frame 0   (approx reactant) -> minimize next
+product_scan_pdb  = f"{{out_dir}}product_scan.pdb"   # last frame (approx product) -> minimize next
 
 ### ENERGY MODEL ###
 model, head, device = {D['model']}, {D['head']}, "cuda"   # default mace-polar-m (see relax cell's menu)
 charge, multiplicity = {D['charge']}, {D['spin']}                 # net charge (CLI-only); multiplicity M=2S+1 (1=singlet)
 
 ### CONSTRAINTS ###
-fix_preset = "ca-only"          # the scanned bond is auto-pinned ON TOP of this preset
+fix_preset = "ca-only"          # the scanned coordinate is auto-pinned ON TOP of this preset
+
+### REACTION-COORDINATE ATOMS (descriptors) ###
+center   = {D['b_p']}     # shared atom = the electrophilic centre (P)
+forming  = {D['f_nuc']}   # FORMING-bond partner (nucleophile -> centre)
+breaking = {D['b_lg']}    # BREAKING-bond partner (centre -> leaving group)
 
 ### SCAN PARAMETERS ###
-scan_indices = [{D['scan_nuc']}, {D['scan_p']}]    # 0-based ASE indices of the scanned coordinate (e.g. O_nuc..P)
-scan_coord   = "bond"           # bond | angle | dihedral
-scan_start   = 1.6              # A  (TS-like end of a forming bond)
-scan_end     = 3.0              # A  (well past bond-broken)
+scan_kind    = "bond-difference"   # "bond" (one forming bond) | "bond-difference" (MOJ CV; recommended for SN2)
 scan_n_steps = 16
 scan_fmax    = 0.05
+# Direction is ALWAYS reactant -> product, so frame[0]=reactant and frame[-1]=product:
+if scan_kind == "bond":
+    scan_coord, scan_indices = "bond", [forming, center]   # the forming bond, e.g. O_nuc..P
+    scan_start, scan_end = 3.2, 1.6        # Angstrom: reactant (nuc far) -> product (nuc bonded)
+    traj_name = "scan-trajectory.xyz"
+elif scan_kind == "bond-difference":
+    scan_coord, scan_indices = "bond-difference", [center, breaking, forming]
+    scan_start, scan_end = -2.5, 2.5       # CV s (Angstrom): reactant (s<0) -> product (s>0)
+    traj_name = "scan-bonddiff-trajectory.xyz"
+else:
+    raise ValueError("scan_kind must be 'bond' or 'bond-difference'")
 
 ### CONSTANTS ###
 template_pdb = relaxed_pdb      # residue-annotation template for the extracted PDB
@@ -570,7 +659,7 @@ if not Path(relaxed_pdb).is_file():
 Path(out_dir).mkdir(parents=True, exist_ok=True)
 
 ### GENERATE COMMANDS ###
-# 1) the scan; 2) a tiny helper that extracts the max-energy frame as a TS-guess PDB.
+# 1) the scan; 2) a helper that pulls reactant/product/TS-guess frames out as PDBs.
 commands = []
 cmd_scan  = qcb_cmd(model, "scan", relaxed_pdb, "--model", model, "--charge", charge,
                     "--multiplicity", multiplicity, "--device", device, "--fix-preset", fix_preset,
@@ -579,29 +668,90 @@ cmd_scan  = qcb_cmd(model, "scan", relaxed_pdb, "--model", model, "--charge", ch
                     "--fmax", scan_fmax, "--outdir", out_dir)
 extract_py = f"{{out_dir}}extract_frames.py"
 Path(extract_py).write_text(textwrap.dedent(f"""\\
-    import ase.io as io
+    import ase.io as io, json, glob
     from quantum_engine.io import load_structure, write_pdb
-    frames = io.read(r'{{out_dir}}scan-trajectory.xyz', index=':')
-    e = lambda a: a.info.get('energy_eV', a.get_potential_energy())
-    i = max(range(len(frames)), key=lambda k: e(frames[k]))
-    _, bt, _ = load_structure(r'{{template_pdb}}')
-    write_pdb(frames[0],  bt, r'{{reactant_scan_pdb}}', total_charge={{charge}})
-    write_pdb(frames[-1], bt, r'{{product_scan_pdb}}',  total_charge={{charge}})
-    write_pdb(frames[i],  bt, r'{{ts_guess_pdb}}',      total_charge={{charge}})
-    print(f'TS guess = frame {{{{i}}}}/{{{{len(frames)}}}} ; reactant=frame 0 ; product=frame {{{{len(frames)-1}}}}')
+    OUT      = r'{{out_dir}}'
+    TRAJ     = r'{{out_dir}}{{traj_name}}'
+    TEMPLATE = r'{{template_pdb}}'
+    CHARGE   = {{charge}}
+    frames = io.read(TRAJ, index=':')   # frame 0 = reactant, last = product
+    energy = lambda a: a.info['energy_eV'] if 'energy_eV' in a.info else a.get_potential_energy()
+    # TS-guess frame = highest INTERIOR maximum (the scan summary picks it; endpoints are basins).
+    sums = sorted(glob.glob(OUT + '*-summary.json'))
+    if sums:
+        s = json.loads(open(sums[0]).read()); i = int(s['ts_guess_idx']); barrierless = s.get('barrierless', False)
+    else:
+        es = [energy(a) for a in frames]
+        interior = [k for k in range(1, len(es) - 1) if es[k] >= es[k - 1] and es[k] >= es[k + 1]]
+        i = max(interior, key=lambda k: es[k]) if interior else max(range(len(es)), key=lambda k: es[k])
+        barrierless = not interior
+    _, bt, _ = load_structure(TEMPLATE)
+    write_pdb(frames[0],  bt, r'{{reactant_scan_pdb}}', total_charge=CHARGE)
+    write_pdb(frames[-1], bt, r'{{product_scan_pdb}}',  total_charge=CHARGE)
+    write_pdb(frames[i],  bt, r'{{ts_guess_pdb}}',      total_charge=CHARGE)
+    print('TS guess = frame %d/%d ; reactant=frame 0 ; product=frame %d' % (i, len(frames) - 1, len(frames) - 1))
+    if barrierless:
+        print('# WARNING: no interior barrier (monotonic) -> TS guess is an endpoint; widen/shift the scan range.')
 """))
 cmd_extract = [*APPTAINER(container_for(model)), "python", extract_py]
 commands.append(" ".join(str(x) for x in cmd_scan))
 commands.append(" ".join(str(x) for x in cmd_extract))
 with open(commands_file_path, "w") as f:
     f.write("\\n".join(commands) + "\\n")
-print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
+print(f"# scan_kind={{scan_kind}} ; {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
-print(f"\\n# Outputs: {{out_dir}}scan-trajectory.xyz, scan-summary.json, scan.png")
-print(f"#          TS guess: {{ts_guess_pdb}} ; endpoints: {{reactant_scan_pdb}}, {{product_scan_pdb}}")
-{sbatch(qtime="24:00:00", cpj=2, cpus="8", mem="64g", queue="gpu", gpu="'small'")}
+print(f"\\n# Outputs: {{out_dir}}{{traj_name}}, scan*-summary.json, scan*.png")
+print(f"#          TS guess: {{ts_guess_pdb}} ; endpoints: {{reactant_scan_pdb}} (reactant), {{product_scan_pdb}} (product)")
+{sbatch(qtime="04:00:00", cpj=2, cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
-    return [("markdown", md), ("code", code)]
+    md2 = """## *(optional)* 2-D Relaxed Scan — concerted vs stepwise diagnostic (`cowboy-qc scan2d`)
+
+Drives the **forming** (center–forming) and **breaking** (center–breaking) bonds *independently*
+on a grid around a TS guess, relaxing everything else. Reading the 2-D energy map:
+- a single **diagonal ridge** ⇒ **concerted** (one TS; both bonds change together);
+- a distinct **off-diagonal basin** ⇒ **stepwise** via a **pentacoordinate phosphorane** intermediate.
+
+Diagnostic only (no endpoints) and ~grid² relaxations, so it's pricier — run it when you suspect a
+stepwise mechanism (as the near-TS geometry here hints); skip it for a routine concerted step."""
+    code2 = f'''\
+##################################################################
+###  (OPTIONAL) 2-D RELAXED SCAN   (cowboy-qc scan2d; diagnostic) ###
+##################################################################
+# Grid scan of the FORMING (center-forming) x BREAKING (center-breaking) bonds around a
+# TS guess. Off-diagonal basin => stepwise (pentacoordinate intermediate); diagonal ridge
+# => concerted. PRINTS the command (copy-paste / sbatch). ~grid^2 relaxations.
+
+print_commands = True
+
+### INPUTS ###
+ts_guess_pdb = f"{{SCAN_DIR}}scan/ts_guess.pdb"   # from the 1-D scan above (or any TS-like geometry)
+
+### OUTPUTS ###
+out_dir_2d = f"{{SCAN_DIR}}scan2d/"
+
+### COORDINATE BONDS (descriptors) + ENERGY MODEL ###
+center, forming, breaking = {D['b_p']}, {D['f_nuc']}, {D['b_lg']}
+model, head, device  = {D['model']}, {D['head']}, "cuda"
+charge, multiplicity = {D['charge']}, {D['spin']}
+
+### SCAN2D PARAMETERS ###
+grid    = "5x5"     # n_a x n_b relaxed grid points (cost ~ n_a*n_b)
+delta_d = 0.20      # Angstrom step per bond, out from the TS guess
+
+### SANITY + COMMAND ###
+Path(out_dir_2d).mkdir(parents=True, exist_ok=True)
+cmd_2d = qcb_cmd(model, "scan2d", "--input", ts_guess_pdb, "--ts-guess", ts_guess_pdb,
+                 "--bond-a", f"{{forming}},{{center}}", "--bond-b", f"{{center}},{{breaking}}",
+                 "--grid", grid, "--delta-d", delta_d, "--charge", charge,
+                 "--multiplicity", multiplicity, "--device", device, "--outdir", out_dir_2d)
+if head: cmd_2d += ["--head", head]
+if print_commands:
+    print("### (optional) 2-D scan command (copy-paste / sbatch) ###")
+    print(" ".join(str(x) for x in cmd_2d))
+    print(f"\\n# Output: {{out_dir_2d}}  (energy grid + plot; off-diagonal basin = stepwise/pentacoordinate)")
+{sbatch(qtime="04:00:00", cpj=1, cpus="1", mem="6g", queue="gpu", gpu="'small'")}
+'''
+    return [("markdown", md), ("code", code), ("markdown", md2), ("code", code2)]
 
 
 def cell_min_endpoints(profile, step):
@@ -662,7 +812,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Outputs: {{R_min}} , {{P_min}}  (barrier = E(TS) - E(reactant_min))")
-{sbatch(qtime="12:00:00", cpj=2, cpus="8", mem="64g", queue="gpu", gpu="'small'")}
+{sbatch(qtime="03:00:00", cpj=2, cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -679,8 +829,11 @@ def cell_path_search(profile, step, optional=False):
 # ONE cell, plug-and-play method. Between a reactant and product (the MINIMIZED
 # endpoints), find a TS guess. Set `path_method`:
 #   'ci-neb' : climbing-image NEB (cowboy-qc neb) — robust, geodesic interp, honours --fix-preset
-#   'gsm'    : Growing String (cowboy-qc gsm --method gsm) — cheaper; NO ASE constraints
-#   'fsm'    : Freezing String (cowboy-qc gsm --method fsm) — cheapest; NO ASE constraints
+#   'gsm'    : Growing String (cowboy-qc gsm --method gsm) — cheaper; honours --fix-preset (pysisyphus freeze_atoms)
+#   'fsm'    : Freezing String (cowboy-qc gsm --method fsm) — cheapest; honours --fix-preset (pysisyphus freeze_atoms)
+# RECOMMENDED for LARGE, flexible clusters with a DISSOCIATIVE step: CI-NEB — its geodesic interpolation routes the
+# path AROUND repulsive walls. GSM/FSM grow nodes by pysisyphus internal-coord interpolation (no geodesic), which can
+# park a node on a high-energy wall and report a spurious 'barrier'; they suit smaller / gas-phase / concerted reactions.
 # (AutoNEB / pyGSM / single-ended SE-GSM are also available via
 #  `cowboy-qc ts-entry --path-method {{autoneb|pygsm-de|gsm-se}}`.)
 # A 1-D scan can slice BESIDE the true saddle for an ASYNCHRONOUS step; a double-ended
@@ -703,7 +856,7 @@ charge, multiplicity = {D['charge']}, {D['spin']}
 n_images      = 17              # CI-NEB publication-tier (11 quicker); GSM/FSM ~15
 interpolation = "geodesic"      # CI-NEB only — REQUIRED for dense/charged sites (never 'linear')
 optimizer     = "fire"          # CI-NEB only
-fix_preset    = "ca-only"       # CI-NEB only (string methods ignore ASE constraints)
+fix_preset    = "ca-only"       # honoured by CI-NEB AND GSM/FSM (GSM/FSM via pysisyphus freeze_atoms)
 fmax          = 0.05
 
 ### COMMAND / SUBMIT FILE NAMES ###
@@ -725,9 +878,10 @@ if path_method == "ci-neb":
                   "--outdir", out_dir)
     _feed = f"refine-ts: set from_neb = '{{out_dir}}'"
 elif path_method in ("gsm", "fsm"):
-    # cowboy-qc gsm: no --multiplicity / no --fix-preset (string methods take no ASE constraints)
+    # GSM/FSM now honour --fix-preset via pysisyphus freeze_atoms (grown nodes inherit it via Geometry.copy()).
     cmd = qcb_cmd(model, "gsm", reactant_min, product_min, "--method", path_method, "--model", model,
-                  "--charge", charge, "--device", device, "--n-images", n_images, "--fmax", fmax,
+                  "--charge", charge, "--multiplicity", multiplicity, "--device", device,
+                  "--fix-preset", fix_preset, "--n-images", n_images, "--fmax", fmax,
                   "--outdir", out_dir)
     _feed = f"refine-ts: feed the TS-guess structure written under {{out_dir}}"
 else:
@@ -739,7 +893,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) [{{path_method}}] → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Output dir: {{out_dir}}  → {{_feed}}")
-{sbatch(qtime="24:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
+{sbatch(qtime="04:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -755,31 +909,39 @@ def cell_scan_analysis(profile, step):
 ##################################################################
 ###  ANALYSIS: 1-D SCAN PROFILE + TS GUESS  (run after the scan) ###
 ##################################################################
-# Loads scan-summary.json + the trajectory energies and plots the energy profile;
-# reports the barrier estimate and where the TS guess (max-E frame) sits.
+# Reads the scan summary + trajectory, plots the profile, and reports the forward
+# barrier + TS-guess frame. The TS guess is the highest INTERIOR maximum (the scan
+# engine picks it — endpoints are basins in a relaxed scan). Auto-finds the outputs
+# by glob, so it works for ANY scan_kind (scan-* or scan-bonddiff-*).
 
 ### INPUTS ###
 scan_dir = f"{SCAN_DIR}scan/"
 
 ### ANALYSIS ###
-import json
-_summary = Path(scan_dir) / "scan-summary.json"
-if not _summary.is_file():
-    print(f"# no scan-summary.json yet at {scan_dir} — run the scan step first.");
+import json, glob
+from ase.io import read as _read
+_trajs = sorted(glob.glob(str(Path(scan_dir) / "*-trajectory.xyz")))
+_sums  = sorted(glob.glob(str(Path(scan_dir) / "*-summary.json")))
+if not _trajs:
+    print(f"# no *-trajectory.xyz yet at {scan_dir} — run the scan step first.")
 else:
-    s = json.loads(_summary.read_text())
-    print(f"barrier (scan estimate) : {s.get('barrier_kcal'):.2f} kcal/mol")
-    print(f"TS-guess coordinate     : {s.get('max_coord_value'):.3f}  (frame {s.get('max_energy_idx')})")
-    # plot the profile from the trajectory energies
+    frames = _read(_trajs[0], index=":")
+    e   = [a.info["energy_eV"] if "energy_eV" in a.info else 0.0 for a in frames]
+    crd = [a.info.get("scan_value", a.info.get("s_target", i)) for i, a in enumerate(frames)]
+    e0  = min(e); ek = [(x - e0) * 23.0605 for x in e]      # eV -> kcal/mol, relative
+    s   = json.loads(Path(_sums[0]).read_text()) if _sums else {}
+    ts  = int(s.get("ts_guess_idx", max(range(len(e)), key=lambda k: e[k])))   # interior max (engine)
+    print(f"scan trajectory         : {Path(_trajs[0]).name}  ({len(frames)} frames)")
+    print(f"forward barrier         : {s.get('barrier_kcal', ek[ts]):.2f} kcal/mol")
+    print(f"TS guess                : frame {ts} of {len(frames) - 1}  (coord {crd[ts]:+.3f})")
+    print(f"reactant=frame 0 (coord {crd[0]:+.3f})  |  product=frame {len(frames) - 1} (coord {crd[-1]:+.3f})")
+    if s.get("barrierless"):
+        print("# WARNING: no interior barrier (monotonic) — TS guess is an endpoint; widen/shift the range.")
     try:
-        from ase.io import read as _read
-        frames = _read(str(Path(scan_dir) / "scan-trajectory.xyz"), index=":")
-        e = [f.info.get("energy_eV", 0.0) for f in frames]
-        e0 = min(e); ek = [(x - e0) * 23.0605 for x in e]   # eV -> kcal/mol, rel
         fig, ax = plt.subplots(figsize=(5, 3.2))
-        ax.plot(range(len(ek)), ek, "o-", color=nb.good_teal)
-        ax.axvline(s.get("max_energy_idx", 0), ls="--", color=nb.good_red, label="TS guess")
-        ax.set_xlabel("scan frame"); ax.set_ylabel("rel. energy (kcal/mol)")
+        ax.plot(crd, ek, "o-", color=nb.good_teal)
+        ax.axvline(crd[ts], ls="--", color=nb.good_red, label="TS guess")
+        ax.set_xlabel("scan coordinate"); ax.set_ylabel("rel. energy (kcal/mol)")
         ax.set_title("1-D relaxed scan profile"); ax.legend(); plt.tight_layout(); plt.show()
     except Exception as _ex:
         print(f"# (plot skipped: {_ex})")
@@ -916,7 +1078,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Output: {{refined_out}}  (EXPERIMENTAL — re-refine + validate with the QM gate!)")
-{sbatch(qtime="02:00:00", cpj=2, cpus="4", mem="32g", queue="gpu", gpu="'small'")}
+{sbatch(qtime="02:00:00", cpj=2, cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -978,7 +1140,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Outputs: {{out_dir}}ts_entry.json (status/barrier/n_imag), gates.json, ts.*")
-{sbatch(qtime="48:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
+{sbatch(qtime="04:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1052,7 +1214,7 @@ for c in commands: print("\\n" + c)
 print(f"\\n# Outputs: {{out_dir}}ts_entry.json, gates.json, ts.*")
 print("# NOTE: --proposer react-ot / --refiner aefm need those MODELS in this sif; the prebuilt")
 print("#       sidecars are model-only -> use the two-step handoff cells, then --entry ts-guess.")
-{sbatch(qtime="48:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
+{sbatch(qtime="04:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1102,7 +1264,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Output: {{guess_out}}  → ts-entry --entry ts-guess  (or refine-ts)")
-{sbatch(qtime="02:00:00", cpus="4", mem="32g", queue="gpu", gpu="'small'")}
+{sbatch(qtime="02:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1148,7 +1310,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Output: {{refined_out}}  → ts-entry --entry ts-guess  (or refine-ts)")
-{sbatch(qtime="02:00:00", cpus="4", mem="32g", queue="gpu", gpu="'small'")}
+{sbatch(qtime="02:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1163,7 +1325,7 @@ def cell_refine_ts(profile, step):
 # The acceptance core: dimer/Sella/pysisyphus saddle search -> partial Hessian on the
 # reactive atoms -> require exactly ONE imaginary mode (< cutoff) overlapping the reaction
 # coordinate -> ts_refined.pdb. Input is EITHER a TS-guess PDB or a path-search dir
-# (--from-neb). --reactive-atoms are 1-BASED PDB serials (note: scan/opt used 0-based!).
+# (--from-neb). --reactive-atoms accept atom tokens: descriptor (OHX-O3), serial:N, index.
 
 ### INPUTS ###
 ts_guess_pdb = f"{{SCAN_DIR}}scan/ts_guess.pdb"   # EITHER a guess PDB ...
@@ -1181,7 +1343,7 @@ charge, multiplicity = {D['charge']}, {D['spin']}
 fix_preset = "ca-only"          # kept during saddle + freq
 
 ### REFINE-TS PARAMETERS ###
-reactive_atoms   = [{D['react_serials']}]   # 1-based PDB serials (O_nuc, P, O_lg)
+reactive_atoms   = [{D['react_serials']}]   # atom tokens (nucleophile, center P, leaving group)
 backend          = "auto"       # auto (sella->sella-internal->dimer) | dimer | sella | sella-internal | pysisyphus-rsprfo
 saddle_fmax      = 0.02
 saddle_max_steps = 500
@@ -1215,7 +1377,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Outputs: {{out_dir}}ts_refined.pdb (validated TS), imag_mode.npy, summary.json (PASS/FAIL)")
-{sbatch(qtime="48:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
+{sbatch(qtime="04:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1230,7 +1392,7 @@ def cell_validate(profile, step):
 # Independent of refine-ts. Tier A = reactive-atom partial Hessian; Tier B = active-region
 # Hessian (catches a hidden 2nd imag mode in the metal/water shell); Tier C = Lanczos full
 # check. Confirms exactly one imaginary mode on the reaction coordinate.
-# --reactive-atoms are 1-BASED PDB serials.
+# --reactive-atoms accept atom tokens: descriptor (OHX-O3), serial:N, or a 0-based index.
 
 ### INPUTS ###
 ts_pdb = f"{{REFINE_TS_DIR}}refine/ts_refined.pdb"   # the refined TS
@@ -1243,7 +1405,7 @@ model, head, device = {D['model']}, {D['head']}, "cuda"
 charge, multiplicity = {D['charge']}, {D['spin']}
 
 ### VALIDATE PARAMETERS ###
-reactive_atoms   = [{D['react_serials']}]   # 1-based PDB serials
+reactive_atoms   = [{D['react_serials']}]   # atom tokens (nucleophile, center P, leaving group)
 tier             = "b"          # 'a' | 'b' | 'c' | 'all' | comma list
 active_region    = None         # Tier B select spec, e.g. 'sphere 6.0 around resid 169' (None=auto by reactive atoms)
 imag_cm_cutoff   = -50.0
@@ -1274,7 +1436,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Output dir: {{out_dir}}  (per-tier PASS/FAIL + frequencies)")
-{sbatch(qtime="24:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
+{sbatch(qtime="04:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1332,7 +1494,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Output dir: {{out_dir}}  (forward/back basins + delta-energies)")
-{sbatch(qtime="24:00:00", cpus="8", mem="80g", queue="gpu", gpu="'large'")}
+{sbatch(qtime="04:00:00", cpus="1", mem="6g", queue="gpu", gpu="'small'")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1374,7 +1536,7 @@ Path(out_dir).mkdir(parents=True, exist_ok=True)
 
 ### GENERATE COMMANDS ###
 commands = []
-cmd = [*APPTAINER(MAIN_SIF, gpu=False), "cowboy-qc", "ts-entry", "--entry", entry, "--reaction-spec", spec_path,
+cmd = [*APPTAINER(MAIN_SIF, gpu=False), *CLI, "ts-entry", "--entry", entry, "--reaction-spec", spec_path,
        "--engine", "orca", "--reactant", reactant_pdb, "--product", product_pdb,
        "--charge", str(charge), "--multiplicity", str(multiplicity), "--outdir", out_dir,
        ("--execute" if EXECUTE else "--no-execute")]
@@ -1384,7 +1546,7 @@ with open(commands_file_path, "w") as f:
 print(f"# {{len(commands)}} command(s) → {{commands_file_path}}")
 for c in commands: print("\\n" + c)
 print(f"\\n# Outputs: {{out_dir}}  (ORCA NEB-TS job; method = {{engine_method}})")
-{sbatch(qtime="72:00:00", cpus="16", mem="120g", queue="cpu", gpu="None")}
+{sbatch(qtime="24:00:00", cpus="4", mem="32g", queue="cpu", gpu="None")}
 '''
     return [("markdown", md), ("code", code)]
 
@@ -1500,10 +1662,12 @@ def write_nb(cells, path):
                              "language_info": {"name": "python"}},
                 "nbformat": 4, "nbformat_minor": 5}
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(notebook, indent=1))
+    # ensure_ascii=False keeps unicode (→, —) literal, matching how Jupyter saves.
+    Path(path).write_text(json.dumps(notebook, indent=1, ensure_ascii=False))
     print(f"wrote {path}  ({len(nb_cells)} cells)")
 
 
-ROOT = "/home/woodbuse/codebase_projects/quantum_cowboy_biochemistry/notebooks"
-write_nb(build("general"), f"{ROOT}/general_ts_pipeline/ts_pipeline_GENERAL.ipynb")
-write_nb(build("opaa"),    f"{ROOT}/opaa_theozyme/opaa_ts_pipeline.ipynb")
+if __name__ == "__main__":
+    ROOT = "/home/woodbuse/codebase_projects/quantum_cowboy_biochemistry/notebooks"
+    write_nb(build("general"), f"{ROOT}/general_ts_pipeline/ts_pipeline_GENERAL.ipynb")
+    write_nb(build("opaa"),    f"{ROOT}/opaa_theozyme/opaa_ts_pipeline.ipynb")

@@ -124,7 +124,7 @@ def test_main_end_to_end(tmp_path):
     rc = P.main(["-i", str(FIXTURE), "-o", str(out), "--log-level", "ERROR"])
     assert rc == 0
     text = out.read_text()
-    assert "REMARK 999 QCB-PROTONATOR NET_PROTEIN_CHARGE" in text
+    assert "REMARK 999 CQC-PROTONATOR NET_THEOZYME_PROTEIN_CHARGE" in text
     assert "CONECT" not in text
 
 

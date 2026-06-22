@@ -498,3 +498,5 @@ Flags:
   --resume                      Resume from checkpoint
   -o, --output DIR              Output directory
 ```
+
+> **See also:** [TS search — method selection, pitfalls & sanity guards](ts_search_pitfalls_and_methods.md) — when to use CI-NEB vs GSM/FSM, the Sella-Cartesian collapse, and the automatic `ts_sanity` warnings.

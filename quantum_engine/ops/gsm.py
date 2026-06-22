@@ -91,6 +91,17 @@ def _assemble_string_result(drive: dict, calculator_fn, charge: int, outdir: Pat
     energies = [float(im.get_potential_energy()) for im in images]
     ts_idx = int(np.argmax(energies[1:-1])) + 1 if len(energies) > 2 else 0
 
+    # Cheap sanity guards: a string peak can be a misplaced node (a clash / a point on a
+    # repulsive wall), and/or geometrically ~identical to an endpoint — i.e. not a TS at
+    # all. Emit LOUD warnings here so a suspect guess is scrutinised before refinement.
+    from quantum_engine.analysis.ts_sanity import (  # noqa: PLC0415
+        ts_endpoint_similarity, flag_spurious_path_peak, emit)
+    rel_kcal = ((np.asarray(energies) - float(np.min(energies))) * EV_TO_KCAL).tolist()
+    findings = flag_spurious_path_peak(rel_kcal)
+    if len(images) >= 3:
+        findings += ts_endpoint_similarity(images[ts_idx], images[0], images[-1])
+    warnings = emit(findings)
+
     from ase.io import write as ase_write  # noqa: PLC0415
     xyz = outdir / f"{tag}_path.xyz"
     ase_write(str(xyz), images, format="extxyz")
@@ -102,7 +113,8 @@ def _assemble_string_result(drive: dict, calculator_fn, charge: int, outdir: Pat
         "ts_idx": ts_idx, "reactant": images[0], "product": images[-1],
         "energies_eV": energies, "barrier_fwd_kcal": barrier_fwd,
         "barrier_rev_kcal": (energies[ts_idx] - energies[-1]) * EV_TO_KCAL,
-        "n_images_final": len(images), "outputs": {"path_xyz": str(xyz)},
+        "n_images_final": len(images), "warnings": warnings,
+        "outputs": {"path_xyz": str(xyz)},
     }
 
 
@@ -116,6 +128,7 @@ def run_fsm(
     n_images: int = 15,
     fmax: float = 0.05,
     max_nodes: int = 30,
+    freeze_atoms=None,
     **kwargs,
 ) -> dict:
     """Freezing String Method.
@@ -134,8 +147,8 @@ def run_fsm(
     outdir.mkdir(parents=True, exist_ok=True)
     log.info("FSM: %d target images, fmax=%s eV/Å", n_images, fmax)
     try:
-        geom_r = _atoms_to_pysis_geom(reactant)
-        geom_p = _atoms_to_pysis_geom(product)
+        geom_r = _atoms_to_pysis_geom(reactant, freeze_atoms=freeze_atoms)
+        geom_p = _atoms_to_pysis_geom(product, freeze_atoms=freeze_atoms)
     except ImportError as e:
         log.error("  pysisyphus not available: %s", e)
         return {"status": "failed", "error": str(e), "outputs": {}}
@@ -161,6 +174,7 @@ def run_gsm(
     mult: int = 1,
     n_images: int = 15,
     fmax: float = 0.045,
+    freeze_atoms=None,
     **kwargs,
 ) -> dict:
     """Growing String Method.
@@ -173,8 +187,8 @@ def run_gsm(
     outdir.mkdir(parents=True, exist_ok=True)
     log.info("GSM: %d target images, fmax=%s eV/Å", n_images, fmax)
     try:
-        geom_r = _atoms_to_pysis_geom(reactant)
-        geom_p = _atoms_to_pysis_geom(product)
+        geom_r = _atoms_to_pysis_geom(reactant, freeze_atoms=freeze_atoms)
+        geom_p = _atoms_to_pysis_geom(product, freeze_atoms=freeze_atoms)
     except ImportError as e:
         log.error("  pysisyphus not available: %s", e)
         return {"status": "failed", "error": str(e), "outputs": {}}

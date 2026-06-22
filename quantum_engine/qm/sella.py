@@ -117,7 +117,15 @@ def _patched_eigh(driver: str) -> Iterator[None]:
     original = sla.eigh
 
     def patched(*args, **kwargs):
-        kwargs.setdefault("driver", driver)
+        # scipy.linalg.eigh(a, b=None, ...): force the (standard-only) driver
+        # ONLY when there is no B matrix. Sella also makes GENERALIZED eigh(A, B)
+        # calls (e.g. metric-weighted RFO / internal-coord steps); forcing a
+        # standard driver (evd/evr/evx/ev) onto those raises "does not accept
+        # input b array for standard eigenvalue problems" — so for the
+        # generalized case we leave SciPy's default (gvd) in place.
+        b = kwargs.get("b", args[1] if len(args) > 1 else None)
+        if b is None:
+            kwargs.setdefault("driver", driver)
         return original(*args, **kwargs)
 
     sla.eigh = patched  # type: ignore[assignment]

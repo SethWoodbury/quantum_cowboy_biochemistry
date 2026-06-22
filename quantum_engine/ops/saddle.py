@@ -263,6 +263,7 @@ def run(
         atoms_stage = atoms.copy()
         atoms_stage.calc = atoms.calc if atoms.calc is not None else calculator
         atoms_stage.info["charge"] = atoms.info.get("charge", 0)
+        atoms_stage.info["spin"] = atoms.info.get("spin", 1)   # carry multiplicity through the cascade
 
         log.info("[auto-cascade %d/%d] trying backend=%s in %s",
                  stage_idx + 1, len(cascade), stage_backend, stage_dir)

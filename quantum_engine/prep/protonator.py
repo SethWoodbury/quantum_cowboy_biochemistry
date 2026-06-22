@@ -414,10 +414,10 @@ def _atom_line(a: Atom, serial: int) -> str:
 
 
 def write_pdb(st: ProtonationState, path, remarks=None) -> None:
-    """Write a PDB: preserved headers + QCB REMARK block + atoms. No CONECT."""
+    """Write a PDB: preserved headers + CQC REMARK block + atoms. No CONECT."""
     lines: list[str] = list(st.header_lines)
     for r in (remarks or []):
-        lines.append(f"REMARK 999 QCB-PROTONATOR {r}")
+        lines.append(f"REMARK 999 CQC-PROTONATOR {r}")
 
     n = len(st.atoms)
     if n > 99999:
@@ -2738,51 +2738,107 @@ def compute_net_charge(st: ProtonationState) -> tuple:
     return net, per_res
 
 
-def ligand_charge_total(st: ProtonationState, ligand_charges: dict) -> tuple:
-    """Sum declared ligand formal charges over HETATM residue INSTANCES.
+def nonprotein_charge_total(st: ProtonationState, ligand_charges: dict,
+                            nonprotein_charge_override: int | None = None) -> tuple:
+    """Net non-protein (HETATM, non-water) charge — NEVER assumed or measured.
 
-    ``ligand_charges`` maps RESNAME -> int (case-insensitive). Each non-water
-    HETATM residue *instance* whose resname is declared contributes its charge
-    ONCE — so two ``ZN`` residues at +2 each give +4, and a multi-atom ligand
-    counts once. Waters are skipped. Returns ``(total, per_instance, warnings)``;
-    warns on (a) a declared resname not present, and (b) a non-water HETATM
-    resname present but not declared (counted as 0 so the user notices).
-    Reporting-only — HETATM geometry is never modified.
+    Resolution order:
+      * ``nonprotein_charge_override`` (a single int) — if given, it IS the net
+        non-protein charge (wins over the per-residue dict).
+      * else sum ``ligand_charges`` (RESNAME -> int, case-insensitive) over every
+        non-water HETATM residue INSTANCE — so two ``ZN`` at +2 give +4. EVERY such
+        residue MUST be declared or this raises; there is no silent 0.
+      * else (nothing supplied) -> ``(None, [], [])`` — the caller reports only the
+        protein charge and assumes nothing about the ligands.
+
+    Returns ``(total_or_None, per_instance, warnings)``. Reporting only — HETATM
+    geometry is never modified.
     """
-    lc = {str(k).strip().upper(): int(v) for k, v in (ligand_charges or {}).items()}
     residues = group_residues([a for a in st.atoms if a.record == "HETATM"])
+    nonwater = [(rk, ats) for rk, ats in residues.items()
+                if ats[0].resname.strip().upper() not in WATER_RESNAMES]
+
+    if nonprotein_charge_override is not None:
+        per = [{"residue": reskey_str(rk),
+                "resname": ats[0].resname.strip().upper(), "charge": None}
+               for rk, ats in nonwater]
+        return int(nonprotein_charge_override), per, []
+
+    if not ligand_charges:
+        return None, [], []
+
+    lc = {str(k).strip().upper(): int(v) for k, v in ligand_charges.items()}
     total = 0
     per_instance: list = []
     seen: set = set()
     undeclared: set = set()
-    for rk, atoms in residues.items():
-        resname = atoms[0].resname.strip().upper()
-        if resname in WATER_RESNAMES:
-            continue
+    for rk, ats in nonwater:
+        resname = ats[0].resname.strip().upper()
         seen.add(resname)
-        q = lc.get(resname, 0)
         if resname not in lc:
             undeclared.add(resname)
-        total += q
-        per_instance.append({"residue": reskey_str(rk), "resname": resname, "charge": q})
+            continue
+        total += lc[resname]
+        per_instance.append({"residue": reskey_str(rk), "resname": resname,
+                             "charge": lc[resname]})
+    if undeclared:
+        raise SystemExit(
+            "--ligand-charge was given but these non-water HETATM residues are "
+            f"UNDECLARED: {sorted(undeclared)}. The non-protein charge is never "
+            "assumed — declare each (--ligand-charge RESNAME=Q) or give the whole "
+            "total with --nonprotein-charge.")
     warnings: list = []
     for rn in sorted(lc):
         if rn not in seen:
             warnings.append(f"--ligand-charge {rn}={lc[rn]:+d} given but no HETATM "
                             f"residue {rn!r} is present")
-    for rn in sorted(undeclared):
-        warnings.append(f"HETATM ligand {rn!r} present with no --ligand-charge; "
-                        f"counted as 0 in TOTAL_SYSTEM_CHARGE")
     return total, per_instance, warnings
+
+
+def report_hetatm_descriptors(st: ProtonationState) -> None:
+    """Verify every non-water HETATM atom is uniquely addressable by a descriptor.
+
+    Logs the recommended short code per HETATM residue (e.g. ``OHX-O3``,
+    ``ZN519-ZN``) so the user can refer to active-site atoms by name instead of
+    raw index downstream (monitor / reaction-spec). Warns on any atom that has NO
+    unique descriptor (duplicate chain+resid+name → only the raw index works).
+    """
+    from quantum_engine.io.atom_descriptor import AtomTable, best_descriptor
+    table = AtomTable.from_atoms(st.atoms)
+    het = [(i, a) for i, a in enumerate(st.atoms)
+           if a.record == "HETATM"
+           and a.resname.strip().upper() not in WATER_RESNAMES]
+    if not het:
+        return
+    by_res: dict = {}
+    n_bad = 0
+    for i, a in het:
+        d = best_descriptor(table, i)
+        if d is None:
+            n_bad += 1
+            st.warn(f"  HETATM atom #{i} ({a.resname} {a.name}) has NO unique "
+                    f"descriptor (duplicate chain+resid+name) — refer to it by index {i}")
+        else:
+            by_res.setdefault(reskey_str(a.reskey), []).append(d)
+    log.info(f"  HETATM addressable by descriptor ({len(het)} atoms, "
+             f"{len(by_res)} residues):")
+    for rk, codes in list(by_res.items())[:20]:
+        log.info(f"    {rk}: {' '.join(codes[:8])}"
+                 + (" ..." if len(codes) > 8 else ""))
+    if n_bad:
+        st.warn(f"  {n_bad} HETATM atom(s) lack a unique descriptor")
 
 
 def _qcb_remarks(version: str, pH: float, net: int, per_res: list,
                  protomer=None, n_protomers: int = 1,
+                 nonprotein: int | None = None,
                  total_system: int | None = None) -> list:
-    """Minimal REMARK 999 QCB-PROTONATOR annotation block (kept short)."""
-    out = [f"v2  pH={pH}  {version}", f"NET_PROTEIN_CHARGE {net:+d}"]
+    """Minimal REMARK 999 CQC-PROTONATOR annotation block (kept short)."""
+    out = [f"v2  pH={pH}  {version}", f"NET_THEOZYME_PROTEIN_CHARGE {net:+d}"]
+    if nonprotein is not None:
+        out.append(f"NET_THEOZYME_NONPROTEIN_CHARGE {nonprotein:+d}")
     if total_system is not None:
-        out.append(f"TOTAL_SYSTEM_CHARGE {total_system:+d}  (protein + ligands)")
+        out.append(f"NET_THEOZYME_TOTAL_CHARGE {total_system:+d}  (protein + non-protein)")
     real = {"peptide", "none", "covalent?", None}
     n_n = sum(1 for r in per_res if r["n_cap"] not in real)
     n_c = sum(1 for r in per_res if r["c_cap"] not in real)
@@ -2829,10 +2885,10 @@ def _write_info_json(path, inp_path, pH: float, args,
             "rank": pr["rank"],
             "joint_prob": round(pr["prob"], 6),
             "output_pdb": pr["output"],
-            "net_protein_charge": pr["net"],
-            "ligand_charge": pr.get("ligand_charge", 0),
-            "total_system_charge": pr.get("total_system_charge", pr["net"]),
-            "ligand_per_instance": pr.get("ligand_per_instance", []),
+            "net_theozyme_protein_charge": pr["net_protein_charge"],
+            "net_theozyme_nonprotein_charge": pr.get("nonprotein_charge"),
+            "net_theozyme_total_charge": pr.get("total_charge"),
+            "nonprotein_per_instance": pr.get("nonprotein_per_instance", []),
             "autocorrect": pst.settings.get("autocorrect"),
             "relax": pst.settings.get("relax"),
             "warnings": list(pst.warnings),
@@ -2900,10 +2956,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ptm-charge", action="append", metavar="CHAIN:RESID=Q",
                    help="formal charge for a declared PTM residue (repeatable)")
     p.add_argument("--ligand-charge", action="append", metavar="RESNAME=Q",
-                   help="formal charge of a ligand/metal HETATM residue, for "
-                        "TOTAL system-charge reporting (repeatable; e.g. ZN=2 "
-                        "PXN=-1). Counted once per residue instance; HETATM "
-                        "geometry is left untouched.")
+                   help="formal charge of a non-protein (HETATM) residue, summed "
+                        "into NET_THEOZYME_NONPROTEIN_CHARGE (repeatable; e.g. ZN=2 "
+                        "OHX=-1 SUB=0). Counted once per residue INSTANCE (two ZN at "
+                        "+2 -> +4). If ANY non-water HETATM is left undeclared the "
+                        "run errors — the non-protein charge is never assumed. "
+                        "HETATM geometry is left untouched.")
+    p.add_argument("--nonprotein-charge", type=int, default=None, metavar="Q",
+                   help="net charge of the WHOLE non-protein (HETATM, non-water) set "
+                        "as a single int; overrides --ligand-charge. If neither is "
+                        "given, only NET_THEOZYME_PROTEIN_CHARGE is reported.")
     p.add_argument("--disulfide-cutoff", type=float, default=2.5,
                    help="Cys SG-SG disulfide detection distance (default: 2.5)")
     # Stage 4 — histidine tautomer
@@ -2970,6 +3032,10 @@ def main(argv=None) -> int:
     else:
         strip_protein_hydrogens(st)
 
+    # Confirm every non-water HETATM atom is uniquely addressable by a descriptor
+    # (so the user can refer to active-site atoms by name downstream, not by index).
+    report_hetatm_descriptors(st)
+
     stage1_caps(st,
                 n_cap=args.n_cap, c_cap=args.c_cap,
                 n_cap_overrides=_parse_kv(args.n_cap_override, "n-cap-override"),
@@ -3014,6 +3080,7 @@ def main(argv=None) -> int:
     # 5/6 H), optional MLFF relax, charge accounting, write
     ligand_charges = (_parse_kv(args.ligand_charge, "ligand-charge")
                       if getattr(args, "ligand_charge", None) else {})
+    nonprotein_charge_override = getattr(args, "nonprotein_charge", None)
     n = len(protomers)
     protomer_results: list = []
     _ligand_warned = False
@@ -3024,24 +3091,30 @@ def main(argv=None) -> int:
             stage_relax_h(pst, model=args.relax_h_model, fmax=args.relax_h_fmax,
                           steps=args.relax_h_steps, device=args.relax_h_device)
         net, per_res = compute_net_charge(pst)
-        lig_total, lig_per, lig_warn = ligand_charge_total(pst, ligand_charges)
+        nonprot, lig_per, lig_warn = nonprotein_charge_total(
+            pst, ligand_charges, nonprotein_charge_override)
         if not _ligand_warned:
             for w in lig_warn:
                 log.warning(w)
             _ligand_warned = True
-        total_system = net + lig_total
+        total_system = (net + nonprot) if nonprot is not None else None
         out_path = (out if n == 1 else out.with_name(
             f"{out.stem}_protomer{pm['rank']}{out.suffix or '.pdb'}"))
         remarks = _qcb_remarks(f"input={inp.name}", args.pH, net, per_res,
                                protomer=pm, n_protomers=n,
-                               total_system=total_system)
+                               nonprotein=nonprot, total_system=total_system)
         write_pdb(pst, out_path, remarks=remarks)
-        log.info(f"  net protein charge = {net:+d}; ligands = {lig_total:+d}; "
-                 f"TOTAL system = {total_system:+d}   ->  {out_path}")
+        if nonprot is None:
+            log.info(f"  NET_THEOZYME_PROTEIN_CHARGE = {net:+d}  "
+                     f"(non-protein charge not provided -> not assumed)  ->  {out_path}")
+        else:
+            log.info(f"  NET_THEOZYME_PROTEIN_CHARGE = {net:+d}; "
+                     f"NET_THEOZYME_NONPROTEIN_CHARGE = {nonprot:+d}; "
+                     f"NET_THEOZYME_TOTAL_CHARGE = {total_system:+d}   ->  {out_path}")
         protomer_results.append({
             "rank": pm["rank"], "prob": pm["prob"], "output": str(out_path),
-            "net": net, "ligand_charge": lig_total,
-            "total_system_charge": total_system, "ligand_per_instance": lig_per,
+            "net_protein_charge": net, "nonprotein_charge": nonprot,
+            "total_charge": total_system, "nonprotein_per_instance": lig_per,
             "per_res": per_res, "state": pst})
 
     if args.output_info_file:

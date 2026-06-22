@@ -60,6 +60,14 @@ def _resolve_atom_token(tok: str, ase_atoms, bt_struct) -> int:
     s = tok.strip()
     if not s:
         raise ValueError("empty atom token")
+    # Prefer the central resolver: descriptors (OHX-O3, A519-ZN, ZN519-ZN), serial:N,
+    # 0:N, CHAIN:RESID:ATOM / RESNAME:RESID:ATOM, and bare ints (1-based serial here).
+    if bt_struct is not None:
+        try:
+            from quantum_engine.io.atom_descriptor import AtomTable, resolve_atom
+            return resolve_atom(s, AtomTable.from_biotite(bt_struct), bare_int="serial")
+        except Exception:
+            pass  # fall through to the legacy forms below
     if s.startswith("0:"):
         return int(s[2:])
     if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):

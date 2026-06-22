@@ -157,6 +157,31 @@ def _setup_atoms_and_calc(args):
     return atoms, bt_struct, calc, constraint, charge, outdir, ligand_name
 
 
+def _atom_ref_table(bt):
+    """Build an AtomTable from a biotite struct, or None if it has no annotations."""
+    if bt is None:
+        return None
+    from quantum_engine.io.atom_descriptor import AtomTable
+    return AtomTable.from_biotite(bt)
+
+
+def _resolve_atom_ref(tok, table, *, bare_int="index"):
+    """Resolve one atom reference (descriptor / serial:N / 0:N / index) to a 0-based index.
+
+    Routes through the central resolver when residue/atom names are available;
+    falls back to a plain index (with a helpful error) for annotation-free inputs.
+    """
+    from quantum_engine.io.atom_descriptor import resolve_atom
+    if table is not None:
+        return resolve_atom(tok, table, bare_int=bare_int)
+    s = str(tok).strip()
+    if s.lstrip("-").isdigit():
+        return int(s)
+    raise SystemExit(
+        f"atom reference {tok!r}: descriptors (OHX-O3, A519-ZN, serial:N) need a "
+        "PDB/CIF with residue/atom names; this input has none — use a 0-based index.")
+
+
 def _cmd_sp(args):
     from quantum_engine.ops import sp
     atoms, _, calc, constraint, _, outdir, _ = _setup_atoms_and_calc(args)
@@ -167,9 +192,16 @@ def _cmd_opt(args):
     from quantum_engine.ops import opt
     atoms, bt, calc, constraint, charge, outdir, _ = _setup_atoms_and_calc(args)
     # Per-bond constraints (--fix-bond / --restrain-bond) go ON TOP of the
-    # FixAtoms scaffold built from --fix/--fix-preset.
-    bond_specs = getattr(args, "fix_bond", None) or []
-    restrain_specs = getattr(args, "restrain_bond", None) or []
+    # FixAtoms scaffold built from --fix/--fix-preset. The first two tokens of each
+    # spec are atoms (descriptor / serial:N / index); any trailing R0/K stays as-is.
+    _tbl = _atom_ref_table(bt)
+    def _res_bond(spec):
+        spec = list(spec)
+        spec[0] = _resolve_atom_ref(spec[0], _tbl)
+        spec[1] = _resolve_atom_ref(spec[1], _tbl)
+        return spec
+    bond_specs = [_res_bond(b) for b in (getattr(args, "fix_bond", None) or [])]
+    restrain_specs = [_res_bond(b) for b in (getattr(args, "restrain_bond", None) or [])]
     if bond_specs or restrain_specs:
         from quantum_engine.ops.bond_constraints import build_bond_constraints
         bond_cons = build_bond_constraints(atoms, bond_specs, restrain_specs)
@@ -200,19 +232,33 @@ def _cmd_md(args):
 
 def _cmd_freq(args):
     from quantum_engine.ops import freq
-    atoms, _, calc, constraint, _, outdir, _ = _setup_atoms_and_calc(args)
+    atoms, bt, calc, constraint, _, outdir, _ = _setup_atoms_and_calc(args)
     indices = None
     if args.indices:
-        indices = [int(x) for x in args.indices]
+        table = _atom_ref_table(bt)
+        indices = [_resolve_atom_ref(x, table) for x in args.indices]
     return freq.run(atoms, calc, outdir, constraint,
                     indices=indices, delta=args.delta,
                     method=args.method, temperature_K=args.temp)
 
 
 def _cmd_scan(args):
+    atoms, bt, calc, constraint, _, outdir, _ = _setup_atoms_and_calc(args)
+    table = _atom_ref_table(bt)
+    indices = [_resolve_atom_ref(x, table) for x in args.indices]
+    if args.coord == "bond-difference":
+        # MOJ reaction coordinate s = d(center,breaking) - d(center,forming); --indices
+        # are CENTER BREAKING FORMING, --start/--end are CV s-values (reactant s<0 -> product s>0).
+        from quantum_engine.ops import scan_modes
+        if len(indices) != 3:
+            raise SystemExit("--coord bond-difference needs --indices CENTER BREAKING FORMING "
+                             "(3 atoms); s = d(center,breaking) - d(center,forming)")
+        c, brk, frm = indices
+        return scan_modes.run(
+            atoms, calc, mode="bond-difference", outdir=outdir, constraint=constraint,
+            diff_bonds=((c, brk), (c, frm)), s_start=args.start, s_end=args.end,
+            n_steps=args.n_steps, relax_other=not args.no_relax, fmax=args.fmax)
     from quantum_engine.ops import scan
-    atoms, _, calc, constraint, _, outdir, _ = _setup_atoms_and_calc(args)
-    indices = [int(x) for x in args.indices]
     return scan.run(atoms, calc, outdir, constraint,
                     coord_type=args.coord, atom_indices=indices,
                     start=args.start, end=args.end, n_steps=args.n_steps,
@@ -294,14 +340,15 @@ def _cmd_refine_ts(args):
     constraint = None
     fix_specs = list(args.fix or [])
     free_specs = list(args.free or [])
+    excluded_res = set()
     if args.fix_preset:
-        preset_specs, _ = preset_to_specs(args.fix_preset, None)
+        preset_specs, excluded_res = preset_to_specs(args.fix_preset, None)
         fix_specs = preset_specs + fix_specs
     if (fix_specs or free_specs) and atoms is not None:
-        fix_mask = parse_constraints(atoms, bt_template, fix_specs, set()) if fix_specs \
+        fix_mask = parse_constraints(atoms, bt_template, fix_specs, excluded_res) if fix_specs \
                    else np.zeros(len(atoms), dtype=bool)
         if free_specs:
-            free_mask = parse_constraints(atoms, bt_template, free_specs, set())
+            free_mask = parse_constraints(atoms, bt_template, free_specs, excluded_res)
             fix_mask &= ~free_mask
         constraint = build_fix_atoms(fix_mask)
 
@@ -377,6 +424,7 @@ def _cmd_refine_ts(args):
         )
     atoms.calc = calc
     atoms.info["charge"] = charge
+    atoms.info["spin"] = spin          # multiplicity M (charge-aware MLFFs read it at force time)
     return refine_ts_op.run(
         atoms,
         calculator=calc,
@@ -644,23 +692,49 @@ def _cmd_mtd(args):
 
 
 def _cmd_gsm(args):
+    import numpy as np
     from quantum_engine.ops import gsm
     from quantum_engine.calc import make_calc_fn
-    from quantum_engine.io import load_structure
+    from quantum_engine.io import load_structure, parse_constraints
+    from quantum_engine.select import preset_to_specs
 
-    r_atoms, _, r_charge = load_structure(args.reactant)
+    r_atoms, r_bt, r_charge = load_structure(args.reactant)
     p_atoms, _, p_charge = load_structure(args.product)
     charge = args.charge if args.charge is not None else (r_charge or 0)
+    spin = getattr(args, "spin", None) or 1
     calc_fn = make_calc_fn(model=args.model, head=args.head, device=args.device, charge=charge)
     r_atoms.calc = calc_fn()
     p_atoms.calc = calc_fn()
-    r_atoms.info["charge"] = charge
-    p_atoms.info["charge"] = charge
+    for _a in (r_atoms, p_atoms):
+        _a.info["charge"] = charge
+        _a.info["spin"] = spin
+
+    # Resolve a freeze preset / specs to 0-based indices. pysisyphus holds these
+    # atoms' Cartesians fixed through the whole string (grown nodes inherit it via
+    # Geometry.copy()), giving GSM/FSM the same CA-freeze that CI-NEB has.
+    freeze_atoms = None
+    fix_specs = list(getattr(args, "fix", None) or [])
+    free_specs = list(getattr(args, "free", None) or [])
+    excluded_res: set = set()
+    if getattr(args, "fix_preset", None):
+        preset_specs, excluded_res = preset_to_specs(args.fix_preset, None)
+        fix_specs = preset_specs + fix_specs
+    if fix_specs:
+        fix_mask = parse_constraints(r_atoms, r_bt, fix_specs, excluded_res)
+        if free_specs:
+            fix_mask &= ~parse_constraints(r_atoms, r_bt, free_specs, excluded_res)
+        idx = np.where(fix_mask)[0]
+        if idx.size:
+            freeze_atoms = idx.tolist()
+            logging.getLogger("quantum_engine.cli").info(
+                "gsm: freezing %d atoms (Cartesian) via %s",
+                len(freeze_atoms), args.fix_preset or fix_specs)
 
     outdir = Path(args.outdir) if args.outdir else Path(f"qcb-{args.method}-out")
 
     return gsm.run(r_atoms, p_atoms, calc_fn, outdir, method=args.method,
-                   charge=charge, n_images=args.n_images, fmax=args.fmax)
+                   charge=charge, mult=spin, n_images=args.n_images, fmax=args.fmax,
+                   freeze_atoms=freeze_atoms)
 
 
 def _cmd_run(args):
@@ -1317,13 +1391,72 @@ def _cmd_monitor(args):
     """Non-constraining bond + metal-coordination report on a structure."""
     from quantum_engine.io import load_structure
     from quantum_engine.ops.bond_monitor import monitor_bonds
+    from quantum_engine.io.atom_descriptor import AtomTable, resolve_atom_descriptor
 
     atoms, _bt, _ = load_structure(args.input)
-    bonds = [tuple(int(x) for x in b.split(",")) for b in (args.bond or [])]
+    table = AtomTable.from_biotite(_bt) if _bt is not None else None
+
+    def _resolve(tok: str) -> int:
+        tok = tok.strip()
+        if table is not None:
+            return resolve_atom_descriptor(tok, table)   # raises with candidates on ambiguity
+        if tok.lstrip("-").isdigit():
+            return int(tok)
+        raise SystemExit(
+            f"--bond atom {tok!r}: descriptors (e.g. OHX-O3, A519-ZN) need a PDB/CIF "
+            "with residue/atom names; this input has none — use 0-based indices.")
+
+    bonds = []
+    for b in (args.bond or []):
+        parts = b.split(",")
+        if len(parts) != 2:
+            raise SystemExit(f"--bond expects 'A,B' (two atoms), got {b!r}")
+        bonds.append((_resolve(parts[0]), _resolve(parts[1])))
     outdir = Path(args.outdir) if args.outdir else None
-    return monitor_bonds(
+    result = monitor_bonds(
         atoms, bonds=bonds, metals=("auto" if args.metals else None),
         label="monitor", outdir=outdir, write_json=outdir is not None)
+    result["_human"] = _monitor_human(result, table, list(args.bond or []))
+    return result
+
+
+def _monitor_human(result, table, bond_tokens):
+    """Readable summary of a monitor result: descriptor labels, residue names, guidance."""
+    def full(i):                       # "OHX 998 O3"
+        return (f"{table.resnames[i]} {table.resids[i]} {table.names[i]}"
+                if table is not None and i < len(table) else f"atom #{i}")
+    def short(i):                      # "OHX998:O3"
+        return (f"{table.resnames[i]}{table.resids[i]}:{table.names[i]}"
+                if table is not None and i < len(table) else f"#{i}")
+
+    out = ["SUMMARY (human-readable)", "-" * 24]
+    bonds = result.get("bonds") or []
+    if bonds:
+        out.append("Monitored bonds  [bonded = intact · stretched = partially formed/broken · "
+                   "broken = dissociated]:")
+        toks = bond_tokens + [None] * (len(bonds) - len(bond_tokens))
+        for tok, b in zip(toks, bonds):
+            tag = (tok.replace(",", " — ") if tok else f"{b['i']} — {b['j']}")
+            out.append(f"  {tag:<20} ({full(b['i'])} — {full(b['j'])}) : "
+                       f"{b['distance_A']:.2f} Å  ->  {b['state'].upper()}")
+    metals = result.get("metals") or []
+    if metals:
+        out.append("Metal coordination (atoms within the metal-coord cutoff; H/C neighbours "
+                   "may be cutoff artifacts, not true ligands):")
+        for m in metals:
+            ligs = ", ".join(f"{short(L['index'])}({L['distance_A']:.2f})"
+                             for L in m["ligands"])
+            out.append(f"  {full(m['index'])}  CN={m['coordination_number']}:  {ligs}")
+    out += [
+        "",
+        "What this is for — a non-constraining geometry sanity check BEFORE you spend GPU time:",
+        "  · are the bonds you expect to form/break at sensible starting lengths?",
+        "  · does each catalytic metal have a chemically reasonable coordination shell?",
+        "  · did anything collapse or dissociate unexpectedly during protonation/relax?",
+        "If it looks right, proceed to the scan / TS search; if not, fix the input first.",
+        "(The block above + monitor.json hold the full machine-readable data.)",
+    ]
+    return "\n".join(out)
 
 
 def _cmd_reaction_spec(args):
@@ -1381,7 +1514,10 @@ def main(argv=None):
     # opt
     p_opt = sub.add_parser("opt", help="Energy minimization")
     _common_parser_setup(p_opt)
-    p_opt.add_argument("--optimizer", default="lbfgs", choices=["lbfgs", "bfgs", "fire"])
+    p_opt.add_argument("--optimizer", default="lbfgs",
+                       help="optimizer backend (registry-validated; see quantum_engine.opt.factory): "
+                            "lbfgs | bfgs | fire | precon-lbfgs (best for large/constrained clusters) | "
+                            "fire2 | torch-sim-fire | torch-sim-lbfgs, or any registered name")
     p_opt.add_argument("--fmax", type=float, default=0.05)
     p_opt.add_argument("--max-steps", type=int, default=500)
     p_opt.add_argument("--output-pdb", default=None, help="Write relaxed structure to PDB")
@@ -1418,8 +1554,11 @@ def main(argv=None):
     # scan
     p_scan = sub.add_parser("scan", help="1D coordinate scan")
     _common_parser_setup(p_scan)
-    p_scan.add_argument("--coord", required=True, choices=["bond", "angle", "dihedral"])
-    p_scan.add_argument("--indices", nargs="+", required=True, help="Atom indices")
+    p_scan.add_argument("--coord", required=True,
+                        choices=["bond", "angle", "dihedral", "bond-difference"])
+    p_scan.add_argument("--indices", nargs="+", required=True,
+                        help="Atom references (descriptor/serial:N/index). For bond: i j; "
+                             "angle: i j k; dihedral: i j k l; bond-difference: CENTER BREAKING FORMING.")
     p_scan.add_argument("--start", type=float, required=True)
     p_scan.add_argument("--end", type=float, required=True)
     p_scan.add_argument("--n-steps", type=int, default=15)
@@ -1838,6 +1977,16 @@ def main(argv=None):
     p_gsm.add_argument("--outdir", default=None)
     p_gsm.add_argument("--n-images", type=int, default=15)
     p_gsm.add_argument("--fmax", type=float, default=0.05)
+    p_gsm.add_argument("--multiplicity", dest="spin", type=int, default=None,
+                       help="Spin multiplicity M=2S+1 (1=singlet); threaded to the pysisyphus calc.")
+    p_gsm.add_argument("--fix", nargs="+", default=None,
+                       help="Freeze spec(s) (Cartesian): 'residue X' | 'chain B' | 'atoms CA' | 'range I J' | 'all'.")
+    p_gsm.add_argument("--free", nargs="+", default=None,
+                       help="Spec(s) to exclude from --fix / --fix-preset.")
+    p_gsm.add_argument("--fix-preset", default=None,
+                       choices=["ca-only", "backbone", "backbone-water", "none"],
+                       help="Named freeze preset; honored by GSM/FSM via pysisyphus freeze_atoms "
+                            "(GrowingString grows nodes by copy(), which preserves freeze_atoms).")
     p_gsm.add_argument("--log-level", default="INFO")
 
     # run — config-driven dispatch
@@ -1984,8 +2133,11 @@ def main(argv=None):
     p_mon = sub.add_parser(
         "monitor", help="Non-constraining bond + metal-coordination report")
     p_mon.add_argument("input", help="Structure (PDB/XYZ/CIF)")
-    p_mon.add_argument("--bond", action="append", default=None, metavar="i,j",
-                       help="0-based atom index pair to measure (repeatable).")
+    p_mon.add_argument("--bond", action="append", default=None, metavar="A,B",
+                       help="Atom pair to measure (repeatable). Each atom is a "
+                            "0-based index OR a descriptor: RESNAME-ATOM (OHX-O3), "
+                            "<Chain><ResNo>-ATOM (A519-ZN), <RESNAME><ResNo>-ATOM "
+                            "(ZN519-ZN), or CHAIN:RESID:ATOM (A:519:ZN).")
     p_mon.add_argument("--metals", action="store_true",
                        help="Auto-detect metals + report their coordination shells.")
     p_mon.add_argument("--outdir", default=None, help="If set, also write a JSON report.")
@@ -2463,12 +2615,12 @@ def main(argv=None):
     # Pretty-print key results
     print()
     print("=" * 60)
-    print(f"qcb {args.op} result:")
+    print(f"cowboy-qc {args.op} result:")
     for k, v in result.items():
         if k in ("atoms", "reactant", "product", "ts", "images", "outputs",
                  "energies_eV", "temperatures_K", "fes", "cv_trajectory",
                  "coord_values", "relative_energies_kcal", "frequencies_cm",
-                 "modes", "charges", "dipole_debye", "forces_eV_per_A"):
+                 "modes", "charges", "dipole_debye", "forces_eV_per_A", "_human"):
             continue
         print(f"  {k}: {v}")
     if "outputs" in result:
@@ -2477,6 +2629,11 @@ def main(argv=None):
             if v:
                 print(f"    {k}: {v}")
     print("=" * 60)
+    # A command may attach a pre-formatted, human-readable summary (printed BELOW
+    # the machine-readable block above; the full data still lives in the JSON).
+    if isinstance(result, dict) and result.get("_human"):
+        print()
+        print(result["_human"])
 
     return 0 if result.get("status", "ok") in (
         "converged", "completed", "cached", "valid", "prepared", "ok") else 1

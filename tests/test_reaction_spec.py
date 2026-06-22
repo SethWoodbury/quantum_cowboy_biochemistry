@@ -53,24 +53,25 @@ def test_validate_rejects_bad_driving_coord():
         ReactionSpec.from_dict({"driving_coords": [{"kind": "BREAK"}]})  # no atoms
 
 
-def test_resolve_token_calls_shared_resolver_with_correct_arg_order(monkeypatch):
-    # Guards against the (tokens, atoms, template) vs (atoms, template, tokens) bug.
-    import quantum_engine.ops.refine_ts as rt
+def test_resolve_token_routes_to_central_resolver_with_template(monkeypatch):
+    # With a structure template, resolve_atom_token routes to the central resolver
+    # (atom_descriptor.resolve_atom) with the template-built AtomTable, using the
+    # 1-based-serial convention for bare ints (the PDB-viewer convention).
+    import quantum_engine.io.atom_descriptor as ad
     captured = {}
 
-    def fake(atoms, bt_template, reactive_atoms):
-        captured["atoms"] = atoms
-        captured["template"] = bt_template
-        captured["tokens"] = list(reactive_atoms)
-        return [42]
+    def fake_resolve_atom(token, table, *, bare_int="index"):
+        captured.update(token=token, table=table, bare_int=bare_int)
+        return 42
 
-    monkeypatch.setattr(rt, "_resolve_reactive_indices", fake)
-    sentinel_atoms, sentinel_tmpl = object(), object()
-    idx = resolve_atom_token("A:169:NZ", atoms=sentinel_atoms, template=sentinel_tmpl)
+    monkeypatch.setattr(ad, "resolve_atom", fake_resolve_atom)
+    monkeypatch.setattr(ad.AtomTable, "from_biotite", staticmethod(lambda bt: ("TABLE", bt)))
+    sentinel_tmpl = object()
+    idx = resolve_atom_token("OHX-O3", template=sentinel_tmpl)
     assert idx == 42
-    assert captured["atoms"] is sentinel_atoms          # 1st arg = atoms
-    assert captured["template"] is sentinel_tmpl         # 2nd arg = template
-    assert captured["tokens"] == ["A:169:NZ"]            # 3rd arg = tokens
+    assert captured["token"] == "OHX-O3"
+    assert captured["table"] == ("TABLE", sentinel_tmpl)
+    assert captured["bare_int"] == "serial"
 
 
 def test_runcontext_known_and_extra():

@@ -54,7 +54,14 @@ def resolve_atom_token(token, atoms=None, template=None) -> int:
     if s.isdigit() and atoms is None and template is None:
         # bare integer string, no structure available → treat as 0-based
         return int(s)
-    # Defer richer/serial/name forms to the shared resolver
+    # With a structure template, the central resolver handles EVERY form: flexible
+    # descriptors (OHX-O3, A519-ZN, ZN519-ZN), serial:N, CHAIN/RESNAME:RESID:ATOM,
+    # 0:N, and bare ints (1-based PDB serial, the PDB-viewer convention).
+    if template is not None:
+        from quantum_engine.io.atom_descriptor import (  # noqa: PLC0415
+            AtomTable, resolve_atom)
+        return resolve_atom(s, AtomTable.from_biotite(template), bare_int="serial")
+    # No template (atoms only): defer to the legacy name/serial resolver
     # (canonical signature: _resolve_reactive_indices(atoms, bt_template, tokens)).
     from quantum_engine.ops.refine_ts import _resolve_reactive_indices  # noqa: PLC0415
     idxs = _resolve_reactive_indices(atoms, template, [s])

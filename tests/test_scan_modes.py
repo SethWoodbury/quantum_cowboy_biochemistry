@@ -98,3 +98,26 @@ def test_auto_via_run_resolves_bond_difference(tmp_path):
                        n_steps=3, outdir=tmp_path, fmax=0.2, max_opt_steps=30,
                        spring_k=10.0)
     assert r["mode"] == "bond-difference"
+
+
+# ---- TS-guess selection (pure function; endpoints are basins in a relaxed scan) ----
+def test_pick_ts_guess_interior_maximum():
+    # clean basin -> TS -> basin: pick the interior peak, reactant basin = frame 0
+    ts, rb, barrierless = scan_modes._pick_ts_guess([0.0, 0.5, 1.2, 0.4, -0.3])
+    assert ts == 2 and rb == 0 and not barrierless
+
+
+def test_pick_ts_guess_monotonic_is_barrierless():
+    # strictly downhill -> no interior maximum -> flagged barrierless, max = endpoint
+    ts, rb, barrierless = scan_modes._pick_ts_guess([0.0, -0.3, -0.7, -1.1, -1.6])
+    assert barrierless and ts == 0
+
+
+def test_pick_ts_guess_downhill_with_interior_bump_opaa():
+    # the real OPAA bond-difference profile (eV): exothermic overall, small interior
+    # TS at frame 4 (s~0); the global max is the strained reactant endpoint (frame 0).
+    e = [-303002.79969517, -303002.93866199, -303002.95639744, -303002.84919638,
+         -303002.81260730, -303003.14275628, -303003.46131093, -303003.51666555,
+         -303003.54157152]
+    ts, rb, barrierless = scan_modes._pick_ts_guess(e)
+    assert ts == 4 and rb == 2 and not barrierless
