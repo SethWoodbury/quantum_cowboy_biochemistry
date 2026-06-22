@@ -40,6 +40,49 @@ The builder MUST return an ASE-compatible `Calculator`. Put model weight paths i
 `quantum_engine/site.py` (`MACE_MODELS`) so `make_calc("myff-small")` resolves a
 local file; the builder receives it as `model_path`.
 
+### Worked example: SO3LR — a model whose deps conflict with the main container
+
+When a model's stack can't share the main container (here: SO3LR is JAX, the main
+image is torch; UMA/eSEN are the same story with fairchem-core), it runs in a
+**sidecar** apptainer image. The builder stays in-process but, when the backend
+isn't importable, raises an `ImportError` that names the sidecar + the exact
+`apptainer exec` line — so the same alias works whether you're inside the sidecar
+or not. This is the actual `so3lr` wiring (`calc/factory.py`), reusable verbatim:
+
+```python
+import glob, os
+from quantum_engine.calc.factory import register_energy
+
+_SO3LR_SIDECAR_GLOB = "/net/software/containers/users/woodbuse/quantum_chem/so3lr-*.sif"
+
+def _build_so3lr(model, *, model_path, registry_path, head, device,
+                 default_dtype, charge, spin):
+    try:
+        from so3lr import So3lrCalculator          # JAX — only importable in the sidecar
+    except ImportError as exc:
+        sif = next(iter(sorted(glob.glob(_SO3LR_SIDECAR_GLOB), reverse=True)), None)
+        hint = (f"re-run inside it:  apptainer exec --nv --bind /home --bind /net {sif} python ..."
+                if sif else "build it:  apptainer build --fakeroot deps/so3lr_sidecar.def")
+        raise ImportError(f"SO3LR ({model!r}) needs the JAX sidecar — {hint}") from exc
+    import numpy as np
+    # a SO3LR "model" is a DIRECTORY (workdir w/ params.pkl); site.py registers the
+    # params.pkl, so derive the workdir. model_path is None → bare alias (bundled copy).
+    target = os.path.dirname(model_path) if model_path and os.path.isfile(model_path) else model.lower()
+    return So3lrCalculator(model=target, lr_cutoff=100.0, dtype=np.float64)
+
+register_energy("so3lr", lambda m: m.lower().startswith("so3lr"), _build_so3lr)
+```
+
+The three artifacts that complete a sidecar model — copy this shape for the next one:
+1. **builder** with the try-import → actionable-`ImportError` pattern above (in `calc/factory.py`);
+2. **`site.py` aliases** → the weight path (a *file*; for directory-based models register the
+   `params.pkl` inside the workdir so `os.path.isfile` resolution + "missing on disk" errors work);
+3. **`deps/<name>_sidecar.def`** build recipe (model on `deps/uma_sidecar.def` / `deps/so3lr_sidecar.def`;
+   use `%files` to copy a staged source tree in so the build doesn't depend on `/net` being bound).
+
+Routing/error tests need no GPU or the real backend — see `tests/test_so3lr_routing.py`
+(family dispatch, alias registry, non-shadowing, and the actionable sidecar `ImportError`).
+
 ---
 
 ## 2. A new minimizer

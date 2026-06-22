@@ -1,0 +1,110 @@
+Bootstrap: localimage
+From: /net/software/containers/universal.sif
+
+# SO3LR-only sidecar container — the JAX/orbax SO3LR MLFF family.
+#
+# WHY a sidecar (same story as deps/uma_sidecar.def):
+#   SO3LR is JAX-based (jax / flax / jax-md / glp) and requires Python >=3.12.
+#   The main quantum_chem-*.sif is a torch stack on Python 3.11 (MACE 0.3.15,
+#   SCINE, AIMNet2, ...). The two can't share one env, so SO3LR runs here and
+#   everything else stays in quantum_chem.sif. SO3LR is PBE0+MBD-lineage, so it
+#   is an INDEPENDENT cross-check on the OMol25-trained families (mace-omol /
+#   mace-polar / uma / esen).
+#
+# WHAT'S INSIDE:
+#   A uv-managed Python 3.12 venv at /opt/so3lr-venv with jax[cuda12] + the
+#   staged SO3LR *v2-beta* package (so3lr 0.2.0). The package source is copied
+#   in at build time via %files (below), so the build does NOT depend on /net
+#   being bound during %post, and the image is self-contained (the bundled
+#   so3lr-{s,m,l} weights install into site-packages). %environment puts the
+#   venv first on PATH, so `python` inside the image is the 3.12 SO3LR python.
+#
+# BUILD (~15-25 min, downloads jax + CUDA wheels):
+#   cd /home/woodbuse/codebase_projects/quantum_cowboy_biochemistry
+#   apptainer build --fakeroot \
+#       /net/software/containers/users/woodbuse/quantum_chem/so3lr-$(date +%Y%m%d).sif \
+#       deps/so3lr_sidecar.def
+#
+# RUN — the factory (_make_so3lr) globs for so3lr-*.sif here and, when so3lr is
+# not importable in the caller's Python, prints the apptainer-exec line to use:
+#   apptainer exec --nv --bind /home --bind /net \
+#       /net/software/containers/users/woodbuse/quantum_chem/so3lr-YYYYMMDD.sif \
+#       python -m quantum_engine.cli <op> --model so3lr-m ...
+
+%labels
+    Author woodbuse@uw.edu
+    Project cowboy-quantum-chemistry
+    Purpose SO3LR (JAX) sidecar — so3lr is JAX-based + Python>=3.12, can't live in the torch container
+
+%files
+    # Copy the staged v2-beta SO3LR source into the image (host /net is mounted
+    # at build time, so this works without a build-time bind). pip installs it
+    # in %post — the bundled so3lr-{s,m,l} weights come along into site-packages.
+    /net/databases/huggingface/mlFF_models/models--general-molecular-simulations--so3lr-v2-beta/package/so3lr_ts_pipeline/so3lr_folder /opt/so3lr_src
+
+%post
+    set -e
+
+    # ── 1. uv (fast resolver) + a clean Python 3.12 venv ────────────────────
+    # universal.sif is Python 3.11; SO3LR requires >=3.12, so uv fetches a
+    # standalone 3.12 and builds an isolated venv (the INSTALL.md approach).
+    pip install --no-cache-dir uv || {
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
+    }
+    uv venv --python 3.12 /opt/so3lr-venv
+    . /opt/so3lr-venv/bin/activate
+
+    # ── 2. JAX (GPU) + the staged SO3LR package ─────────────────────────────
+    # jax[cuda12] ships the CUDA runtime via pip wheels (no system CUDA needed).
+    # Installing so3lr pulls ASE, numpy, jraph, jax-md, glp, orbax, ...
+    uv pip install "jax[cuda12]"
+    uv pip install "/opt/so3lr_src/."
+
+    # ── 3. Sanity check — fail the build if the import is broken ─────────────
+    python - <<'PY'
+import sys, so3lr, jax, ase, numpy
+from so3lr import So3lrCalculator                 # lazy alias -> make_ase_calculator
+from so3lr.model_registry import available_models
+print(f"  python  {sys.version.split()[0]}")
+print(f"  so3lr   {so3lr.__version__}")
+print(f"  jax     {jax.__version__}  devices={jax.devices()}")
+print(f"  ase     {ase.__version__}   numpy {numpy.__version__}")
+print(f"  bundled models: {available_models()}")
+print("  So3lrCalculator import OK")
+PY
+
+%environment
+    # Put the SO3LR venv first so `python` == the 3.12 SO3LR interpreter.
+    export PATH=/opt/so3lr-venv/bin:$PATH
+    export HF_HOME=/net/databases/huggingface
+    # SO3LR uses float64 for TS work; enable JAX x64 by default for callers.
+    export JAX_ENABLE_X64=1
+
+%test
+    /opt/so3lr-venv/bin/python -c "from so3lr import So3lrCalculator; from so3lr.model_registry import available_models; print('SO3LR sidecar OK:', available_models())"
+
+%help
+    SO3LR sidecar (JAX, so3lr 0.2.0 / v2-beta).
+
+    Use this image only for SO3LR (`--model so3lr` / so3lr-s / so3lr-m / so3lr-l)
+    calls. Everything else (MACE, ORB, AIMNet2, SCINE, propka, UMA, ...) lives in
+    the main quantum_chem.sif / the UMA sidecar and is NOT available here.
+
+    The central staged weights are at
+      /net/databases/huggingface/mlFF_models/models--general-molecular-simulations--so3lr-v2-beta/
+    and quantum_engine/site.py points each alias at weights/<size>/params.pkl;
+    quantum_engine.calc.factory._make_so3lr derives the workdir from that.
+
+    Example single-point on so3lr-m (charge read from atoms.info['charge']):
+
+      apptainer exec --nv --bind /home --bind /net \
+        /net/software/containers/users/woodbuse/quantum_chem/so3lr-YYYYMMDD.sif \
+        python -c "
+      import numpy as np
+      from ase.io import read
+      from so3lr import So3lrCalculator
+      calc = So3lrCalculator(model='so3lr-m', lr_cutoff=100.0, dtype=np.float64)
+      a = read('in.pdb'); a.info['charge'] = -2; a.calc = calc
+      print(a.get_potential_energy())
+      "

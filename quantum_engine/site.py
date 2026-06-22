@@ -270,6 +270,34 @@ MACE_MODELS = {
         f"{_HF_HUB_BASE}/models--isayevlab--aimnet2-rxn/ensemble_0.safetensors",
         None,
     ),
+
+    # ── SO3LR (general-molecular-simulations: Unke / Müller, TU Berlin/BIFOLD) ──
+    # SO3krates + universal pairwise Long-Range. JAX/orbax — runs in its OWN
+    # sidecar (deps/so3lr_sidecar.def; jax[cuda12], Python >=3.12), NOT the main
+    # torch container. PBE0+MBD lineage, so it's an INDEPENDENT check on the
+    # OMol25-trained families above (on OPAA it gives a *validated* 14.4 kcal/mol
+    # barrier vs the OMol25 models' ~6 kcal flat ridge). Staged as v2-beta.
+    #
+    # NB: a SO3LR "model" is a DIRECTORY (workdir with params.pkl), not a single
+    # file. We register the params.pkl path so the factory's os.path.isfile()
+    # resolution + "missing on disk" errors keep working; _make_so3lr derives the
+    # enclosing workdir. Bundled sizes: so3lr-{s,m,l} + the original so3lr.
+    "so3lr": _resolve_mace("so3lr",
+        f"{_HF_HUB_BASE}/models--general-molecular-simulations--so3lr-v2-beta/weights/so3lr/params.pkl",
+        None,
+    ),
+    "so3lr-s": _resolve_mace("so3lr-s",
+        f"{_HF_HUB_BASE}/models--general-molecular-simulations--so3lr-v2-beta/weights/so3lr-s/params.pkl",
+        None,
+    ),
+    "so3lr-m": _resolve_mace("so3lr-m",
+        f"{_HF_HUB_BASE}/models--general-molecular-simulations--so3lr-v2-beta/weights/so3lr-m/params.pkl",
+        None,
+    ),
+    "so3lr-l": _resolve_mace("so3lr-l",
+        f"{_HF_HUB_BASE}/models--general-molecular-simulations--so3lr-v2-beta/weights/so3lr-l/params.pkl",
+        None,
+    ),
 }
 
 # Multi-head default heads

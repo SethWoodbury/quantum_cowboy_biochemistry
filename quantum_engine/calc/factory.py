@@ -7,6 +7,7 @@ ML calculator backends based on the model alias:
     ORB         — orb-mol / orb-mol-conservative
     AIMNet2     — aimnet2-rxn
     UMA         — uma-s-1p1 / uma-s-1p2 / uma-m-1p1 / uma-sm  (FairChem)
+    SO3LR       — so3lr / so3lr-s / so3lr-m / so3lr-l  (JAX sidecar; PBE0+MBD)
 
 All ops (opt, md, freq, neb, ts, ...) call ``make_calc`` and get an
 ASE-compatible ``Calculator`` back. Charge/spin handling differs by family:
@@ -315,6 +316,82 @@ def _make_uma(model: str, model_path: str | None, device: str,
     return calc
 
 
+# SO3LR (SO3krates + universal pairwise Long-Range) is JAX/orbax — its jax/flax
+# stack conflicts with the main torch container, so (exactly like UMA) it lives
+# in a dedicated sidecar image (``so3lr-YYYYMMDD.sif``, built from
+# deps/so3lr_sidecar.def). When ``so3lr`` is importable in the current Python
+# (i.e. the caller has apptainer-exec'd into the sidecar), this builds the
+# calculator in-process; otherwise it raises a clear ImportError naming the
+# sidecar / build recipe.
+_SO3LR_SIDECAR_GLOB = ("/net/software/containers/users/woodbuse/quantum_chem/"
+                       "so3lr-*.sif")
+
+
+def _resolve_so3lr_sidecar() -> str | None:
+    import glob
+    found = sorted(glob.glob(_SO3LR_SIDECAR_GLOB), reverse=True)
+    return found[0] if found else None
+
+
+def _make_so3lr(model: str, model_path: str | None, device: str,
+                charge: int | None, spin: int | None) -> "Calculator":
+    """SO3LR — general-molecular-simulations (Unke/Müller), PBE0+MBD lineage.
+
+    A JAX/orbax model and an *independent* check on the OMol25-lineage MLFFs
+    (mace-omol / mace-polar / uma / esen). Charge-aware: it reads the system
+    net charge from ``atoms.info['charge']`` at force time, the same pattern as
+    charge-aware MACE (the caller stamps it). Bundled sizes are
+    ``so3lr-{s,m,l}`` plus the original ``so3lr``; each is a *directory*
+    (workdir holding ``params.pkl``), not a single file — so we point SO3LR at
+    the staged workdir (central weights = single source of truth) and fall back
+    to the bare alias (SO3LR resolves its own bundled copy) when the staged dir
+    is absent.
+    """
+    sidecar = _resolve_so3lr_sidecar()
+    try:
+        # NB: `So3lrCalculator` is a lazy alias for so3lr.ase_utils.make_ase_calculator
+        # (PEP-562 __getattr__ in so3lr/__init__.py), so this stays import-cheap
+        # until actually called.
+        from so3lr import So3lrCalculator  # noqa: PLC0415
+    except ImportError as exc:
+        if sidecar:
+            hint = (f"  - so3lr lives in the SO3LR sidecar — re-run your command "
+                    f"inside it:\n"
+                    f"      apptainer exec --nv --bind /home --bind /net "
+                    f"{sidecar} \\\n          python <your_qcb_call_here>")
+        else:
+            hint = ("  - no SO3LR sidecar found under "
+                    f"{_SO3LR_SIDECAR_GLOB.replace('*', 'YYYYMMDD')!r}.\n"
+                    "    Build one with `apptainer build --fakeroot "
+                    "deps/so3lr_sidecar.def` (a jax[cuda12] env, Python >=3.12; "
+                    "see that def + the staged package INSTALL.md).")
+        raise ImportError(
+            f"SO3LR requested ({model!r}) but `so3lr` is not importable in this "
+            f"Python — it is JAX-based and lives outside the torch container.\n{hint}"
+        ) from exc
+
+    import numpy as np  # noqa: PLC0415 — dtype is a numpy dtype object, not a string
+
+    # model_path (when present) is the staged .../weights/<size>/params.pkl; SO3LR
+    # wants the enclosing workdir. Otherwise pass the bare alias and let SO3LR's
+    # model_registry.resolve_model() find its bundled copy.
+    if model_path and os.path.isfile(model_path):
+        target = os.path.dirname(model_path)
+    else:
+        target = model.lower()                       # e.g. "so3lr-m"
+    log.info(f"Loading SO3LR {model!r} from {target}  (charge={charge}, spin={spin})")
+    # lr_cutoff=100 Å (all-pairs for a gas-phase cluster) + float64 match the
+    # package find_ts.py defaults that produced the validated SO3LR TS reference.
+    calc = So3lrCalculator(model=str(target), lr_cutoff=100.0, dtype=np.float64)
+    # Net charge is read from atoms.info['charge'] at force time (caller stamps it,
+    # same path as charge-aware MACE). Remember the values for parity with ORB/UMA.
+    if charge is not None:
+        calc.qcb_charge = int(charge)
+    if spin is not None:
+        calc.qcb_spin = int(spin)
+    return calc
+
+
 # ---------------------------------------------------------------------------
 # Uniform builders + family registration. Each adapts the family-specific
 # ``_make_*`` to the shared builder signature, so ``make_calc`` dispatches with
@@ -349,6 +426,13 @@ def _build_mace(model, *, model_path, registry_path, head, device,
     return _make_mace(model, model_path, head, device, default_dtype, charge)
 
 
+def _build_so3lr(model, *, model_path, registry_path, head, device,
+                 default_dtype, charge, spin):
+    # Pass the registry path even when not on disk, so _make_so3lr can derive the
+    # staged workdir / emit a precise error instead of silently using bundled weights.
+    return _make_so3lr(model, model_path or registry_path, device, charge, spin)
+
+
 register_energy("uma", lambda m: m.lower().startswith("uma-") or "fairchem" in m.lower(),
                 _build_uma)
 # eSEN + AllScAIP (FairChem, OMol25-trained) load through the same fairchem-core
@@ -358,6 +442,10 @@ register_energy("esen", lambda m: m.lower().startswith("esen"), _build_uma)
 register_energy("allscaip", lambda m: m.lower().startswith("allscaip"), _build_uma)
 register_energy("orb", lambda m: m.lower().startswith("orb"), _build_orb)
 register_energy("aimnet", lambda m: m.lower().startswith("aimnet"), _build_aimnet)
+# SO3LR (general-molecular-simulations) — JAX/orbax, runs in its own sidecar
+# (deps/so3lr_sidecar.def). PBE0+MBD lineage: an independent check on the
+# OMol25-trained families above.
+register_energy("so3lr", lambda m: m.lower().startswith("so3lr"), _build_so3lr)
 register_energy("qc",
                 lambda m: m.lower().startswith("gfn") or m.lower() in ("xtb", "g-xtb", "gfnff"),
                 _build_qc)
@@ -384,13 +472,16 @@ def make_calc(
             ORB: orb-mol / orb-mol-conservative.
             AIMNet2: aimnet2-rxn.
             UMA: uma-s-1p1 / uma-s-1p2 / uma-m-1p1 / uma-sm.
+            SO3LR: so3lr / so3lr-s / so3lr-m / so3lr-l (JAX sidecar).
         head: Multi-head MACE only (e.g. "omol" for mace-mh-1).
         device: 'cuda' or 'cpu'.
         default_dtype: MACE only — 'float32' or 'float64'.
         charge: System net charge. Used by charge-aware MACE (via
             ``atoms.info``), ORB (via SystemConfig), AIMNet2 (at construction),
             UMA (on the calc).
-        spin: 2S+1 multiplicity. ORB / AIMNet2 / UMA. Ignored by MACE.
+        spin: 2S+1 multiplicity. ORB / AIMNet2 / UMA, and MACE-POLAR (reads
+            ``atoms.info['spin']`` at force time). Ignored by spin-agnostic
+            MACE variants (mp / off / omol).
     """
     models = list_models()
     family, builder = ENERGY_FAMILIES.match(model)

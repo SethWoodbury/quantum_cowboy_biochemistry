@@ -4,14 +4,15 @@ Single source of truth for paths is `quantum_engine/site.py` — edit there (or
 override via env vars). This doc is a map of what lives where on the UW Baker-lab
 / DIGS cluster.
 
-## Containers (the 2-container story)
+## Containers (the 3-container story)
 
 Apptainer images under `/net/software/containers/users/woodbuse/quantum_chem/`:
 
 | Image | Holds | Why separate |
 |-------|-------|--------------|
-| `quantum_chem-<date>.sif` (main) | MACE (incl. **POLAR** fork + `graph_longrange`), xTB, pysisyphus, Sella, ASE, the `quantum_engine` deps | the everyday container |
-| `uma-<date>.sif` (sidecar) | FairChem UMA | needs numpy 2 / torch 2.8 — conflicts with the main image |
+| `quantum_chem-<date>.sif` (main) | MACE (incl. **POLAR** fork + `graph_longrange`), ORB, AIMNet2, xTB/g-xTB, pysisyphus, Sella, ASE, the `quantum_engine` deps | the everyday container |
+| `uma-<date>.sif` (sidecar) | FairChem **UMA + eSEN + AllScAIP** | needs numpy 2 / torch 2.8 — conflicts with the main image (`deps/uma_sidecar.def`) |
+| `so3lr-<date>.sif` (sidecar) | **SO3LR** (JAX/orbax) | JAX stack + Python ≥3.12 — can't share the torch image (`deps/so3lr_sidecar.def`) |
 
 `site.py` auto-picks the newest `quantum_chem-*.sif` via glob. Run things with:
 
@@ -34,15 +35,22 @@ every MLFF weight the codebase references (`site._HF_HUB_BASE`); all
 Present + wired (alias → family): the MACE family (`mace-mp`, `mace-off-*`,
 `mace-omol` / **`mace-omol25`** [OMol25, charge-aware], `mace-mh`/`mace-mh-1`,
 `mace-polar-*`), UMA (`uma-sm`, `uma-s-1p1`, `uma-s-1p2`, `uma-m-1p1` /
-**`uma-m`**), `orb-mol-conservative`, `aimnet2-rxn`. `cowboy-qc list-models` shows them.
+**`uma-m`**), eSEN (`esen-*`), AllScAIP (`allscaip-md-*`), `orb-mol-conservative`,
+`aimnet2-rxn`, and **SO3LR** (`so3lr`, `so3lr-s`, `so3lr-m`, `so3lr-l`).
+`cowboy-qc list-models` shows them.
 
 - UMA checkpoints: download via
   `/net/databases/huggingface/mlFF_models/download_uma_models.sh` (needs an
   `HF_TOKEN`; FAIR Chemistry License). 11 GB for `uma-m-1p1`.
-- **eSEN** (`esen-s`, FairChem OMol25-trained) is **wired but not yet downloaded**
-  — it routes through the same fairchem-core path as UMA (the UMA sidecar) and
-  errors with a clear "checkpoint not on disk" until you add it to the download
-  script and populate `models--facebook--esen-*`.
+- **eSEN** (`esen-*`) / **AllScAIP** (`allscaip-md-*`), FairChem OMol25-trained,
+  route through the same fairchem-core path as UMA (the UMA sidecar). Only the
+  **conserving** checkpoints are valid for TS/saddle work (direct heads are
+  non-conservative). `download_uma_models.sh` populates `models--facebook--esen-*`
+  / `--allscaip-*`; until then `make_calc` errors with "checkpoint not on disk".
+- **SO3LR** (`models--general-molecular-simulations--so3lr-v2-beta/`) is **staged
+  and wired** (`weights/<size>/params.pkl`). It's JAX/orbax → runs in the SO3LR
+  sidecar; build it once with `apptainer build --fakeroot deps/so3lr_sidecar.def`.
+  PBE0+MBD lineage → an **independent** cross-check on the OMol25 families.
 
 ## External binaries (host/cluster, not in the container)
 

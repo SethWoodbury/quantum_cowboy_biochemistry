@@ -18,6 +18,7 @@ from quantum_engine.calc.factory import (
     ("mace-omol", "mace"), ("mace-polar-m", "mace"), ("mace-mh-1", "mace"),
     ("uma-s-1p1", "uma"), ("UMA-M-1P1", "uma"),
     ("orb-mol", "orb"), ("aimnet2-rxn", "aimnet"),
+    ("so3lr", "so3lr"), ("so3lr-m", "so3lr"), ("SO3LR-L", "so3lr"),
     ("/abs/path/to/model.model", "mace"),   # absolute path → catch-all mace
 ])
 def test_family_of_routing(alias, family):
@@ -28,7 +29,8 @@ def test_mace_is_implicit_default_not_registered():
     # mace is NOT a registry entry — it's the fallback when nothing matches, so
     # it can never shadow a newly-registered family appended after it.
     assert "mace" not in ENERGY_FAMILIES.labels()
-    assert ENERGY_FAMILIES.labels() == ["uma", "esen", "allscaip", "orb", "aimnet", "qc"]
+    assert ENERGY_FAMILIES.labels() == [
+        "uma", "esen", "allscaip", "orb", "aimnet", "so3lr", "qc"]
 
 
 def test_match_returns_label_and_builder():
